@@ -529,15 +529,16 @@ fn sections(app: &App) -> Vec<Section> {
             },
         );
     }
-    system.toggle(
-        translated(locale, "Check for updates"),
-        translated(
-            locale,
-            "Asks GitHub once a day, sending only the ZapFast version.",
-        ),
-        |settings| &mut settings.check_for_updates,
-    );
-    system.toggle(
+    if crate::updates::enabled() {
+        system.toggle(
+            translated(locale, "Check for updates"),
+            translated(
+                locale,
+                "Asks GitHub once a day, sending only the ZapFast version.",
+            ),
+            |settings| &mut settings.check_for_updates,
+        );
+        system.toggle(
         translated(locale, "Download updates automatically"),
         translated(
             locale,
@@ -545,6 +546,7 @@ fn sections(app: &App) -> Vec<Section> {
         ),
         |settings| &mut settings.download_updates_automatically,
     );
+    }
     let environment = app
         .settings
         .proxy
@@ -1276,7 +1278,7 @@ fn about(app: &mut App, ui: &mut egui::Ui) {
         ui.vertical(|ui| {
             theme::text(
                 ui,
-                format!("ZapFast {}", env!("CARGO_PKG_VERSION")),
+                format!("{} {}", crate::identity::NAME, env!("CARGO_PKG_VERSION")),
                 theme::semibold(16.0),
                 palette.text,
             );

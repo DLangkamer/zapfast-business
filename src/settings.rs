@@ -444,7 +444,7 @@ impl Default for Settings {
             group_sounds: true,
             download_folder: None,
             proxy: String::new(),
-            check_for_updates: true,
+            check_for_updates: false,
             download_updates_automatically: false,
             save_contacts_to_phone: true,
             voice_speed: 1.0,
@@ -465,12 +465,8 @@ impl Default for Settings {
 ///    mode) become [`WallpaperColor::Theme`], the new default.
 pub const SETTINGS_VERSION: u32 = 1;
 
-/// Optional build-time GIPHY key from `ZAPFAST_GIPHY_KEY`.
-/// The previous name remains accepted for existing build setups.
-pub const BUILT_IN_GIPHY_KEY: Option<&str> = match option_env!("ZAPFAST_GIPHY_KEY") {
-    Some(key) if !key.is_empty() => Some(key),
-    _ => option_env!("FASTSAPP_GIPHY_KEY"),
-};
+/// Optional Business-only build-time key; never inherit another client's key.
+pub const BUILT_IN_GIPHY_KEY: Option<&str> = option_env!("ZAPFAST_BUSINESS_GIPHY_KEY");
 
 impl Settings {
     pub fn wallpaper_color_for(&self, dark: bool) -> WallpaperColor {
@@ -654,7 +650,7 @@ mod tests {
             serde_json::from_str(r#"{"theme":"light","future_field":1}"#).expect("parses");
         assert_eq!(parsed.theme, ThemeChoice::Light);
         assert!(parsed.enter_sends);
-        assert!(parsed.check_for_updates);
+        assert!(!parsed.check_for_updates);
         assert!(!parsed.download_updates_automatically);
         assert!(parsed.show_wallpaper);
         assert_eq!(parsed.wallpaper_color, WallpaperColor::Theme);

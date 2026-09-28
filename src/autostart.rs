@@ -172,7 +172,7 @@ mod platform {
     };
 
     const RUN: &str = r"Software\Microsoft\Windows\CurrentVersion\Run";
-    const VALUE: &str = "ZapFast";
+    const VALUE: &str = crate::identity::NAME;
 
     fn wide(text: &str) -> Vec<u16> {
         std::ffi::OsStr::new(text)

@@ -11,7 +11,7 @@
 //! that the running instance writes to the directory.
 
 use std::io::{Read, Write};
-use std::net::{Ipv4Addr, SocketAddr, TcpListener, TcpStream};
+use std::net::{Ipv4Addr, TcpListener, TcpStream};
 use std::path::Path;
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
@@ -22,13 +22,9 @@ const SOCKET_FILE: &str = "instance.sock";
 #[cfg(any(not(unix), test))]
 const KEY_FILE: &str = "instance.key";
 
-/// Fixed port of copies that predate the lock. They never take it.
-const LEGACY_PORT: u16 = 47_119;
-
-/// Stable wire identity shared with FastsApp so upgrades surface a running
-/// older copy before migrating its session files.
-const PREFIX: &str = "fastsapp:";
-const OK_REPLY: &str = "fastsapp:ok";
+/// Business instances never use the upstream legacy port or wire identity.
+const PREFIX: &str = "zapfast-business:";
+const OK_REPLY: &str = "zapfast-business:ok";
 
 /// Longest request accepted, token included.
 const REQUEST_LIMIT: usize = 256;
@@ -90,9 +86,6 @@ pub fn acquire(dir: &Path, waker: &crate::backend::Waker, verb: &str) -> Outcome
             });
         }
     };
-    if legacy_instance_answers(verb) {
-        return Outcome::Surfaced;
-    }
     let guard = Guard {
         commands: Default::default(),
         _lock: Some(lock),
@@ -100,7 +93,6 @@ pub fn acquire(dir: &Path, waker: &crate::backend::Waker, verb: &str) -> Outcome
     if let Err(error) = listen(dir, guard.commands(), waker.clone()) {
         log::warn!("cannot listen for other launches: {error}");
     }
-    listen_legacy(guard.commands(), waker.clone());
     Outcome::Only(guard)
 }
 
@@ -139,56 +131,6 @@ fn hand_over(dir: &Path, verb: &str) -> Outcome {
                 return Outcome::Unanswered;
             }
             Err(_) => std::thread::sleep(Duration::from_millis(100)),
-        }
-    }
-}
-
-/// Asks a running copy that predates the lock to handle `verb`.
-fn legacy_instance_answers(verb: &str) -> bool {
-    // The port is free, and released at once, when no older copy runs.
-    if TcpListener::bind((Ipv4Addr::LOCALHOST, LEGACY_PORT)).is_ok() {
-        return false;
-    }
-    let address = SocketAddr::from((Ipv4Addr::LOCALHOST, LEGACY_PORT));
-    let answered = TcpStream::connect_timeout(&address, REPLY_TIME)
-        .and_then(|stream| request(stream, None, verb))
-        .is_ok();
-    // A background start never runs beside a copy that may be ZapFast,
-    // including older ones that do not answer `ping`.
-    answered || verb == "ping"
-}
-
-/// Answers copies that predate the lock (0.15 and earlier), which only look
-/// for the fixed port: without a reply they would start beside this one on
-/// the same archive and linked device. Only `show` and `ping` are accepted
-/// there, as nothing on that port proves who is asking, and they at most
-/// bring the window forward.
-fn listen_legacy(commands: Queue, waker: crate::backend::Waker) {
-    match TcpListener::bind((Ipv4Addr::LOCALHOST, LEGACY_PORT)) {
-        Ok(listener) => {
-            if let Err(error) = spawn(move || serve_legacy(listener, &commands, &waker)) {
-                log::debug!("cannot answer older launches: {error}");
-            }
-        }
-        Err(error) => log::debug!("cannot answer older launches: {error}"),
-    }
-}
-
-fn serve_legacy(
-    listener: TcpListener,
-    commands: &Mutex<Vec<ControlCommand>>,
-    waker: &crate::backend::Waker,
-) {
-    for mut stream in listener.incoming().flatten() {
-        if let Some(command @ (ControlCommand::Show | ControlCommand::Ping)) =
-            receive(&mut stream, None)
-        {
-            let _ = stream.write_all(format!("{OK_REPLY}\n").as_bytes());
-            commands
-                .lock()
-                .unwrap_or_else(|p| p.into_inner())
-                .push(command);
-            waker.wake();
         }
     }
 }
@@ -413,12 +355,14 @@ mod tests {
 
     #[test]
     fn only_our_own_show_is_understood() {
-        assert_eq!(parse("fastsapp:show\n"), Some(ControlCommand::Show));
-        assert_eq!(parse("fastsapp:show"), Some(ControlCommand::Show));
-        assert_eq!(parse("fastsapp:ping"), Some(ControlCommand::Ping));
+        assert_eq!(parse("zapfast-business:show\n"), Some(ControlCommand::Show));
+        assert_eq!(parse("zapfast-business:show"), Some(ControlCommand::Show));
+        assert_eq!(parse("zapfast-business:ping"), Some(ControlCommand::Ping));
         assert_eq!(parse("GET / HTTP/1.1"), None);
-        assert_eq!(parse("fastsapp:frobnicate"), None);
+        assert_eq!(parse("zapfast-business:frobnicate"), None);
         assert_eq!(parse(""), None);
+        assert_eq!(parse("fastsapp:show"), None);
+        assert_eq!(parse("zapfast:show"), None);
     }
 
     fn dir(name: &str) -> std::path::PathBuf {
@@ -459,24 +403,6 @@ mod tests {
     }
 
     #[test]
-    fn older_copies_may_only_ask_for_the_window() {
-        let listener = TcpListener::bind((Ipv4Addr::LOCALHOST, 0)).unwrap();
-        let port = listener.local_addr().unwrap().port();
-        let commands: Queue = Default::default();
-        let queue = Arc::clone(&commands);
-        std::thread::spawn(move || {
-            serve_legacy(listener, &queue, &crate::backend::Waker::default())
-        });
-        request(connect(port), None, "show").expect("an older launch surfaces this one");
-        request(connect(port), None, "ping").expect("a background start sees this one");
-        assert!(request(connect(port), None, "reload-themes").is_err());
-        assert_eq!(
-            *commands.lock().unwrap(),
-            vec![ControlCommand::Show, ControlCommand::Ping]
-        );
-    }
-
-    #[test]
     fn tcp_requests_need_the_token() {
         let (port, token, commands) = tcp_server();
         request(connect(port), Some(&token), "show").expect("answered as ZapFast");
@@ -486,7 +412,7 @@ mod tests {
         // Browsers reaching localhost send HTTP, which never carries the token.
         let mut browser = connect(port);
         browser
-            .write_all(b"GET /fastsapp:show HTTP/1.1\r\nHost: localhost\r\n\r\n")
+            .write_all(b"GET /zapfast-business:show HTTP/1.1\r\nHost: localhost\r\n\r\n")
             .unwrap();
         let mut reply = Vec::new();
         browser.read_to_end(&mut reply).unwrap();

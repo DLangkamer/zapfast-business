@@ -1,6 +1,6 @@
 ; Windows installer built from a release binary with Inno Setup 6.3 or newer:
 ;
-;   iscc /DVersion=0.1.0 /DArch=x86_64 /DBinary=...\zapfast.exe ^
+;   iscc /DVersion=0.1.0 /DArch=x86_64 /DBinary=...\zapfast-business.exe ^
 ;        /DOutputDir=dist packaging\windows\zapfast.iss
 ;
 ; Arch matches the Rust target: x86_64 or aarch64. Installation uses the
@@ -28,19 +28,19 @@
   #define InnoArch "x64compatible"
 #endif
 
-#define AppName "ZapFast"
-#define AppExeName "zapfast.exe"
+#define AppName "ZapFast Business"
+#define AppExeName "zapfast-business.exe"
 
 [Setup]
 ; Never change: this is how Windows tells an update from a new program.
-AppId={{F2512314-384A-4002-9933-AB840FD01639}
+AppId={{B52DF836-982D-48F8-91B0-FE4D9E58B7F2}
 AppName={#AppName}
 AppVersion={#Version}
 AppVerName={#AppName} {#Version}
-AppPublisher=Carmine Paolino
+AppPublisher=DLangkamer (fork of Carmine Paolino's ZapFast)
 AppPublisherURL=https://zapfast.rocks
-AppSupportURL=https://github.com/crmne/zapfast/issues
-AppUpdatesURL=https://github.com/crmne/zapfast/releases
+AppSupportURL=https://github.com/DLangkamer/zapfast-business
+AppUpdatesURL=https://github.com/DLangkamer/zapfast-business
 DefaultDirName={localappdata}\Programs\{#AppName}
 DefaultGroupName={#AppName}
 DisableProgramGroupPage=yes
@@ -50,13 +50,14 @@ ArchitecturesInstallIn64BitMode={#InnoArch}
 MinVersion=10.0
 LicenseFile=..\..\LICENSE
 OutputDir={#OutputDir}
-OutputBaseFilename=zapfast-v{#Version}-{#Arch}-pc-windows-msvc-setup
+OutputBaseFilename=zapfast-business-v{#Version}-{#Arch}-pc-windows-msvc-setup
 SetupIconFile=zapfast.ico
 Compression=lzma2/max
 SolidCompression=yes
 WizardStyle=modern
 CloseApplications=yes
 RestartApplications=no
+CloseApplicationsFilter=zapfast-business.exe
 UninstallDisplayIcon={app}\{#AppExeName}
 VersionInfoVersion={#NumericVersion}.0
 
@@ -65,26 +66,31 @@ Name: "desktopicon"; Description: "Create a desktop shortcut"; GroupDescription:
 
 [Files]
 Source: "{#Binary}"; DestDir: "{app}"; Flags: ignoreversion
-; Updaters up to 0.16.5 relaunch the executable they were started from, so an
-; update begun as fastsapp.exe needs that file to come back (as Spotifast's
-; #582). The app deletes the copy once it starts as zapfast.exe with no update
-; running, and later updaters relaunch zapfast.exe themselves.
-Source: "{#Binary}"; DestDir: "{app}"; DestName: "fastsapp.exe"; Flags: ignoreversion
 Source: "..\..\README.md"; DestDir: "{app}"; Flags: ignoreversion
+Source: "..\..\BUSINESS.md"; DestDir: "{app}"; Flags: ignoreversion
 Source: "..\..\LICENSE"; DestDir: "{app}"; Flags: ignoreversion
 Source: "..\..\THIRD-PARTY-NOTICES.md"; DestDir: "{app}"; Flags: ignoreversion
-
-Source: "zapfast-installer.txt"; DestDir: "{app}"; Flags: ignoreversion
-
-[InstallDelete]
-; AppId keeps upgrades in the existing installation directory. Remove the
-; previous shortcuts; fastsapp.exe is kept above for older updaters.
-Type: files; Name: "{autoprograms}\FastsApp.lnk"
-Type: files; Name: "{autodesktop}\FastsApp.lnk"
+Source: "..\..\assets\fonts\Inter-LICENSE.txt"; DestDir: "{app}\licenses"; Flags: ignoreversion
+Source: "..\..\assets\fonts\NotoColorEmoji-LICENSE.txt"; DestDir: "{app}\licenses"; Flags: ignoreversion
+Source: "..\..\assets\icons\LICENSE.txt"; DestDir: "{app}\licenses"; DestName: "Lucide-LICENSE.txt"; Flags: ignoreversion
 
 [Icons]
-Name: "{autoprograms}\{#AppName}"; Filename: "{app}\{#AppExeName}"; AppUserModelID: "me.paolino.zapfast"
-Name: "{autodesktop}\{#AppName}"; Filename: "{app}\{#AppExeName}"; Tasks: desktopicon; AppUserModelID: "me.paolino.zapfast"
+Name: "{autoprograms}\{#AppName}"; Filename: "{app}\{#AppExeName}"; AppUserModelID: "io.github.DLangkamer.ZapFastBusiness"
+Name: "{autodesktop}\{#AppName}"; Filename: "{app}\{#AppExeName}"; Tasks: desktopicon; AppUserModelID: "io.github.DLangkamer.ZapFastBusiness"
 
 [Run]
 Filename: "{app}\{#AppExeName}"; Description: "Launch {#AppName}"; Flags: nowait postinstall skipifsilent
+
+[Registry]
+Root: HKCU; Subkey: "Software\Classes\AppUserModelId\io.github.DLangkamer.ZapFastBusiness"; ValueType: string; ValueName: "DisplayName"; ValueData: "ZapFast Business"; Flags: uninsdeletekey
+Root: HKCU; Subkey: "Software\Microsoft\Windows\CurrentVersion\Run"; ValueName: "ZapFast Business"; Flags: dontcreatekey uninsdeletevalue
+
+[Code]
+function PrepareToInstall(var NeedsRestart: Boolean): String;
+begin
+  Result := '';
+  if FileExists(ExpandConstant('{app}\zapfast.exe')) or
+     FileExists(ExpandConstant('{app}\fastsapp.exe')) or
+     FileExists(ExpandConstant('{app}\fastwhatsapp.exe')) then
+    Result := 'Choose a separate folder for ZapFast Business. This folder contains another client.';
+end;

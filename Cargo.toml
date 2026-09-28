@@ -15,7 +15,7 @@ name = "zapfast"
 path = "src/lib.rs"
 
 [[bin]]
-name = "zapfast"
+name = "zapfast-business"
 path = "src/main.rs"
 
 [dependencies]

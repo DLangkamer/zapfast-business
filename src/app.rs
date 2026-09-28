@@ -649,12 +649,12 @@ fn tray_action(event: fastframe_tray::Event, window_hidden: bool) -> Option<Acti
 fn tray_config() -> fastframe_tray::Config {
     use fastframe_tray::MenuItem;
     fastframe_tray::Config {
-        id: "zapfast",
-        title: "ZapFast".into(),
+        id: crate::identity::SLUG,
+        title: crate::identity::NAME.into(),
         icon: crate::util::app_icon_rgba,
         template_icon: Some(crate::util::tray_template_rgba),
         menu: vec![
-            MenuItem::action(TRAY_SHOW, "Show or hide ZapFast"),
+            MenuItem::action(TRAY_SHOW, "Show or hide ZapFast Business"),
             MenuItem::Separator,
             MenuItem::action(TRAY_QUIT, "Quit"),
         ],
@@ -3159,7 +3159,8 @@ impl App {
         self.toasts.retain(|toast| {
             toast.kind == ToastKind::Error || toast.created.elapsed() < INFO_TOAST_LIFETIME
         });
-        if self.settings.check_for_updates
+        if crate::updates::enabled()
+            && self.settings.check_for_updates
             && !self.backend.is_offline()
             && self
                 .last_update_check
@@ -3178,14 +3179,15 @@ impl App {
     }
 
     fn inspect_update(&mut self) {
-        if self.update_support.is_none() && !self.update_inspecting {
+        if crate::updates::enabled() && self.update_support.is_none() && !self.update_inspecting {
             self.update_inspecting = true;
             self.backend.send(Command::InspectUpdate);
         }
     }
 
     fn maybe_download_update(&mut self) {
-        if !self.settings.check_for_updates
+        if !crate::updates::enabled()
+            || !self.settings.check_for_updates
             || !self.settings.download_updates_automatically
             || self.update.is_none()
             || !matches!(self.update_download, crate::updates::DownloadState::Idle)
@@ -3199,10 +3201,12 @@ impl App {
     }
 
     fn download_update(&mut self) {
-        if !matches!(
-            self.update_download,
-            crate::updates::DownloadState::Idle | crate::updates::DownloadState::Failed(_)
-        ) || !matches!(self.update_support, Some(Ok(_)))
+        if !crate::updates::enabled()
+            || !matches!(
+                self.update_download,
+                crate::updates::DownloadState::Idle | crate::updates::DownloadState::Failed(_)
+            )
+            || !matches!(self.update_support, Some(Ok(_)))
         {
             return;
         }
@@ -4509,10 +4513,12 @@ impl App {
             Action::CloseUpdate => self.show_update = false,
             Action::DownloadUpdate => self.download_update(),
             Action::InstallUpdate => {
-                if matches!(
-                    self.update_download,
-                    crate::updates::DownloadState::Ready(_)
-                ) {
+                if crate::updates::enabled()
+                    && matches!(
+                        self.update_download,
+                        crate::updates::DownloadState::Ready(_)
+                    )
+                {
                     let crate::updates::DownloadState::Ready(prepared) = std::mem::replace(
                         &mut self.update_download,
                         crate::updates::DownloadState::Installing,
@@ -6574,7 +6580,7 @@ mod tests {
         assert_eq!(
             menu,
             [
-                fastframe_tray::MenuItem::action(super::TRAY_SHOW, "Show or hide ZapFast"),
+                fastframe_tray::MenuItem::action(super::TRAY_SHOW, "Show or hide ZapFast Business"),
                 fastframe_tray::MenuItem::Separator,
                 fastframe_tray::MenuItem::action(super::TRAY_QUIT, "Quit"),
             ]
@@ -6659,10 +6665,11 @@ mod tests {
     }
 
     #[test]
-    fn automatic_updates_require_opt_in_and_explicit_restart() {
+    fn business_updates_stay_disabled_even_with_opt_in_and_a_prepared_package() {
         use crate::updates::{DownloadState, Installation, Kind, Prepared};
         let mut app = app();
         let ctx = egui::Context::default();
+        app.settings.check_for_updates = true;
         app.update = Some(crate::updates::Release {
             version: "99.0.0".into(),
             url: "https://github.com/crmne/zapfast/releases/latest".into(),
@@ -6681,18 +6688,18 @@ mod tests {
         assert!(matches!(app.update_download, DownloadState::Idle));
         app.settings.download_updates_automatically = true;
         app.maybe_download_update();
-        assert!(matches!(
-            app.update_download,
-            DownloadState::Downloading { .. }
-        ));
+        assert!(matches!(app.update_download, DownloadState::Idle));
         app.update_download =
             DownloadState::Ready(Box::new(Prepared::sample(installation, "99.0.0")));
         app.maybe_download_update();
         assert!(matches!(app.update_download, DownloadState::Ready(_)));
         assert!(!app.quit_requested);
         app.apply(Action::InstallUpdate, &ctx);
-        assert!(matches!(app.update_download, DownloadState::Installing));
-        assert!(!app.quit_requested, "wait for the helper before closing");
+        assert!(matches!(app.update_download, DownloadState::Ready(_)));
+        assert!(
+            !app.quit_requested,
+            "Business never starts an update helper"
+        );
     }
 
     #[test]

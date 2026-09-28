@@ -8,7 +8,7 @@ use clap::Parser;
 
 /// A fast, native WhatsApp client.
 #[derive(Debug, Parser)]
-#[command(name = "zapfast", version, about)]
+#[command(name = "zapfast-business", version, about)]
 struct Cli {
     #[command(subcommand)]
     command: Option<Control>,
@@ -125,11 +125,8 @@ fn default_log_filter(verbose: bool) -> &'static str {
 }
 
 fn main() -> eframe::Result<()> {
-    // First, before parsing the command line or touching any state: run the
-    // update helper when asked (`--apply-update <job>`, then exit), and take
-    // `--update-receipt` and `--update-error` off the command line.
-    let launch = fastframe_update::intercept(&zapfast::updates::CONFIG);
-    let cli = Cli::parse_from(&launch.arguments);
+    // No updater helper flags are accepted by this independent build.
+    let cli = Cli::parse();
     let discovered = paths::AppDirs::discover();
     if matches!(cli.command, Some(Control::ReloadThemes)) {
         if let Err(error) = single_instance::send(&discovered.runtime, "reload-themes") {
@@ -164,7 +161,7 @@ fn main() -> eframe::Result<()> {
                 return Ok(());
             }
             single_instance::Outcome::Surfaced => {
-                eprintln!("ZapFast or FastsApp is already running; asked it to show its window");
+                eprintln!("ZapFast Business is already running; asked it to show its window");
                 return Ok(());
             }
             single_instance::Outcome::Unanswered => {
@@ -174,8 +171,7 @@ fn main() -> eframe::Result<()> {
         }
     };
     let default_filter = default_log_filter(cli.verbose);
-    // A demo must not create empty ZapFast directories that would prevent a
-    // later real launch from adopting the existing FastsApp session.
+    // Demo runs use disposable state. Business never adopts other profiles.
     let dirs = if demo {
         paths::AppDirs::under(&std::env::temp_dir().join(format!(
             "zapfast-demo-{}-{}",
@@ -185,10 +181,6 @@ fn main() -> eframe::Result<()> {
     } else {
         discovered
     };
-    if !demo {
-        dirs.adopt_previous_names()
-            .map_err(|error| eframe::Error::AppCreation(error.into()))?;
-    }
     // Do not open logs, settings, or either database unless their parent
     // directories have been created and secured successfully.
     dirs.ensure()
@@ -208,7 +200,7 @@ fn main() -> eframe::Result<()> {
         .init()
         .map_err(|error| eframe::Error::AppCreation(error.into()))?;
     let settings = settings::Settings::load(&dirs.settings_file());
-    let demo_persistence = demo.then(|| dirs.state.join("window.ron"));
+    let persistence = dirs.state.join("window.ron");
 
     #[allow(unused_mut)]
     let mut app = if demo {
@@ -218,9 +210,6 @@ fn main() -> eframe::Result<()> {
     };
     if cli.verbose {
         app.update_arguments.push("--verbose".into());
-    }
-    if let Some(error) = launch.error {
-        app.toast_error(error);
     }
     if let Some(guard) = &instance {
         app.set_remote_control(guard);
@@ -244,16 +233,14 @@ fn main() -> eframe::Result<()> {
         let (x, y) = value.split_once(',')?;
         Some(egui::pos2(x.trim().parse().ok()?, y.trim().parse().ok()?))
     });
-    let mut update_receipt = launch.receipt;
     // The link, archive, and tray outlive windows. The shell recreates a
     // window when the tray, a notification, or another launch requests one;
     // without a tray a hidden start shows the window (App::start_hidden).
-    let start_hidden = cli.start_hidden && !demo && update_receipt.is_none();
+    let start_hidden = cli.start_hidden && !demo;
     fastframe_shell::Shell::new(app, &waker)
         .start_hidden(start_hidden)
         .idle(fastframe_tray::idle)
         .run(|lease| {
-            let receipt = update_receipt.take();
             #[cfg(feature = "demo")]
             let shot = shot.clone();
             #[cfg(feature = "demo")]
@@ -271,8 +258,8 @@ fn main() -> eframe::Result<()> {
                 )
             });
             eframe::run_native(
-                "ZapFast",
-                native_options(demo_persistence.clone()),
+                zapfast::identity::NAME,
+                native_options(demo, persistence.clone()),
                 Box::new(move |cc| {
                     let mut app = lease.take(&cc.egui_ctx);
                     app.attach(&cc.egui_ctx);
@@ -283,7 +270,6 @@ fn main() -> eframe::Result<()> {
                     Ok(Box::new(Shell {
                         app,
                         window_recovery_checked: false,
-                        update_receipt: receipt,
                         #[cfg(target_os = "windows")]
                         taskbar: Default::default(),
                         #[cfg(feature = "demo")]
@@ -327,15 +313,18 @@ fn tour_script(name: &str) -> zapfast::demo::tour::Script {
     zapfast::demo::tour::Script::from_name(name).unwrap_or_default()
 }
 
-fn native_options(demo_persistence: Option<std::path::PathBuf>) -> eframe::NativeOptions {
+fn native_options(demo: bool, persistence: std::path::PathBuf) -> eframe::NativeOptions {
     let demo_size = demo_size_arg().unwrap_or([1180.0, 780.0]);
-    let demo = demo_persistence.is_some();
     let viewport = egui::ViewportBuilder::default()
-        .with_title(if demo { "ZapFast Demo" } else { "ZapFast" })
-        .with_app_id(if demo {
-            "zapfast-demo".to_owned()
+        .with_title(if demo {
+            "ZapFast Business Demo"
         } else {
-            std::env::var("FLATPAK_ID").unwrap_or_else(|_| "zapfast".to_owned())
+            zapfast::identity::NAME
+        })
+        .with_app_id(if demo {
+            "zapfast-business-demo".to_owned()
+        } else {
+            zapfast::identity::APPLICATION_ID.to_owned()
         })
         .with_inner_size(demo_size)
         // Keep the floor small enough that Windows can still snap the window
@@ -349,7 +338,7 @@ fn native_options(demo_persistence: Option<std::path::PathBuf>) -> eframe::Nativ
         .with_title_shown(false);
     eframe::NativeOptions {
         viewport,
-        persistence_path: demo_persistence,
+        persistence_path: Some(persistence),
         // Do not restore window size during fixed-size screenshot runs.
         persist_window: !demo,
         ..Default::default()
@@ -361,7 +350,6 @@ fn native_options(demo_persistence: Option<std::path::PathBuf>) -> eframe::Nativ
 struct Shell {
     /// Whether this window's first frame checked that a monitor shows it.
     window_recovery_checked: bool,
-    update_receipt: Option<fastframe_update::Receipt>,
     app: fastframe_shell::Held<app::App>,
     /// This window's unread overlay on its taskbar button.
     #[cfg(target_os = "windows")]
@@ -486,17 +474,7 @@ impl eframe::App for Shell {
         let app = &mut *self.app;
         app.frame_ui(ui);
         let startup = app.backend.take_startup();
-        if let Some(receipt) = self.update_receipt.take() {
-            std::thread::spawn(move || {
-                if let Err(error) = receipt.acknowledge() {
-                    log::warn!("could not acknowledge the update: {error:#}");
-                    return;
-                }
-                if let Some(startup) = startup {
-                    let _ = startup.send(());
-                }
-            });
-        } else if let Some(startup) = startup {
+        if let Some(startup) = startup {
             let _ = startup.send(());
         }
         #[cfg(feature = "demo")]

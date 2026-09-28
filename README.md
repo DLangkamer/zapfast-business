@@ -1,5 +1,16 @@
 # ZapFast
 
+> **ZapFast Business (independent Windows fork).** This branch builds
+> `zapfast-business.exe` for a second account. It never migrates ZapFast,
+> FastsApp, or FastWhatsApp data. Sessions, archives, settings, cache, logs,
+> window state, Windows credentials, notifications, autostart and installer
+> identity are separate. Self-updates and upstream update-helper commands are
+> disabled. See [BUSINESS.md](BUSINESS.md) for building, maintenance and removal.
+> The upstream documentation below describes the original application;
+> its installation, migration and updating instructions do not apply to this fork.
+> Business is a local installation label, not an official Meta product or a
+> promise of additional commercial features. Original licenses and credits remain.
+
 **WhatsApp, native and fast.** ZapFast is a WhatsApp client written in Rust
 with [egui](https://github.com/emilk/egui). It uses
 [whatsapp-rust](https://github.com/oxidezap/whatsapp-rust) for the WhatsApp Web
