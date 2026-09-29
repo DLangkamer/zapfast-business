@@ -653,6 +653,68 @@ fn emoji_suggestions(app: &mut App, ui: &mut egui::Ui, field: egui::Id) {
     }
 }
 
+/// WhatsApp Business canned responses for a leading `/query`.
+fn quick_reply_suggestions(app: &mut App, ui: &mut egui::Ui, field: egui::Id) {
+    let cursor = egui::TextEdit::load_state(ui.ctx(), field)
+        .and_then(|state| state.cursor.char_range())
+        .map(|range| range.primary.index.0)
+        .unwrap_or_else(|| app.composer.chars().count());
+    let before: String = app.composer.chars().take(cursor).collect();
+    let Some(query) = before.strip_prefix('/') else {
+        app.quick_reply_selected = 0;
+        return;
+    };
+    if query.chars().any(char::is_whitespace) {
+        return;
+    }
+    let query = query.to_lowercase();
+    let candidates: Vec<_> = app
+        .quick_replies
+        .iter()
+        .filter(|reply| {
+            reply.shortcut.to_lowercase().contains(&query)
+                || reply
+                    .keywords
+                    .iter()
+                    .any(|keyword| keyword.to_lowercase().contains(&query))
+        })
+        .take(6)
+        .cloned()
+        .collect();
+    if candidates.is_empty() {
+        return;
+    }
+    if take_plain_key(ui, Key::ArrowDown) {
+        app.quick_reply_selected = (app.quick_reply_selected + 1) % candidates.len();
+    }
+    if take_plain_key(ui, Key::ArrowUp) {
+        app.quick_reply_selected =
+            (app.quick_reply_selected + candidates.len() - 1) % candidates.len();
+    }
+    app.quick_reply_selected = app.quick_reply_selected.min(candidates.len() - 1);
+    let submit = take_plain_key(ui, Key::Enter) || take_plain_key(ui, Key::Tab);
+    let mut picked = submit.then(|| candidates[app.quick_reply_selected].message.clone());
+    let palette = app.palette;
+    ui.add_space(4.0);
+    Frame::new()
+        .fill(palette.overlay)
+        .stroke(Stroke::new(1.0, palette.outline))
+        .corner_radius(CornerRadius::same(theme::RADIUS + 2))
+        .inner_margin(Margin::same(4))
+        .show(ui, |ui| {
+            for (index, reply) in candidates.iter().enumerate() {
+                let label = format!("/{}  {}", reply.shortcut, reply.message.replace('\n', " "));
+                let response = ui.selectable_label(index == app.quick_reply_selected, label);
+                if response.clicked() {
+                    picked = Some(reply.message.clone());
+                }
+            }
+        });
+    if let Some(message) = picked {
+        app.actions.push(Action::InsertQuickReply(message));
+    }
+}
+
 /// Group-member suggestions above the composer.
 fn mention_picker(app: &mut App, ui: &mut egui::Ui, chat: &Chat, field: egui::Id) {
     let cursor = egui::TextEdit::load_state(ui.ctx(), field)
@@ -902,6 +964,7 @@ fn composer(app: &mut App, ui: &mut egui::Ui, chat: &Chat) {
                 });
                 return;
             }
+            quick_reply_suggestions(app, ui, id);
             emoji_suggestions(app, ui, id);
             mention_picker(app, ui, chat, id);
             // `consume_key(NONE, Enter)` also matches Shift+Enter. Check the
@@ -1445,6 +1508,10 @@ fn composer_tools_menu(app: &mut App, chat: &Chat, plus: &egui::Response) {
                 if widgets::menu_item(ui, &app.palette, Some(Icon::ListChecks), &create_poll) {
                     app.actions
                         .push(Action::ShowDialog(Dialog::CreatePoll(chat.id.clone())));
+                }
+                let quick = crate::i18n::gettext(app.locale, "Quick replies");
+                if widgets::menu_item(ui, &app.palette, Some(Icon::Reply), &quick) {
+                    app.actions.push(Action::ShowDialog(Dialog::QuickReplies));
                 }
             });
     }

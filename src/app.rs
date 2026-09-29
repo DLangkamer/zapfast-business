@@ -13,8 +13,8 @@ use crate::i18n::Locale;
 use crate::image_preview::PreviewState;
 use crate::model::{
     Action, Chat, ChatFilter, ChatId, Contact, Content, Delivery, Dialog, Gif, GifError, Label,
-    Media, MediaState, Message, Page, PickerTab, Scroll, SidebarDisplayMode, StickerPack,
-    StickerShelf, Toast, ToastKind,
+    Media, MediaState, Message, Page, PickerTab, QuickReply, Scroll, SidebarDisplayMode,
+    StickerPack, StickerShelf, Toast, ToastKind,
 };
 use crate::paths::AppDirs;
 use crate::settings::{NotificationSound, Settings, ThemeChoice};
@@ -450,7 +450,7 @@ pub struct App {
     pub show_archived: bool,
     /// Chat-list filter; applies to the main list, not to search or the archive.
     pub chat_filter: ChatFilter,
-    /// Labels known here, in creation order. Local to this computer.
+    /// WhatsApp Business labels known here.
     pub labels: Vec<Label>,
     /// Name typed in the label manager.
     pub label_name: String,
@@ -460,6 +460,12 @@ pub struct App {
     pub label_editing: Option<(String, String)>,
     /// Label the chat list shows; `None` shows every chat.
     pub label_filter: Option<String>,
+    pub quick_replies: Vec<QuickReply>,
+    pub quick_reply_selected: usize,
+    pub quick_reply_editing: Option<String>,
+    pub quick_reply_shortcut: String,
+    pub quick_reply_message: String,
+    pub quick_reply_keywords: String,
     /// Chats opened from the Unread list, kept there until the filter changes.
     unread_kept: HashSet<ChatId>,
     pub toasts: Vec<Toast>,
@@ -897,6 +903,12 @@ impl App {
             label_color: crate::archive::DEFAULT_COLOR.to_owned(),
             label_editing: None,
             label_filter: None,
+            quick_replies: Vec::new(),
+            quick_reply_selected: 0,
+            quick_reply_editing: None,
+            quick_reply_shortcut: String::new(),
+            quick_reply_message: String::new(),
+            quick_reply_keywords: String::new(),
             unread_kept: HashSet::new(),
             toasts: Vec::new(),
             actions: Vec::new(),
@@ -1830,6 +1842,12 @@ impl App {
                 Event::Labels(labels) => {
                     self.labels = labels;
                     self.prune_labels();
+                }
+                Event::QuickReplies(replies) => {
+                    self.quick_replies = replies;
+                    self.quick_reply_selected = self
+                        .quick_reply_selected
+                        .min(self.quick_replies.len().saturating_sub(1));
                 }
                 Event::Drafts(drafts) => {
                     // Unsent text stored by an earlier session. Text typed in
@@ -4408,6 +4426,32 @@ impl App {
             Action::DeleteLabel(id) => {
                 self.backend.send(Command::DeleteLabel(id));
                 self.label_editing = None;
+            }
+            Action::InsertQuickReply(message) => {
+                self.composer = message;
+                self.quick_reply_selected = 0;
+                self.focus_composer = true;
+            }
+            Action::SaveQuickReply {
+                id,
+                shortcut,
+                message,
+                keywords,
+            } => {
+                self.backend.send(Command::SaveQuickReply {
+                    id,
+                    shortcut,
+                    message,
+                    keywords,
+                });
+                self.quick_reply_editing = None;
+                self.quick_reply_shortcut.clear();
+                self.quick_reply_message.clear();
+                self.quick_reply_keywords.clear();
+            }
+            Action::DeleteQuickReply(id) => {
+                self.backend.send(Command::DeleteQuickReply(id));
+                self.quick_reply_editing = None;
             }
             // Reading a chat must not pull its row out from under the pointer.
             // Only the filtered list sends this: search results and

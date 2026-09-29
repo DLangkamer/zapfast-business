@@ -30,8 +30,7 @@ impl ChatKind {
     }
 }
 
-/// A local chat label: a name, a colour, and nothing that leaves this computer.
-/// Not a WhatsApp Business label; ZapFast neither reads nor syncs those.
+/// A WhatsApp Business chat label cached for offline display.
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Label {
     pub id: String,
@@ -39,6 +38,17 @@ pub struct Label {
     /// `#rrggbb`, lower case.
     pub color_hex: String,
     pub created_at: i64,
+}
+
+/// A WhatsApp Business canned response synced between linked devices.
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct QuickReply {
+    pub id: String,
+    /// Slash command without the leading slash.
+    pub shortcut: String,
+    pub message: String,
+    pub keywords: Vec<String>,
+    pub count: i32,
 }
 
 /// Chat-list filter chosen from the chips under the search field.
@@ -1027,8 +1037,10 @@ pub enum Dialog {
     UnlockLockedChats,
     ConfirmLockChat(ChatId),
     ChatInfo(ChatId),
-    /// Manages the local labels.
+    /// Manages WhatsApp Business labels.
     Labels,
+    /// Manages WhatsApp Business quick replies.
+    QuickReplies,
     /// Confirms deleting a chat, which cannot be undone.
     ConfirmDeleteChat(ChatId),
     /// Confirms clearing a chat's messages, which cannot be undone.
@@ -1487,6 +1499,16 @@ pub enum Action {
     },
     /// Deletes a label and takes it off every chat.
     DeleteLabel(String),
+    /// Inserts a synced WhatsApp Business quick reply into the composer.
+    InsertQuickReply(String),
+    /// Creates or updates a WhatsApp Business quick reply.
+    SaveQuickReply {
+        id: Option<String>,
+        shortcut: String,
+        message: String,
+        keywords: Vec<String>,
+    },
+    DeleteQuickReply(String),
     /// Shows or leaves the archived chats.
     ShowArchived(bool),
     /// Mutes (`true`) or unmutes every followed channel.

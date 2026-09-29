@@ -307,6 +307,15 @@ pub enum Command {
         chat: ChatId,
         labels: Vec<String>,
     },
+    SaveQuickReply {
+        id: Option<String>,
+        shortcut: String,
+        message: String,
+        keywords: Vec<String>,
+    },
+    DeleteQuickReply(String),
+    /// Marks the one-time Business app-state snapshot complete.
+    BusinessStateRecovered(bool),
     /// Normalizes, encodes, and sends mono 48 kHz push-to-talk audio.
     SendVoice {
         chat: ChatId,
@@ -729,6 +738,8 @@ pub enum Event {
     Chats(Vec<Chat>),
     /// Every label in creation order. Chats carry the labels they wear.
     Labels(Vec<crate::model::Label>),
+    /// WhatsApp Business canned responses cached for slash completion.
+    QuickReplies(Vec<crate::model::QuickReply>),
     /// Unsent text stored for each chat, sent once at startup.
     Drafts(Vec<(ChatId, String)>),
     /// Messages in one chat matching a search, newest first, echoing the

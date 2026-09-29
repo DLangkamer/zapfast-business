@@ -12,6 +12,7 @@ pub mod message_info;
 pub mod pane;
 pub mod picker;
 pub mod polls;
+pub mod quick_replies;
 pub mod settings;
 pub mod update;
 pub mod widgets;

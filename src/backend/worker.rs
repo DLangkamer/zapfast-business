@@ -33,7 +33,7 @@ use whatsapp_rust::wacore::iq::abprops;
 use whatsapp_rust::wacore::store::DevicePropsOverride;
 use whatsapp_rust::wacore_binary::jid::JidExt;
 use whatsapp_rust::waproto::buffa::Message as _;
-use whatsapp_rust::{MediaRetryResult, MediaReuploadRequest};
+use whatsapp_rust::{AppStateResyncMode, MediaRetryResult, MediaReuploadRequest, WAPatchName};
 
 mod device_store;
 mod favorite_chats;
@@ -48,7 +48,8 @@ use crate::app::PAGE;
 use crate::archive::Archive;
 use crate::model::{
     ATTACHMENT_DOWNLOAD_LIMIT, Chat, ChatId, ChatKind, Contact, Content, Delivery, Gif, GifError,
-    LIVE_LOCATION_LIMIT, LinkPreview, Media, MentionRef, Message, Quoted, Reaction,
+    LIVE_LOCATION_LIMIT, Label, LinkPreview, Media, MentionRef, Message, QuickReply, Quoted,
+    Reaction,
 };
 use crate::paths::AppDirs;
 use crate::privacy::{self, PrivacyChoice, PrivacyKind};
@@ -71,6 +72,25 @@ const PROFILE_PICTURE_SIDE: u32 = 640;
 const STICKER_FETCH_LIMIT: usize = 40;
 const ATTACHMENT_LIMIT_ERROR: &str = "This attachment is larger than the 64 MiB download limit";
 const ATTACHMENT_TIMEOUT: Duration = Duration::from_secs(120);
+
+const BUSINESS_COLORS: [&str; 10] = [
+    "#3b82f6", "#22c55e", "#eab308", "#f97316", "#ef4444", "#ec4899", "#a855f7", "#14b8a6",
+    "#64748b", "#0ea5e9",
+];
+
+fn business_color(index: i32) -> String {
+    BUSINESS_COLORS
+        .get(index.max(0) as usize % BUSINESS_COLORS.len())
+        .unwrap_or(&BUSINESS_COLORS[0])
+        .to_string()
+}
+
+fn business_color_index(hex: &str) -> i32 {
+    BUSINESS_COLORS
+        .iter()
+        .position(|known| known.eq_ignore_ascii_case(hex))
+        .unwrap_or(0) as i32
+}
 
 async fn with_attachment_deadline<T>(
     duration: Duration,
@@ -1093,6 +1113,7 @@ impl Worker {
                 }
                 self.emit(Event::Chats(chats));
                 self.emit_labels();
+                self.emit_quick_replies();
                 self.emit(Event::Drafts(self.archive.drafts().unwrap_or_default()));
             }
             Err(error) => log::warn!("could not list chats: {error}"),
@@ -1107,6 +1128,13 @@ impl Worker {
         }
     }
 
+    fn emit_quick_replies(&self) {
+        match self.archive.quick_replies() {
+            Ok(replies) => self.emit(Event::QuickReplies(replies)),
+            Err(error) => log::warn!("could not list quick replies: {error}"),
+        }
+    }
+
     /// Creates a label. The app refuses a full set or a taken name first,
     /// in the user's language; the archive checks again and says nothing.
     fn create_label(&mut self, name: String, color_hex: String) {
@@ -1114,7 +1142,28 @@ impl Worker {
             .archive
             .create_label(&name, &color_hex, crate::util::now())
         {
-            Ok(Some(_)) => self.emit_labels(),
+            Ok(Some(label)) => {
+                self.emit_labels();
+                if let Some(client) = self.client.clone() {
+                    let events = self.events.clone();
+                    let waker = self.waker.clone();
+                    tokio::spawn(async move {
+                        if let Err(error) = client
+                            .labels()
+                            .create_label(
+                                &label.id,
+                                &label.name,
+                                business_color_index(&label.color_hex),
+                            )
+                            .await
+                        {
+                            let _ =
+                                events.send(Event::Error(format!("Could not sync label: {error}")));
+                            waker.wake();
+                        }
+                    });
+                }
+            }
             Ok(None) => log::info!("label not created: full, empty, or taken"),
             Err(error) => log::warn!("could not create label: {error}"),
         }
@@ -2159,6 +2208,27 @@ impl Worker {
                 let _ = self.archive.retry_poll_votes();
                 self.pump_poll_votes();
                 if let Some(client) = self.client.clone() {
+                    if self
+                        .archive
+                        .meta("business_app_state_v1")
+                        .ok()
+                        .flatten()
+                        .as_deref()
+                        != Some("done")
+                    {
+                        let commands = self.commands.clone();
+                        let recovery = client.clone();
+                        tokio::spawn(async move {
+                            let success = recovery
+                                .resync_app_state(
+                                    [WAPatchName::Regular],
+                                    AppStateResyncMode::Snapshot,
+                                )
+                                .await
+                                .is_ok();
+                            let _ = commands.send(Command::BusinessStateRecovered(success));
+                        });
+                    }
                     let me = self.me_pn.clone().and_then(|pn| Self::jid_of(&pn));
                     let commands = self.commands.clone();
                     self.online_sent = None;
@@ -2343,6 +2413,62 @@ impl Worker {
             E::RemoveRecentStickerUpdate(update) => self.recent_sticker_removed(update),
             E::FavoriteStickerUpdate(update) => self.favorite_sticker_update(update),
             E::FavoritesUpdate(update) => self.favorite_chats_update(update),
+            E::LabelEditUpdate(update) => {
+                if update.action.deleted.unwrap_or(false) {
+                    let _ = self.archive.delete_label(&update.label_id);
+                } else if let Some(name) = update
+                    .action
+                    .name
+                    .as_deref()
+                    .filter(|name| !name.is_empty())
+                {
+                    let label = Label {
+                        id: update.label_id.clone(),
+                        name: name.to_owned(),
+                        color_hex: business_color(update.action.color.unwrap_or(0)),
+                        created_at: update.timestamp.timestamp(),
+                    };
+                    if let Err(error) = self.archive.upsert_label(&label) {
+                        log::warn!("could not cache a Business label: {error}");
+                    }
+                }
+                self.emit_labels();
+                self.emit_chats();
+            }
+            E::LabelAssociationUpdate(update) => {
+                let chat = self.canonical(&update.chat_jid);
+                self.ensure_chat(&chat, None);
+                if let Err(error) = self.archive.set_chat_label(
+                    &chat,
+                    &update.label_id,
+                    update.action.labeled.unwrap_or(false),
+                ) {
+                    log::warn!("could not cache a Business label association: {error}");
+                }
+                self.emit_chat(&chat);
+            }
+            E::QuickReplyUpdate(update) => {
+                if update.action.deleted.unwrap_or(false) {
+                    let _ = self.archive.delete_quick_reply(&update.id);
+                } else if let (Some(shortcut), Some(message)) = (
+                    update.action.shortcut.clone(),
+                    update.action.message.clone(),
+                ) && !shortcut.is_empty()
+                    && !message.is_empty()
+                {
+                    let reply = QuickReply {
+                        id: update.id.clone(),
+                        shortcut,
+                        message,
+                        keywords: update.action.keywords.clone(),
+                        count: update.action.count.unwrap_or(0),
+                    };
+                    if let Err(error) = self.archive.upsert_quick_reply(&reply) {
+                        log::warn!("could not cache a quick reply: {error}");
+                    }
+                }
+                self.emit_quick_replies();
+            }
             E::LockChatUpdate(update) => {
                 let chat = self.canonical(&update.jid);
                 self.ensure_chat(&chat, None);
@@ -2553,6 +2679,7 @@ impl Worker {
         let _ = std::fs::remove_dir_all(self.dirs.media_cache_dir());
         self.emit(Event::Chats(Vec::new()));
         self.emit_labels();
+        self.emit_quick_replies();
         self.emit(Event::Drafts(Vec::new()));
         self.privacy_ready = false;
         self.privacy_confirmed = false;
@@ -5133,20 +5260,119 @@ impl Worker {
                 name,
                 color_hex,
             } => match self.archive.update_label(&id, &name, &color_hex) {
-                Ok(true) => self.emit_labels(),
+                Ok(true) => {
+                    self.emit_labels();
+                    if let Some(client) = self.client.clone() {
+                        tokio::spawn(async move {
+                            let _ = client
+                                .labels()
+                                .create_label(&id, &name, business_color_index(&color_hex))
+                                .await;
+                        });
+                    }
+                }
                 Ok(false) => log::info!("label not updated: gone, empty, or taken"),
                 Err(error) => log::warn!("could not update label: {error}"),
             },
-            Command::DeleteLabel(id) => match self.archive.delete_label(&id) {
-                Ok(true) => self.emit_labels(),
-                Ok(false) => {}
-                Err(error) => log::warn!("could not delete label: {error}"),
-            },
+            Command::DeleteLabel(id) => {
+                match self.archive.delete_label(&id) {
+                    Ok(true) => self.emit_labels(),
+                    Ok(false) => {}
+                    Err(error) => log::warn!("could not delete label: {error}"),
+                }
+                if let Some(client) = self.client.clone() {
+                    tokio::spawn(async move {
+                        let _ = client.labels().delete_label(&id).await;
+                    });
+                }
+            }
             Command::SetChatLabels { chat, labels } => {
+                let previous = self.archive.chat_labels(&chat).unwrap_or_default();
                 if let Err(error) = self.archive.set_chat_labels(&chat, &labels) {
                     log::warn!("could not assign labels: {error}");
                 }
                 self.emit_chat(&chat);
+                if let Some(client) = self.client.clone()
+                    && let Some(jid) = Self::jid_of(&chat)
+                {
+                    tokio::spawn(async move {
+                        for label in previous.iter().filter(|label| !labels.contains(label)) {
+                            let _ = client.labels().remove_chat_label(label, &jid).await;
+                        }
+                        for label in labels.iter().filter(|label| !previous.contains(label)) {
+                            let _ = client.labels().add_chat_label(label, &jid).await;
+                        }
+                    });
+                }
+            }
+            Command::SaveQuickReply {
+                id,
+                shortcut,
+                message,
+                keywords,
+            } => {
+                let id = id.unwrap_or_else(|| {
+                    std::time::SystemTime::now()
+                        .duration_since(std::time::UNIX_EPOCH)
+                        .unwrap_or_default()
+                        .as_millis()
+                        .to_string()
+                });
+                let count = self
+                    .archive
+                    .quick_replies()
+                    .unwrap_or_default()
+                    .into_iter()
+                    .find(|reply| reply.id == id)
+                    .map_or(0, |reply| reply.count);
+                let reply = QuickReply {
+                    id: id.clone(),
+                    shortcut: shortcut.trim().trim_start_matches('/').to_owned(),
+                    message: message.trim().to_owned(),
+                    keywords,
+                    count,
+                };
+                if reply.shortcut.is_empty() || reply.message.is_empty() {
+                    self.emit(Event::Error(
+                        "A quick reply needs a shortcut and message".into(),
+                    ));
+                    return;
+                }
+                if let Err(error) = self.archive.upsert_quick_reply(&reply) {
+                    log::warn!("could not cache a quick reply: {error}");
+                    return;
+                }
+                self.emit_quick_replies();
+                if let Some(client) = self.client.clone() {
+                    tokio::spawn(async move {
+                        let _ = client
+                            .quick_replies()
+                            .set_quick_reply(
+                                &reply.id,
+                                &reply.shortcut,
+                                &reply.message,
+                                reply.keywords,
+                                reply.count,
+                            )
+                            .await;
+                    });
+                }
+            }
+            Command::DeleteQuickReply(id) => {
+                let _ = self.archive.delete_quick_reply(&id);
+                self.emit_quick_replies();
+                if let Some(client) = self.client.clone() {
+                    tokio::spawn(async move {
+                        let _ = client.quick_replies().delete_quick_reply(&id).await;
+                    });
+                }
+            }
+            Command::BusinessStateRecovered(success) => {
+                if success {
+                    let _ = self.archive.set_meta("business_app_state_v1", "done");
+                } else {
+                    log::warn!("could not recover WhatsApp Business labels and quick replies");
+                }
             }
             Command::SetLocked(chat, locked) => {
                 let _ = self.archive.set_locked(&chat, locked);
@@ -9518,7 +9744,11 @@ mod tests {
         unconfirmed(&mut worker);
         worker.archive.ensure_chat(PEER, "Fixture").unwrap();
         worker.emit_chats();
-        assert!(events.try_recv().is_err());
+        assert!(
+            events
+                .try_iter()
+                .all(|event| !matches!(event, Event::Chats(_)))
+        );
         worker.archive.set_locked_at(PEER, true, 100).unwrap();
         worker.preferences_recovered(0, true, true);
         assert!(worker.privacy_ready);

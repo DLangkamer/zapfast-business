@@ -1,8 +1,6 @@
 //! Label chips, the label menu, and the label manager.
 //!
-//! Labels are local to this computer: a name, a colour, and the chats that
-//! wear them. They are not WhatsApp Business labels or WhatsApp lists, and
-//! nothing here reaches the phone or the protocol.
+//! WhatsApp Business labels cached locally for offline display.
 
 use std::borrow::Cow;
 
@@ -223,7 +221,7 @@ pub fn manager(app: &mut App, ui: &mut egui::Ui, palette: &Palette) {
         ui,
         gettext(
             locale,
-            "Labels stay on this computer. They do not reach your phone or anyone you chat with.",
+            "Labels sync with WhatsApp Business on your linked devices.",
         ),
         theme::regular(12.5),
         palette.dim,

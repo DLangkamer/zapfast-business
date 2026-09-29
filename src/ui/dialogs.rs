@@ -50,7 +50,7 @@ pub fn show(app: &mut App, ctx: &egui::Context) {
                 | Dialog::MessageInfo { .. } => {
                     420.0_f32.min((ui.ctx().content_rect().width() - 64.0).max(180.0))
                 }
-                Dialog::Labels => 460.0,
+                Dialog::Labels | Dialog::QuickReplies => 460.0,
             });
             ui.spacing_mut().item_spacing.y = 8.0;
             match dialog {
@@ -64,6 +64,7 @@ pub fn show(app: &mut App, ctx: &egui::Context) {
                     button,
                 } => interactive_list(app, ui, &chat, &message, button),
                 Dialog::Labels => super::labels::manager(app, ui, &palette),
+                Dialog::QuickReplies => super::quick_replies::manager(app, ui, &palette),
                 Dialog::Shortcuts => shortcuts(app, ui),
                 Dialog::About => about(app, ui),
                 Dialog::ConfirmUnlink => confirm_unlink(app, ui),

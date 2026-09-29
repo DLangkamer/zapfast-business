@@ -1,9 +1,4 @@
-//! Local chat labels: a name, a colour, and the chats that wear them.
-//!
-//! Labels never leave this computer. They are not WhatsApp Business labels or
-//! WhatsApp lists: nothing here syncs to the phone and nothing here talks to
-//! the protocol. The tables say `local_` so that a synced kind can live beside
-//! them one day without a clash.
+//! Offline cache of WhatsApp Business labels and chat associations.
 
 use rusqlite::params;
 
@@ -83,6 +78,38 @@ impl Archive {
             params![label.id, label.name, label.color_hex, label.created_at],
         )?;
         Ok(Some(label))
+    }
+
+    /// Stores a label received from WhatsApp Business, preserving its wire id.
+    pub fn upsert_label(&self, label: &Label) -> Result<()> {
+        self.connection.execute(
+            "INSERT INTO local_labels (id, name, color, created_at)
+             VALUES (?1, ?2, ?3, ?4)
+             ON CONFLICT(id) DO UPDATE SET name=excluded.name, color=excluded.color",
+            params![
+                label.id,
+                label.name,
+                clean_color(&label.color_hex),
+                label.created_at
+            ],
+        )?;
+        Ok(())
+    }
+
+    /// Applies one association received from WhatsApp Business.
+    pub fn set_chat_label(&self, chat: &str, label: &str, worn: bool) -> Result<()> {
+        if worn {
+            self.connection.execute(
+                "INSERT OR IGNORE INTO local_chat_labels (chat, label) VALUES (?1, ?2)",
+                params![chat, label],
+            )?;
+        } else {
+            self.connection.execute(
+                "DELETE FROM local_chat_labels WHERE chat = ?1 AND label = ?2",
+                params![chat, label],
+            )?;
+        }
+        Ok(())
     }
 
     /// Renames and recolours a label. Returns false when the name is taken.

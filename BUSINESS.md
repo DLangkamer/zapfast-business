@@ -1,9 +1,15 @@
 # ZapFast Business for Windows
 
 Independent fork of [Carmine Paolino's ZapFast](https://github.com/crmne/zapfast).
-Base: upstream 0.16.5, commit `3f958708b5e6b2381a768fad332f97376fa064e5`.
+Base: upstream 0.17.0, commit `76d0789`.
 Branch: `business/windows-isolation`. Keep `main` as an upstream reference.
-No protocol changes or extra WhatsApp Business features are included.
+
+This variant also exposes WhatsApp Business labels and quick replies already
+supported by the pinned protocol library. They synchronize through WhatsApp's
+regular app-state collection. The first 0.17 Business start requests one full
+snapshot so labels and quick replies created before the upgrade are populated.
+The local database is only a Business-profile cache and never reads another
+ZapFast profile.
 
 ## Isolation audit
 
@@ -57,7 +63,7 @@ cargo test --locked --all-targets --all-features
 $env:RUSTDOCFLAGS = '-D warnings'
 cargo doc --locked --all-features --no-deps
 cargo build --locked --release
-iscc /DVersion=0.16.5 /DNumericVersion=0.16.5 /DArch=x86_64 /DBinary="$PWD\target\release\zapfast-business.exe" /DOutputDir="$PWD\dist" packaging\windows\zapfast.iss
+iscc /DVersion=0.17.0 /DNumericVersion=0.17.0 /DArch=x86_64 /DBinary="$PWD\target\release\zapfast-business.exe" /DOutputDir="$PWD\dist" packaging\windows\zapfast.iss
 ```
 
 Do not run the original multi-platform release workflow to publish this fork.
@@ -75,6 +81,12 @@ Business > Linked devices > Link a device** on your phone. Keep the personal
 ZapFast running as usual. Linking, history synchronization and notification
 delivery for the Business account require your phone and are not verified by
 offline tests.
+
+Open **Quick replies** from the `+` menu beside the composer. Typing `/` in the
+composer searches the synchronized shortcuts; Enter or Tab inserts the selected
+reply for review before sending. Labels are managed from the existing label
+controls and can be assigned to direct chats or groups. Creating, editing or
+deleting either feature synchronizes the change with WhatsApp Business.
 
 Updates are manual: fetch upstream, merge or rebase changes onto this branch,
 review the isolation table and tests, rebuild, then run the Business installer.
