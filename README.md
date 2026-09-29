@@ -1,16 +1,40 @@
-# ZapFast
+# ZapFast Business
 
-> **ZapFast Business (independent Windows fork).** This branch builds
-> `zapfast-business.exe` for a second account. It never migrates ZapFast,
-> FastsApp, or FastWhatsApp data. Sessions, archives, settings, cache, logs,
-> window state, Windows credentials, notifications, autostart and installer
-> identity are separate. Self-updates and upstream update-helper commands are
-> disabled. See [BUSINESS.md](BUSINESS.md) for building, maintenance and removal.
-> The upstream documentation below describes the original application;
-> its installation, migration and updating instructions do not apply to this fork.
-> Business is a local installation label, not an official Meta product or a
-> promise of additional commercial features. Original licenses and credits remain.
+[![Release](https://img.shields.io/github/v/release/DLangkamer/zapfast-business?label=vers%C3%A3o)](https://github.com/DLangkamer/zapfast-business/releases/latest)
+[![Windows](https://img.shields.io/badge/Windows-10%2F11-0078D4?logo=windows)](https://github.com/DLangkamer/zapfast-business/releases/latest)
+[![License: MIT](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
 
+**Um segundo ZapFast, isolado, para usar com outra conta — incluindo WhatsApp Business.**
+
+O ZapFast Business é um fork independente do [ZapFast original](https://github.com/crmne/zapfast), criado para funcionar ao lado dele no Windows. Ele mantém executável, instalação, sessão, histórico, configurações, cache, logs, credenciais, atalhos, inicialização automática e controle de instância próprios.
+
+## Baixar para Windows
+
+Baixe o instalador na página de [releases do ZapFast Business](https://github.com/DLangkamer/zapfast-business/releases/latest). Ele instala em:
+
+```text
+%LOCALAPPDATA%\Programs\ZapFast Business\
+```
+
+A instalação não substitui nem reutiliza dados do ZapFast, FastsApp ou FastWhatsApp. O desinstalador remove somente o programa Business. Desde a versão 0.17.1, o aplicativo verifica exclusivamente as releases assinadas deste repositório.
+
+### Recursos desta edição
+
+- Funciona simultaneamente com o ZapFast pessoal.
+- Sincroniza etiquetas do WhatsApp Business, inclusive em grupos.
+- Sincroniza e gerencia respostas rápidas; digite `/` numa conversa para localizar uma.
+- Mantém dados e credenciais totalmente separados no Windows.
+- Recebe atualizações assinadas pelo canal próprio do ZapFast Business.
+
+> **Origem e créditos:** este projeto preserva a licença MIT, os créditos e os avisos de terceiros do ZapFast. “Business” identifica a segunda instalação e não significa que esta seja uma versão oficial da Meta ou do projeto original. WhatsApp é marca da Meta Platforms, Inc. Este fork não é afiliado nem endossado pela Meta ou pelos mantenedores do ZapFast.
+
+Para detalhes técnicos de isolamento, compilação e manutenção, consulte [BUSINESS.md](BUSINESS.md).
+
+---
+
+## Documentação do projeto original
+
+A documentação abaixo acompanha o upstream para facilitar futuras atualizações. Links de download e instruções de instalação nela podem se referir ao ZapFast original.
 **WhatsApp, native and fast.** ZapFast is a WhatsApp client written in Rust
 with [egui](https://github.com/emilk/egui). It uses
 [whatsapp-rust](https://github.com/oxidezap/whatsapp-rust) for the WhatsApp Web

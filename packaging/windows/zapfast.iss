@@ -40,7 +40,7 @@ AppVerName={#AppName} {#Version}
 AppPublisher=DLangkamer (fork of Carmine Paolino's ZapFast)
 AppPublisherURL=https://zapfast.rocks
 AppSupportURL=https://github.com/DLangkamer/zapfast-business
-AppUpdatesURL=https://github.com/DLangkamer/zapfast-business
+AppUpdatesURL=https://github.com/DLangkamer/zapfast-business/releases
 DefaultDirName={localappdata}\Programs\{#AppName}
 DefaultGroupName={#AppName}
 DisableProgramGroupPage=yes
@@ -73,6 +73,7 @@ Source: "..\..\THIRD-PARTY-NOTICES.md"; DestDir: "{app}"; Flags: ignoreversion
 Source: "..\..\assets\fonts\Inter-LICENSE.txt"; DestDir: "{app}\licenses"; Flags: ignoreversion
 Source: "..\..\assets\fonts\NotoColorEmoji-LICENSE.txt"; DestDir: "{app}\licenses"; Flags: ignoreversion
 Source: "..\..\assets\icons\LICENSE.txt"; DestDir: "{app}\licenses"; DestName: "Lucide-LICENSE.txt"; Flags: ignoreversion
+Source: "zapfast-business-installer.txt"; DestDir: "{app}"; Flags: ignoreversion
 
 [Icons]
 Name: "{autoprograms}\{#AppName}"; Filename: "{app}\{#AppExeName}"; AppUserModelID: "io.github.DLangkamer.ZapFastBusiness"

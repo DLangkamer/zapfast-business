@@ -125,8 +125,9 @@ fn default_log_filter(verbose: bool) -> &'static str {
 }
 
 fn main() -> eframe::Result<()> {
-    // No updater helper flags are accepted by this independent build.
-    let cli = Cli::parse();
+    // Handle the signed Business updater before parsing arguments or touching state.
+    let launch = fastframe_update::intercept(&zapfast::updates::CONFIG);
+    let cli = Cli::parse_from(&launch.arguments);
     let discovered = paths::AppDirs::discover();
     if matches!(cli.command, Some(Control::ReloadThemes)) {
         if let Err(error) = single_instance::send(&discovered.runtime, "reload-themes") {
@@ -211,6 +212,9 @@ fn main() -> eframe::Result<()> {
     if cli.verbose {
         app.update_arguments.push("--verbose".into());
     }
+    if let Some(error) = launch.error {
+        app.toast_error(error);
+    }
     if let Some(guard) = &instance {
         app.set_remote_control(guard);
     }
@@ -236,11 +240,13 @@ fn main() -> eframe::Result<()> {
     // The link, archive, and tray outlive windows. The shell recreates a
     // window when the tray, a notification, or another launch requests one;
     // without a tray a hidden start shows the window (App::start_hidden).
-    let start_hidden = cli.start_hidden && !demo;
+    let mut update_receipt = launch.receipt;
+    let start_hidden = cli.start_hidden && !demo && update_receipt.is_none();
     fastframe_shell::Shell::new(app, &waker)
         .start_hidden(start_hidden)
         .idle(fastframe_tray::idle)
         .run(|lease| {
+            let receipt = update_receipt.take();
             #[cfg(feature = "demo")]
             let shot = shot.clone();
             #[cfg(feature = "demo")]
@@ -270,6 +276,7 @@ fn main() -> eframe::Result<()> {
                     Ok(Box::new(Shell {
                         app,
                         window_recovery_checked: false,
+                        update_receipt: receipt,
                         #[cfg(target_os = "windows")]
                         taskbar: Default::default(),
                         #[cfg(feature = "demo")]
@@ -350,6 +357,7 @@ fn native_options(demo: bool, persistence: std::path::PathBuf) -> eframe::Native
 struct Shell {
     /// Whether this window's first frame checked that a monitor shows it.
     window_recovery_checked: bool,
+    update_receipt: Option<fastframe_update::Receipt>,
     app: fastframe_shell::Held<app::App>,
     /// This window's unread overlay on its taskbar button.
     #[cfg(target_os = "windows")]
@@ -474,7 +482,17 @@ impl eframe::App for Shell {
         let app = &mut *self.app;
         app.frame_ui(ui);
         let startup = app.backend.take_startup();
-        if let Some(startup) = startup {
+        if let Some(receipt) = self.update_receipt.take() {
+            std::thread::spawn(move || {
+                if let Err(error) = receipt.acknowledge() {
+                    log::warn!("could not acknowledge the update: {error:#}");
+                    return;
+                }
+                if let Some(startup) = startup {
+                    let _ = startup.send(());
+                }
+            });
+        } else if let Some(startup) = startup {
             let _ = startup.send(());
         }
         #[cfg(feature = "demo")]

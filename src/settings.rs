@@ -444,7 +444,7 @@ impl Default for Settings {
             group_sounds: true,
             download_folder: None,
             proxy: String::new(),
-            check_for_updates: false,
+            check_for_updates: true,
             download_updates_automatically: false,
             save_contacts_to_phone: true,
             voice_speed: 1.0,
@@ -650,7 +650,7 @@ mod tests {
             serde_json::from_str(r#"{"theme":"light","future_field":1}"#).expect("parses");
         assert_eq!(parsed.theme, ThemeChoice::Light);
         assert!(parsed.enter_sends);
-        assert!(!parsed.check_for_updates);
+        assert!(parsed.check_for_updates);
         assert!(!parsed.download_updates_automatically);
         assert!(parsed.show_wallpaper);
         assert_eq!(parsed.wallpaper_color, WallpaperColor::Theme);

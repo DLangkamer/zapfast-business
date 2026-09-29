@@ -534,18 +534,18 @@ fn sections(app: &App) -> Vec<Section> {
             translated(locale, "Check for updates"),
             translated(
                 locale,
-                "Asks GitHub once a day, sending only the ZapFast version.",
+                "Asks the ZapFast Business GitHub releases once a day, sending only the app version.",
             ),
             |settings| &mut settings.check_for_updates,
         );
         system.toggle(
-        translated(locale, "Download updates automatically"),
-        translated(
-            locale,
-            "You still choose when to restart. Package managers and Flatpak update ZapFast themselves.",
-        ),
-        |settings| &mut settings.download_updates_automatically,
-    );
+            translated(locale, "Download updates automatically"),
+            translated(
+                locale,
+                "You still choose when to restart. Downloads come only from signed ZapFast Business releases.",
+            ),
+            |settings| &mut settings.download_updates_automatically,
+        );
     }
     let environment = app
         .settings

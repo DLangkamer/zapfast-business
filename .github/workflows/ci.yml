@@ -2,7 +2,7 @@ name: CI
 
 on:
   push:
-    branches: [main]
+    branches: [business/windows-isolation]
   pull_request:
   merge_group:
   workflow_dispatch:

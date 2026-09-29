@@ -6709,21 +6709,20 @@ mod tests {
     }
 
     #[test]
-    fn business_updates_stay_disabled_even_with_opt_in_and_a_prepared_package() {
+    fn business_updates_require_opt_in_and_explicit_restart() {
         use crate::updates::{DownloadState, Installation, Kind, Prepared};
         let mut app = app();
         let ctx = egui::Context::default();
-        app.settings.check_for_updates = true;
         app.update = Some(crate::updates::Release {
             version: "99.0.0".into(),
-            url: "https://github.com/crmne/zapfast/releases/latest".into(),
+            url: "https://github.com/DLangkamer/zapfast-business/releases/latest".into(),
         });
         app.update_support = Some(Err("Use your package manager".into()));
         app.settings.download_updates_automatically = true;
         app.maybe_download_update();
         assert!(matches!(app.update_download, DownloadState::Idle));
         let installation = Installation {
-            executable: PathBuf::from("/fixture/zapfast"),
+            executable: PathBuf::from("/fixture/zapfast-business"),
             kind: Kind::Portable,
         };
         app.update_support = Some(Ok(installation.clone()));
@@ -6732,20 +6731,19 @@ mod tests {
         assert!(matches!(app.update_download, DownloadState::Idle));
         app.settings.download_updates_automatically = true;
         app.maybe_download_update();
-        assert!(matches!(app.update_download, DownloadState::Idle));
+        assert!(matches!(
+            app.update_download,
+            DownloadState::Downloading { .. }
+        ));
         app.update_download =
             DownloadState::Ready(Box::new(Prepared::sample(installation, "99.0.0")));
         app.maybe_download_update();
         assert!(matches!(app.update_download, DownloadState::Ready(_)));
         assert!(!app.quit_requested);
         app.apply(Action::InstallUpdate, &ctx);
-        assert!(matches!(app.update_download, DownloadState::Ready(_)));
-        assert!(
-            !app.quit_requested,
-            "Business never starts an update helper"
-        );
+        assert!(matches!(app.update_download, DownloadState::Installing));
+        assert!(!app.quit_requested, "wait for the helper before closing");
     }
-
     #[test]
     fn a_closed_window_does_not_read_new_messages_in_the_last_chat() {
         let mut app = app();

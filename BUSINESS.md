@@ -27,7 +27,7 @@ ZapFast profile.
 | Tray and linked-device name | `ZapFast Business` |
 | Login startup | Separate current-user Run value `ZapFast Business`, pointing to its own executable |
 | GIPHY build key | Only `ZAPFAST_BUSINESS_GIPHY_KEY`; no original build-variable fallback |
-| Updates | Disabled at settings/UI, scheduler and updater factory; CLI rejects all upstream helper flags before touching state |
+| Updates | Signed releases from `DLangkamer/zapfast-business` only; distinct slug, marker files and embedded Ed25519 public key |
 | Uninstall | Own executable/shortcuts/registration only; no legacy shortcut deletion, no shared Run-key deletion |
 
 The installer refuses a destination containing `zapfast.exe`, `fastsapp.exe` or
@@ -63,7 +63,7 @@ cargo test --locked --all-targets --all-features
 $env:RUSTDOCFLAGS = '-D warnings'
 cargo doc --locked --all-features --no-deps
 cargo build --locked --release
-iscc /DVersion=0.17.0 /DNumericVersion=0.17.0 /DArch=x86_64 /DBinary="$PWD\target\release\zapfast-business.exe" /DOutputDir="$PWD\dist" packaging\windows\zapfast.iss
+iscc /DVersion=0.17.1 /DNumericVersion=0.17.1 /DArch=x86_64 /DBinary="$PWD\target\release\zapfast-business.exe" /DOutputDir="$PWD\dist" packaging\windows\zapfast.iss
 ```
 
 Do not run the original multi-platform release workflow to publish this fork.
@@ -72,7 +72,7 @@ Windows recipe above is adapted and supported by this branch.
 
 Tests use synthetic files and mock credentials. They check separate directory
 names, simultaneous instance guards, separate credential services, installer
-identity and rejection of update-helper flags. They do not read real chats.
+identity and Business-only update-helper handling. They do not read real chats.
 
 ## Open, update and remove
 
@@ -88,11 +88,12 @@ reply for review before sending. Labels are managed from the existing label
 controls and can be assigned to direct chats or groups. Creating, editing or
 deleting either feature synchronizes the change with WhatsApp Business.
 
-Updates are manual: fetch upstream, merge or rebase changes onto this branch,
-review the isolation table and tests, rebuild, then run the Business installer.
-Preserve the Business AppId, paths and credential service across upgrades.
-Never install an upstream binary over the Business executable. Do not enable
-self-update until a separate signing key and release channel exist.
+Stable releases are published at `DLangkamer/zapfast-business`. Version 0.17.1
+is the trusted bootstrap: it embeds the Business public key and accepts only a
+manifest signed by the corresponding GitHub Actions secret. The updater's slug,
+asset names and marker files are `zapfast-business`; upstream packages and old
+ZapFast/FastsApp aliases are never accepted. Users may enable daily checks and
+automatic downloads in Settings and still choose when to restart.
 
 Uninstall **ZapFast Business** from Windows Settings > Apps, or run its
 `unins000.exe`. This leaves personal ZapFast untouched and retains Business
