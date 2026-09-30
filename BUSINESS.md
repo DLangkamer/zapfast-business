@@ -63,7 +63,7 @@ cargo test --locked --all-targets --all-features
 $env:RUSTDOCFLAGS = '-D warnings'
 cargo doc --locked --all-features --no-deps
 cargo build --locked --release
-iscc /DVersion=0.17.1 /DNumericVersion=0.17.1 /DArch=x86_64 /DBinary="$PWD\target\release\zapfast-business.exe" /DOutputDir="$PWD\dist" packaging\windows\zapfast.iss
+iscc /DVersion=0.17.2 /DNumericVersion=0.17.2 /DArch=x86_64 /DBinary="$PWD\target\release\zapfast-business.exe" /DOutputDir="$PWD\dist" packaging\windows\zapfast.iss
 ```
 
 Do not run the original multi-platform release workflow to publish this fork.
@@ -88,7 +88,7 @@ reply for review before sending. Labels are managed from the existing label
 controls and can be assigned to direct chats or groups. Creating, editing or
 deleting either feature synchronizes the change with WhatsApp Business.
 
-Stable releases are published at `DLangkamer/zapfast-business`. Version 0.17.1
+Stable releases are published at `DLangkamer/zapfast-business`. Version 0.17.2
 is the trusted bootstrap: it embeds the Business public key and accepts only a
 manifest signed by the corresponding GitHub Actions secret. The updater's slug,
 asset names and marker files are `zapfast-business`; upstream packages and old

@@ -317,6 +317,9 @@ fn filter_chips(app: &mut App, ui: &mut egui::Ui) {
     egui::ScrollArea::horizontal()
         .id_salt("chat-filters")
         .animated(false)
+        // Hide the thin bar that visually crossed the Business label row on Windows.
+        // Mouse wheel, touchpad and drag scrolling remain available.
+        .scroll_bar_visibility(egui::scroll_area::ScrollBarVisibility::AlwaysHidden)
         .auto_shrink([false, true])
         .show(ui, |ui| {
             ui.horizontal(|ui| {
@@ -933,6 +936,8 @@ fn row(app: &mut App, ui: &mut egui::Ui, chat: &Chat) -> egui::Response {
             badge_right -= 20.0;
         }
         let mut x = left;
+        // Keep the Business labels visible on the chat that wears them.
+        x = labels::paint_chat_labels(app, ui, chat, &palette, x, badge_right, line_y);
         let typing = app.typing_in(&chat.id);
         let preview_color = if unread && !muted {
             palette.secondary

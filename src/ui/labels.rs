@@ -100,6 +100,7 @@ pub fn chip_row(app: &mut App, ui: &mut egui::Ui, palette: &Palette) {
     let row = egui::ScrollArea::horizontal()
         .id_salt("label-chips")
         .animated(false)
+        .scroll_bar_visibility(egui::scroll_area::ScrollBarVisibility::AlwaysHidden)
         .auto_shrink([false, true])
         .show(ui, |ui| {
             ui.horizontal(|ui| {
@@ -110,6 +111,77 @@ pub fn chip_row(app: &mut App, ui: &mut egui::Ui, palette: &Palette) {
         });
     ui.ctx()
         .data_mut(|data| data.insert_temp(chip_row_id(), row.inner_rect));
+}
+
+/// Paints the labels worn by one chat in its list row and returns the start
+/// of the message preview. Labels are capped so the preview remains useful.
+pub fn paint_chat_labels(
+    app: &App,
+    ui: &egui::Ui,
+    chat: &Chat,
+    palette: &Palette,
+    mut x: f32,
+    right: f32,
+    y: f32,
+) -> f32 {
+    let known: Vec<&Label> = chat
+        .labels
+        .iter()
+        .filter_map(|id| app.labels.iter().find(|label| label.id == *id))
+        .collect();
+    if known.is_empty() {
+        return x;
+    }
+    let available = (right - x).max(0.0);
+    let limit = x + (available * 0.62).min(190.0);
+    let mut shown = 0usize;
+    for label in known.iter().take(2) {
+        let galley =
+            ui.painter()
+                .layout_no_wrap(label.name.clone(), theme::medium(10.5), palette.secondary);
+        let width = (galley.size().x + 19.0).min(104.0);
+        if x + width > limit {
+            break;
+        }
+        let rect = Rect::from_min_size(pos2(x, y + 1.0), vec2(width, 17.0));
+        ui.painter()
+            .rect_filled(rect, CornerRadius::same(8), palette.surface_hover);
+        ui.painter().circle_filled(
+            pos2(rect.left() + 7.0, rect.center().y),
+            3.0,
+            color_of(palette, &label.color_hex),
+        );
+        ui.painter()
+            .with_clip_rect(rect.shrink2(vec2(2.0, 0.0)))
+            .galley(
+                pos2(rect.left() + 13.0, rect.top() + 2.0),
+                galley,
+                palette.secondary,
+            );
+        x = rect.right() + 4.0;
+        shown += 1;
+    }
+    let hidden = known.len().saturating_sub(shown);
+    if hidden > 0 {
+        let galley = ui.painter().layout_no_wrap(
+            format!("+{hidden}"),
+            theme::medium(10.5),
+            palette.secondary,
+        );
+        let width = galley.size().x + 10.0;
+        if x + width <= limit {
+            let rect = Rect::from_min_size(pos2(x, y + 1.0), vec2(width, 17.0));
+            ui.painter()
+                .rect_filled(rect, CornerRadius::same(8), palette.surface_hover);
+            ui.painter().galley(
+                pos2(rect.left() + 5.0, rect.top() + 2.0),
+                galley,
+                palette.secondary,
+            );
+            x = rect.right() + 4.0;
+        }
+    }
+    x
 }
 
 fn label_chips(app: &mut App, ui: &mut egui::Ui, palette: &Palette) {
@@ -556,6 +628,25 @@ mod tests {
                 modifiers: egui::Modifiers::NONE,
             },
         ]
+    }
+
+    #[test]
+    fn chat_row_labels_advance_the_message_preview() {
+        let directory = tempfile::tempdir().unwrap();
+        let (mut app, _events) =
+            App::headless(AppDirs::under(directory.path()), Settings::default());
+        app.labels = vec![label("label-1", "Project")];
+        let mut chat = Chat::new("15550000000@s.whatsapp.net".into(), "Person".into());
+        chat.labels.push("label-1".into());
+        let ctx = egui::Context::default();
+        app.attach(&ctx);
+        let mut end = 0.0;
+        let palette = app.palette;
+        let mut output = ctx.run_ui(egui::RawInput::default(), |ui| {
+            end = paint_chat_labels(&app, ui, &chat, &palette, 10.0, 300.0, 10.0);
+        });
+        output.textures_delta.clear();
+        assert!(end > 10.0, "a worn label takes space before the preview");
     }
 
     #[test]

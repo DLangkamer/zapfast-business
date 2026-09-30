@@ -5177,6 +5177,11 @@ fn rich_body(
     if visible || selection_alive {
         markup::paint_selectable(ui, &laid, &response, origin, palette.text, visible);
     }
+    // Signal that this exact text can be swept and copied; links below
+    // override the cursor at their own glyphs.
+    if response.hovered() {
+        ui.ctx().set_cursor_icon(egui::CursorIcon::Text);
+    }
     if !laid.links.is_empty()
         && let Some(pos) = response.hover_pos()
     {
