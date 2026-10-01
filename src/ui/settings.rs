@@ -1304,6 +1304,18 @@ fn about(app: &mut App, ui: &mut egui::Ui) {
     ui.add_space(12.0);
     ui.horizontal_wrapped(|ui| {
         ui.spacing_mut().item_spacing = vec2(8.0, 8.0);
+        if crate::updates::enabled()
+            && theme::soft_button(
+                ui,
+                &palette,
+                Some(Icon::Refresh),
+                &crate::i18n::gettext(app.locale, "Check for updates now"),
+                false,
+            )
+            .clicked()
+        {
+            app.actions.push(Action::CheckForUpdates);
+        }
         if let Some(update) = &app.update {
             let label = crate::i18n::gettext(app.locale, "Update to {version}")
                 .replace("{version}", &update.version);

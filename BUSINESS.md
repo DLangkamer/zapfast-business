@@ -63,7 +63,7 @@ cargo test --locked --all-targets --all-features
 $env:RUSTDOCFLAGS = '-D warnings'
 cargo doc --locked --all-features --no-deps
 cargo build --locked --release
-iscc /DVersion=0.17.3 /DNumericVersion=0.17.3 /DArch=x86_64 /DBinary="$PWD\target\release\zapfast-business.exe" /DOutputDir="$PWD\dist" packaging\windows\zapfast.iss
+iscc /DVersion=0.17.4 /DNumericVersion=0.17.4 /DArch=x86_64 /DBinary="$PWD\target\release\zapfast-business.exe" /DOutputDir="$PWD\dist" packaging\windows\zapfast.iss
 ```
 
 Do not run the original multi-platform release workflow to publish this fork.
@@ -105,6 +105,8 @@ manifest signed by the corresponding GitHub Actions secret. The updater's slug,
 asset names and marker files are `zapfast-business`; upstream packages and old
 ZapFast/FastsApp aliases are never accepted. Users may enable daily checks and
 automatic downloads in Settings and still choose when to restart.
+Use **Settings > Check for updates now** to force an immediate GitHub check;
+manual checks report both the up-to-date result and network errors.
 
 Uninstall **ZapFast Business** from Windows Settings > Apps, or run its
 `unins000.exe`. This leaves personal ZapFast untouched and retains Business

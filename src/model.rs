@@ -1548,6 +1548,8 @@ pub enum Action {
     ScrollTo(String),
     /// Updates chat-list search text.
     Search(String),
+    /// Immediately asks the Business GitHub release channel for an update.
+    CheckForUpdates,
     ShowUpdate,
     CloseUpdate,
     DownloadUpdate,

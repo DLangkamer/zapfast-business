@@ -704,8 +704,11 @@ pub enum Command {
         code: String,
         result: Result<(ChatId, bool), String>,
     },
-    /// Ask GitHub whether a newer release exists.
-    CheckForUpdates,
+    /// Ask GitHub whether a newer release exists. Manual checks report their
+    /// result; the daily background check stays quiet.
+    CheckForUpdates {
+        notify: bool,
+    },
     InspectUpdate,
     DownloadUpdate {
         release: crate::updates::Release,

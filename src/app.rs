@@ -3208,7 +3208,8 @@ impl App {
                 .is_none_or(|at| at.elapsed() >= crate::updates::CHECK_INTERVAL)
         {
             self.last_update_check = Some(now);
-            self.backend.send(Command::CheckForUpdates);
+            self.backend
+                .send(Command::CheckForUpdates { notify: false });
         }
         self.maybe_download_update();
         if self.settings_dirty && self.last_settings_save.elapsed() > Duration::from_secs(2) {
@@ -4580,6 +4581,10 @@ impl App {
                     self.chat_search_month = day;
                 }
                 self.request_chat_search();
+            }
+            Action::CheckForUpdates => {
+                self.last_update_check = Some(Instant::now());
+                self.backend.send(Command::CheckForUpdates { notify: true });
             }
             Action::ShowUpdate => {
                 self.show_update = self.update.is_some();

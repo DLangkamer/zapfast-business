@@ -5001,7 +5001,7 @@ impl Worker {
                     waker.wake();
                 });
             }
-            Command::CheckForUpdates => {
+            Command::CheckForUpdates { notify } => {
                 let events = self.events.clone();
                 let waker = self.waker.clone();
                 tokio::task::spawn_blocking(move || {
@@ -5013,7 +5013,18 @@ impl Worker {
                             });
                             waker.wake();
                         }
+                        Ok(None) if notify => {
+                            let _ =
+                                events.send(Event::Info("ZapFast Business is up to date".into()));
+                            waker.wake();
+                        }
                         Ok(None) => log::debug!("this is the newest release"),
+                        Err(error) if notify => {
+                            let _ = events.send(Event::Error(format!(
+                                "Could not check for updates: {error:#}"
+                            )));
+                            waker.wake();
+                        }
                         Err(error) => {
                             log::debug!("could not check for a newer release: {error:#}")
                         }
