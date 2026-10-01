@@ -1062,6 +1062,8 @@ pub enum Dialog {
         messages: Vec<String>,
     },
     CreatePoll(ChatId),
+    /// Schedules the current text composer for a private chat or group.
+    ScheduleMessage(ChatId),
     PollResults {
         chat: ChatId,
         message: String,
@@ -1242,6 +1244,12 @@ pub enum Action {
         text: String,
         /// Quoted message id.
         quoting: Option<String>,
+    },
+    ScheduleText {
+        chat: ChatId,
+        text: String,
+        quoting: Option<String>,
+        send_at: i64,
     },
     ReplyInteractive {
         chat: ChatId,

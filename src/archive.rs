@@ -18,6 +18,7 @@ pub use labels::{DEFAULT_COLOR, LABEL_LIMIT, NAME_LIMIT};
 mod polls;
 mod quick_replies;
 mod receipts;
+mod scheduled;
 mod stickers;
 pub use polls::PollVote;
 pub use stickers::FavoriteSticker;
@@ -349,6 +350,7 @@ impl Archive {
         connection.execute_batch(quick_replies::SCHEMA)?;
         connection.execute_batch(polls::SCHEMA)?;
         connection.execute_batch(drafts::SCHEMA)?;
+        connection.execute_batch(scheduled::SCHEMA)?;
         connection.execute_batch(stickers::SCHEMA)?;
         connection.execute_batch(favorites::SCHEMA)?;
         for (table, column, definition) in MIGRATIONS {

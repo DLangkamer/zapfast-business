@@ -63,7 +63,7 @@ cargo test --locked --all-targets --all-features
 $env:RUSTDOCFLAGS = '-D warnings'
 cargo doc --locked --all-features --no-deps
 cargo build --locked --release
-iscc /DVersion=0.17.2 /DNumericVersion=0.17.2 /DArch=x86_64 /DBinary="$PWD\target\release\zapfast-business.exe" /DOutputDir="$PWD\dist" packaging\windows\zapfast.iss
+iscc /DVersion=0.17.3 /DNumericVersion=0.17.3 /DArch=x86_64 /DBinary="$PWD\target\release\zapfast-business.exe" /DOutputDir="$PWD\dist" packaging\windows\zapfast.iss
 ```
 
 Do not run the original multi-platform release workflow to publish this fork.
@@ -87,6 +87,17 @@ composer searches the synchronized shortcuts; Enter or Tab inserts the selected
 reply for review before sending. Labels are managed from the existing label
 controls and can be assigned to direct chats or groups. Creating, editing or
 deleting either feature synchronizes the change with WhatsApp Business.
+
+In **Settings > Privacy**, turn off **Mark chats as read when opened** to
+inspect and reply in direct chats or groups without clearing their unread
+state. Recording and sending voice messages also preserve that state. Use the
+chat's existing **Mark as read** action when you want to clear it.
+
+Text messages can be scheduled from the `+` menu beside the composer. Scheduled
+text is stored in the encrypted Business archive and uses the ordinary send
+path when its time arrives. ZapFast Business must be running and connected at
+that time. This first scheduling version supports one destination at a time;
+management, retry controls and opt-in broadcast lists remain future work.
 
 Stable releases are published at `DLangkamer/zapfast-business`. Version 0.17.2
 is the trusted bootstrap: it embeds the Business public key and accepts only a

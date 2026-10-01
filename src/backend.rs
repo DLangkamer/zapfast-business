@@ -155,6 +155,14 @@ pub enum Command {
         quoting: Option<String>,
         mentions: Vec<String>,
     },
+    /// Stores a text message for background delivery at a Unix timestamp.
+    ScheduleText {
+        chat: ChatId,
+        text: String,
+        quoting: Option<String>,
+        mentions: Vec<String>,
+        send_at: i64,
+    },
     ReplyInteractive {
         chat: ChatId,
         message: String,

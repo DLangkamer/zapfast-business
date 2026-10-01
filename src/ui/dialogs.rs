@@ -44,7 +44,7 @@ pub fn show(app: &mut App, ctx: &egui::Context) {
                 Dialog::StickerPack => 420.0,
                 Dialog::StickerMaker => 400.0,
                 Dialog::Forward { .. } => 420.0,
-                Dialog::CreatePoll(_) => 420.0,
+                Dialog::CreatePoll(_) | Dialog::ScheduleMessage(_) => 420.0,
                 Dialog::PollResults { .. }
                 | Dialog::InteractiveList { .. }
                 | Dialog::MessageInfo { .. } => {
@@ -55,6 +55,7 @@ pub fn show(app: &mut App, ctx: &egui::Context) {
             ui.spacing_mut().item_spacing.y = 8.0;
             match dialog {
                 Dialog::CreatePoll(chat) => super::polls::create(app, ui, &chat),
+                Dialog::ScheduleMessage(chat) => schedule_message(app, ui, &chat),
                 Dialog::PollResults { chat, message } => {
                     super::polls::results(app, ui, &chat, &message)
                 }
@@ -95,6 +96,93 @@ pub fn show(app: &mut App, ctx: &egui::Context) {
     if response.should_close() {
         app.actions.push(Action::CloseDialog);
     }
+}
+
+fn schedule_message(app: &mut App, ui: &mut egui::Ui, chat: &str) {
+    use super::widgets;
+
+    let palette = app.palette;
+    ui.horizontal(|ui| {
+        widgets::rich_text(
+            ui,
+            &crate::i18n::gettext(app.locale, "Schedule message"),
+            theme::semibold(18.0),
+            palette.text,
+        );
+        ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
+            if theme::icon_button(ui, Icon::X, 16.0, palette.secondary, palette.text, "Close")
+                .clicked()
+            {
+                app.actions.push(Action::CloseDialog);
+            }
+        });
+    });
+    widgets::rich_text(
+        ui,
+        &crate::i18n::gettext(
+            app.locale,
+            "The message stays encrypted on this computer and is sent while ZapFast Business is running and connected.",
+        ),
+        theme::regular(13.0),
+        palette.secondary,
+    );
+    ui.add_space(8.0);
+    widgets::rich_text(ui, app.composer.trim(), theme::regular(14.0), palette.text);
+    ui.add_space(10.0);
+
+    let delay_id = egui::Id::new("schedule-delay-minutes");
+    let mut minutes = ui
+        .data_mut(|data| data.get_temp::<String>(delay_id))
+        .unwrap_or_else(|| "60".into());
+    widgets::setting_row(
+        ui,
+        &palette,
+        &crate::i18n::gettext(app.locale, "Send in"),
+        &crate::i18n::gettext(app.locale, "Minutes from now"),
+        |ui| {
+            ui.add(
+                egui::TextEdit::singleline(&mut minutes)
+                    .desired_width(90.0)
+                    .char_limit(7),
+            );
+        },
+    );
+    minutes.retain(|character| character.is_ascii_digit());
+    let delay = minutes.parse::<i64>().ok().filter(|value| *value > 0);
+    ui.data_mut(|data| data.insert_temp(delay_id, minutes));
+
+    ui.horizontal(|ui| {
+        for (label, value) in [("15 min", 15_i64), ("1 hour", 60), ("Tomorrow", 24 * 60)] {
+            if ui.button(crate::i18n::gettext(app.locale, label)).clicked() {
+                ui.data_mut(|data| data.insert_temp(delay_id, value.to_string()));
+            }
+        }
+    });
+    if let Some(delay) = delay {
+        let send_at = crate::util::now().saturating_add(delay.saturating_mul(60));
+        widgets::rich_text(
+            ui,
+            &crate::i18n::gettext(app.locale, "Scheduled for {time}")
+                .replace("{time}", &crate::util::moment_stamp(app.locale, send_at)),
+            theme::regular(12.5),
+            palette.secondary,
+        );
+    }
+    ui.add_space(12.0);
+    let ready = delay.is_some() && !app.composer.trim().is_empty() && app.editing.is_none();
+    ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
+        let label = crate::i18n::gettext(app.locale, "Schedule");
+        if theme::soft_button(ui, &palette, Some(Icon::Calendar), &label, ready).clicked() {
+            let send_at = crate::util::now() + delay.unwrap_or_default() * 60;
+            app.actions.push(Action::ScheduleText {
+                chat: chat.to_owned(),
+                text: app.composer.clone(),
+                quoting: app.reply_to.clone(),
+                send_at,
+            });
+            app.actions.push(Action::CloseDialog);
+        }
+    });
 }
 
 fn interactive_list(app: &mut App, ui: &mut egui::Ui, chat: &str, message: &str, button: usize) {

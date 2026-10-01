@@ -594,6 +594,7 @@ pub async fn run(
                 worker.retry_avatars();
                 worker.pump_group_info();
                 worker.pump_read_sync();
+                worker.pump_scheduled_messages();
                 worker.pump_favorite_chats();
                 worker.pump_poll_votes();
                 worker.pump_poll_history();
@@ -4136,6 +4137,7 @@ impl Worker {
     async fn handle_command(&mut self, command: Command) {
         let destination = match &command {
             Command::SendText { chat, .. }
+            | Command::ScheduleText { chat, .. }
             | Command::ReplyInteractive { chat, .. }
             | Command::SendVoice { chat, .. }
             | Command::SendFiles { chat, .. }
@@ -4203,6 +4205,26 @@ impl Worker {
                 quoting,
                 mentions,
             } => self.send_text(chat, text, quoting, mentions),
+            Command::ScheduleText {
+                chat,
+                text,
+                quoting,
+                mentions,
+                send_at,
+            } => {
+                match self.archive.schedule_text(
+                    &chat,
+                    &text,
+                    &mentions,
+                    quoting.as_deref(),
+                    send_at,
+                ) {
+                    Ok(_) => self.emit(Event::Info("Message scheduled".into())),
+                    Err(error) => {
+                        self.emit(Event::Error(format!("Could not schedule message: {error}")))
+                    }
+                }
+            }
             Command::ReplyInteractive {
                 chat,
                 message,
@@ -6119,6 +6141,32 @@ impl Worker {
         let _ = self.archive.queue_read_sync(&chat);
         self.pump_read_sync();
         self.send_read_receipts(chat, ids);
+    }
+
+    fn pump_scheduled_messages(&mut self) {
+        if !matches!(self.status, LinkStatus::Connected) {
+            return;
+        }
+        let due = match self.archive.scheduled_due(crate::util::now()) {
+            Ok(due) => due,
+            Err(error) => {
+                log::warn!("could not load scheduled messages: {error}");
+                return;
+            }
+        };
+        for message in due {
+            // Remove immediately before handing it to the ordinary send path:
+            // this prevents duplicate sends on the next five-second tick.
+            if self.archive.delete_scheduled(message.id).is_err() {
+                continue;
+            }
+            self.send_text(
+                message.chat,
+                message.text,
+                message.quoting,
+                message.mentions,
+            );
+        }
     }
 
     fn pump_read_sync(&mut self) {

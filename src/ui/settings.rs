@@ -430,6 +430,14 @@ fn sections(app: &App) -> Vec<Section> {
         translated(locale, "Let people see when you read their messages.")
     };
     privacy.toggle(
+        translated(locale, "Mark chats as read when opened"),
+        translated(
+            locale,
+            "Turn off to read, reply, and record audio while the chat stays unread. Use Mark as read when you are ready.",
+        ),
+        |settings| &mut settings.mark_read_on_open,
+    );
+    privacy.toggle(
         translated(locale, "Send read receipts"),
         receipts_note,
         |settings| &mut settings.send_read_receipts,

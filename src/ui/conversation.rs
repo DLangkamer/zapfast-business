@@ -1513,6 +1513,17 @@ fn composer_tools_menu(app: &mut App, chat: &Chat, plus: &egui::Response) {
                 if widgets::menu_item(ui, &app.palette, Some(Icon::Reply), &quick) {
                     app.actions.push(Action::ShowDialog(Dialog::QuickReplies));
                 }
+                let schedule = crate::i18n::gettext(app.locale, "Schedule message");
+                if widgets::menu_item_enabled(
+                    ui,
+                    &app.palette,
+                    Some(Icon::Calendar),
+                    &schedule,
+                    !app.composer.trim().is_empty() && app.editing.is_none(),
+                ) {
+                    app.actions
+                        .push(Action::ShowDialog(Dialog::ScheduleMessage(chat.id.clone())));
+                }
             });
     }
     if draw_open != app.composer_tools_open {

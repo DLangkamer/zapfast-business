@@ -2401,6 +2401,7 @@ impl App {
             && chat.unread > 0
             && self.window_focused
             && !self.window_hidden
+            && self.settings.mark_read_on_open
         {
             chat.unread = 0;
             self.mark_read(&chat.id);
@@ -2936,6 +2937,7 @@ impl App {
         if self
             .chat(&id)
             .is_some_and(|chat| chat.unread > 0 || chat.marked_unread)
+            && self.settings.mark_read_on_open
         {
             self.mark_read(&id);
         }
@@ -3039,6 +3041,27 @@ impl App {
         });
         self.scroll_to_bottom = true;
         self.at_bottom = true;
+    }
+
+    fn schedule_text(&mut self, chat: ChatId, text: String, quoting: Option<String>, send_at: i64) {
+        let text = text.trim().to_owned();
+        if text.is_empty() || send_at <= crate::util::now() {
+            return;
+        }
+        let (text, mentions) = self.encode_composer_mentions(&chat, text);
+        self.emoji_start = None;
+        self.mention_start = None;
+        self.stop_composing(&chat);
+        self.store_draft(&chat, "");
+        self.composer.clear();
+        self.reply_to = None;
+        self.backend.send(Command::ScheduleText {
+            chat,
+            text,
+            quoting,
+            mentions,
+            send_at,
+        });
     }
 
     /// Replaces selected display-name mentions with WhatsApp's `@user`
@@ -3480,6 +3503,14 @@ impl App {
             } => {
                 self.send_text(chat, text, quoting);
                 self.reply_to = None;
+            }
+            Action::ScheduleText {
+                chat,
+                text,
+                quoting,
+                send_at,
+            } => {
+                self.schedule_text(chat, text, quoting, send_at);
             }
             Action::RefreshPoll { chat, message } => {
                 if let Some(row) = self
@@ -5175,6 +5206,7 @@ impl App {
         // Mark messages received while hidden as read on window return.
         if regained_focus
             && self.page == Page::Chats
+            && self.settings.mark_read_on_open
             && let Some(open) = self.open_chat.clone()
             && self.chat(&open).is_some_and(|chat| chat.unread > 0)
         {
@@ -6228,6 +6260,31 @@ mod tests {
         let chat = app.chat(&id).expect("chat");
         assert!(!chat.marked_unread);
         assert!(!chat.looks_unread());
+    }
+
+    #[test]
+    fn opening_can_leave_a_chat_unread_until_the_reader_marks_it() {
+        let mut app = app();
+        let (backend, mut commands) = Backend::recording();
+        app.backend = backend;
+        app.settings.mark_read_on_open = false;
+        let id = "1@s.whatsapp.net".to_owned();
+        let mut chat = Chat::new(id.clone(), "Ada".to_owned());
+        chat.unread = 3;
+        app.chats.push(chat);
+
+        app.open_chat(id.clone());
+
+        assert_eq!(app.chat(&id).unwrap().unread, 3);
+        while let Ok(command) = commands.try_recv() {
+            assert!(!matches!(command, Command::MarkRead { .. }));
+        }
+        app.mark_read(&id);
+        assert_eq!(app.chat(&id).unwrap().unread, 0);
+        assert!(matches!(
+            commands.try_recv().unwrap(),
+            Command::MarkRead { chat, .. } if chat == id
+        ));
     }
 
     #[test]

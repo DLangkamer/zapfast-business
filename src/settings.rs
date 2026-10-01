@@ -342,6 +342,10 @@ pub struct Settings {
     pub enter_sends: bool,
     /// Send read receipts, subject to the account privacy setting.
     pub send_read_receipts: bool,
+    /// Clear a chat's unread state when its conversation is opened or focused.
+    /// When off, reading and replying stay local until the reader explicitly
+    /// chooses "Mark as read".
+    pub mark_read_on_open: bool,
     /// Send typing state while composing.
     pub send_typing: bool,
     /// Download attachments when they enter view instead of on click.
@@ -426,6 +430,7 @@ impl Default for Settings {
             search_pane_width: 380.0,
             enter_sends: true,
             send_read_receipts: true,
+            mark_read_on_open: true,
             send_typing: true,
             auto_download: true,
             show_wallpaper: true,
