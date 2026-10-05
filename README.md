@@ -28,7 +28,7 @@ A instalação não substitui nem reutiliza dados do ZapFast, FastsApp ou FastWh
 
 > **Origem e créditos:** este projeto preserva a licença MIT, os créditos e os avisos de terceiros do ZapFast. “Business” identifica a segunda instalação e não significa que esta seja uma versão oficial da Meta ou do projeto original. WhatsApp é marca da Meta Platforms, Inc. Este fork não é afiliado nem endossado pela Meta ou pelos mantenedores do ZapFast.
 
-Para detalhes técnicos de isolamento, compilação e manutenção, consulte [BUSINESS.md](BUSINESS.md).
+Para detalhes técnicos de isolamento, compilação e manutenção, consulte [BUSINESS.md](BUSINESS.md). O passo a passo completo para incorporar atualizações do projeto original, validar, criar commits e publicar releases está em [docs/BUSINESS-MAINTENANCE.md](docs/BUSINESS-MAINTENANCE.md).
 
 ---
 
