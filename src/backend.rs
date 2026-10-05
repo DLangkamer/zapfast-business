@@ -9,7 +9,7 @@ use std::time::Duration;
 use tokio::sync::mpsc;
 
 use crate::model::{Chat, ChatId, Contact, Gif, GifError, Message, PollDraft, StickerPack};
-use crate::paths::AppDirs;
+use crate::paths::AccountDirs;
 
 // Re-exported so the picker can detect pasted Signal pack links.
 mod read_sync;
@@ -67,7 +67,7 @@ mod tests {
     fn backend_waits_for_window_acknowledgement_before_touching_storage() {
         let directory = tempfile::tempdir().unwrap();
         let dirs = crate::paths::AppDirs::under(directory.path());
-        let mut backend = super::Backend::spawn(dirs.clone(), super::Waker::default());
+        let mut backend = super::Backend::spawn(dirs.as_account(), super::Waker::default());
         assert!(!dirs.session_db().exists());
         assert!(!dirs.archive_db().exists());
         // Closing before a first frame must cancel startup without connecting
@@ -163,6 +163,19 @@ pub enum Command {
         mentions: Vec<String>,
         send_at: i64,
     },
+    ScheduleVoice {
+        chat: ChatId,
+        samples: Vec<f32>,
+        quoting: Option<String>,
+        send_at: i64,
+    },
+    ListScheduled,
+    UpdateScheduled {
+        id: i64,
+        text: Option<String>,
+        send_at: i64,
+    },
+    DeleteScheduled(i64),
     ReplyInteractive {
         chat: ChatId,
         message: String,
@@ -213,8 +226,14 @@ pub enum Command {
         chat: ChatId,
         before: Option<PageKey>,
     },
-    /// Requests messages before the archive's earliest message.
-    FetchOlder(ChatId),
+    /// Requests messages before the archive's earliest message. `explicit`
+    /// marks a request the reader made by scrolling to the top: only those
+    /// report a phone that did not answer, since automatic requests (short
+    /// or empty chats) are often legitimately left unanswered.
+    FetchOlder {
+        chat: ChatId,
+        explicit: bool,
+    },
     Download {
         card: Option<usize>,
         chat: ChatId,
@@ -359,6 +378,11 @@ pub enum Command {
     FavoritesRecovered {
         complete: bool,
     },
+    /// Internal: the one-time replay of the phone's contacts, for the first
+    /// names saved before ZapFast kept them, finished.
+    FirstNamesRecovered {
+        complete: bool,
+    },
     /// Internal: a favorite from the phone finished downloading.
     FavoriteFetched {
         hash: String,
@@ -435,6 +459,9 @@ pub enum Command {
         source: std::path::PathBuf,
         name: String,
     },
+    /// Opens the log, or shows it in its folder, off the interface thread;
+    /// only a failure reports back.
+    OpenLog(PathBuf),
     /// Reads and decodes an image file off the UI thread for clipboard writing.
     PrepareClipboardImage(PathBuf),
     /// Deletes an imported pack directory.
@@ -508,6 +535,7 @@ pub enum Command {
     ContactSaved {
         id: String,
         name: String,
+        first_name: Option<String>,
         error: Option<String>,
     },
     /// Checks a number, optionally saves it, and opens its chat.
@@ -579,6 +607,8 @@ pub enum Command {
     PairWithPhone(String),
     /// Unlinks the device remotely and locally.
     Unlink,
+    /// Unlinks this account and deletes its local folders.
+    RemoveAccount,
     Reconnect,
     /// Use this proxy setting and reconnect. Empty follows the environment.
     SetProxy(String),
@@ -695,6 +725,9 @@ pub enum Command {
     },
     /// Internal: followed channels and whether each is muted on the server.
     ChannelMutes(Vec<(String, bool)>),
+    /// Internal: the pictures of followed channels, or `None` when the list
+    /// could not be read.
+    ChannelPictures(Option<Vec<(ChatId, ChannelPicture)>>),
     /// Looks up the group behind an invite code without joining.
     PreviewInvite(String),
     /// Joins the group behind an invite code.
@@ -751,6 +784,7 @@ pub enum Event {
     Labels(Vec<crate::model::Label>),
     /// WhatsApp Business canned responses cached for slash completion.
     QuickReplies(Vec<crate::model::QuickReply>),
+    ScheduledMessages(Vec<crate::archive::ScheduledMessage>),
     /// Unsent text stored for each chat, sent once at startup.
     Drafts(Vec<(ChatId, String)>),
     /// Messages in one chat matching a search, newest first, echoing the
@@ -935,6 +969,8 @@ pub enum Event {
         unsent: Unsent,
         reason: Refusal,
     },
+    /// The account folders were deleted after RemoveAccount.
+    AccountRemoved,
     Error(String),
     /// A change to a group's name or photo went to WhatsApp (`saving`), or
     /// WhatsApp answered it.
@@ -951,6 +987,17 @@ pub enum GroupEdit {
     Name(String),
     /// A new photo, or none.
     Picture { removed: bool },
+}
+
+/// Where a channel's picture lives on WhatsApp's media servers, as the
+/// channel's metadata names it. Channels have no profile picture a contact
+/// lookup would find.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct ChannelPicture {
+    /// The full-size picture's direct path.
+    pub full: Option<String>,
+    /// The small preview's direct path.
+    pub preview: Option<String>,
 }
 
 /// Why the worker refused a send.
@@ -999,7 +1046,7 @@ pub struct Backend {
 }
 
 impl Backend {
-    pub fn spawn(dirs: AppDirs, waker: Waker) -> Self {
+    pub fn spawn(dirs: AccountDirs, waker: Waker) -> Self {
         let (command_tx, command_rx) = mpsc::unbounded_channel();
         let (event_tx, event_rx) = std::sync::mpsc::channel();
         let runtime = tokio::runtime::Builder::new_multi_thread()

@@ -16,20 +16,16 @@ pub fn show(app: &mut App, ctx: &egui::Context) {
         .stroke(Stroke::new(1.0, palette.outline))
         .corner_radius(CornerRadius::same(theme::RADIUS + 4))
         .inner_margin(Margin::same(22))
-        .shadow(egui::epaint::Shadow {
-            offset: [0, 12],
-            blur: 40,
-            spread: 0,
-            color: palette.shadow,
-        });
+        .shadow(palette.modal_shadow());
     let response = egui::Modal::new(egui::Id::new("dialog"))
         .frame(frame)
         .backdrop_color(palette.shadow)
         .show(ctx, |ui| {
             ui.set_width(match dialog {
-                Dialog::Shortcuts => 540.0,
+                Dialog::Shortcuts => shortcuts_width(ui.ctx().content_rect().width()),
                 Dialog::About => 380.0,
                 Dialog::ConfirmUnlink => 380.0,
+                Dialog::ConfirmRemoveAccount(_) => 380.0,
                 Dialog::ConfirmLeaveGroup(_) => 380.0,
                 Dialog::PairWithPhone => 380.0,
                 Dialog::NewContact => 380.0,
@@ -44,18 +40,22 @@ pub fn show(app: &mut App, ctx: &egui::Context) {
                 Dialog::StickerPack => 420.0,
                 Dialog::StickerMaker => 400.0,
                 Dialog::Forward { .. } => 420.0,
-                Dialog::CreatePoll(_) | Dialog::ScheduleMessage(_) => 420.0,
+                Dialog::CreatePoll(_) | Dialog::ScheduleMessage(_) | Dialog::ScheduleVoice(_) => {
+                    420.0
+                }
                 Dialog::PollResults { .. }
                 | Dialog::InteractiveList { .. }
                 | Dialog::MessageInfo { .. } => {
                     420.0_f32.min((ui.ctx().content_rect().width() - 64.0).max(180.0))
                 }
-                Dialog::Labels | Dialog::QuickReplies => 460.0,
+                Dialog::Labels | Dialog::QuickReplies | Dialog::ScheduledMessages => 520.0,
             });
             ui.spacing_mut().item_spacing.y = 8.0;
             match dialog {
                 Dialog::CreatePoll(chat) => super::polls::create(app, ui, &chat),
                 Dialog::ScheduleMessage(chat) => schedule_message(app, ui, &chat),
+                Dialog::ScheduleVoice(chat) => schedule_voice(app, ui, &chat),
+                Dialog::ScheduledMessages => scheduled_messages(app, ui),
                 Dialog::PollResults { chat, message } => {
                     super::polls::results(app, ui, &chat, &message)
                 }
@@ -69,6 +69,7 @@ pub fn show(app: &mut App, ctx: &egui::Context) {
                 Dialog::Shortcuts => shortcuts(app, ui),
                 Dialog::About => about(app, ui),
                 Dialog::ConfirmUnlink => confirm_unlink(app, ui),
+                Dialog::ConfirmRemoveAccount(id) => confirm_remove(app, ui, id),
                 Dialog::ConfirmLeaveGroup(id) => confirm_leave_group(app, ui, &id),
                 Dialog::PairWithPhone => pair_with_phone(app, ui),
                 Dialog::NewContact => new_contact(app, ui),
@@ -79,10 +80,10 @@ pub fn show(app: &mut App, ctx: &egui::Context) {
                 Dialog::ConfirmDeleteChat(id) => confirm_delete_chat(app, ui, &id),
                 Dialog::ConfirmClearChat(id) => confirm_clear_chat(app, ui, &id),
                 Dialog::ConfirmDeleteMessage {
+                    chat,
                     message,
                     for_everyone,
-                    ..
-                } => confirm_delete_message(app, ui, &message, for_everyone),
+                } => confirm_delete_message(app, ui, &chat, &message, for_everyone),
                 Dialog::Forward { chat, messages } => forward(app, ui, &chat, &messages),
                 Dialog::JoinGroup => join_group(app, ui),
                 Dialog::ConfirmStartOver => confirm_start_over(app, ui),
@@ -96,6 +97,147 @@ pub fn show(app: &mut App, ctx: &egui::Context) {
     if response.should_close() {
         app.actions.push(Action::CloseDialog);
     }
+}
+
+fn schedule_voice(app: &mut App, ui: &mut egui::Ui, chat: &str) {
+    let palette = app.palette;
+    dialog_title(app, ui, "Schedule voice message");
+    super::widgets::rich_text(
+        ui,
+        "The recording stays encrypted on this computer until it is sent.",
+        theme::regular(13.0),
+        palette.secondary,
+    );
+    let id = egui::Id::new("schedule-voice-minutes");
+    let mut minutes = ui
+        .data_mut(|data| data.get_temp::<String>(id))
+        .unwrap_or_else(|| "60".into());
+    ui.horizontal(|ui| {
+        ui.label("Minutes from now");
+        ui.add(egui::TextEdit::singleline(&mut minutes).desired_width(90.0));
+    });
+    minutes.retain(|c| c.is_ascii_digit());
+    let delay = minutes.parse::<i64>().ok().filter(|value| *value > 0);
+    ui.data_mut(|data| data.insert_temp(id, minutes));
+    ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
+        if theme::soft_button(
+            ui,
+            &palette,
+            Some(Icon::Calendar),
+            "Schedule",
+            delay.is_some(),
+        )
+        .clicked()
+        {
+            app.actions.push(Action::ScheduleVoice {
+                chat: chat.to_owned(),
+                send_at: crate::util::now() + delay.unwrap_or_default() * 60,
+            });
+            app.actions.push(Action::CloseDialog);
+        }
+    });
+}
+
+fn scheduled_messages(app: &mut App, ui: &mut egui::Ui) {
+    let palette = app.palette;
+    dialog_title(app, ui, "Scheduled messages");
+    if app.scheduled_messages.is_empty() {
+        super::widgets::rich_text(
+            ui,
+            "There are no scheduled messages for this account.",
+            theme::regular(13.5),
+            palette.secondary,
+        );
+    }
+    egui::ScrollArea::vertical()
+        .max_height(430.0)
+        .show(ui, |ui| {
+            for item in app.scheduled_messages.clone() {
+                let chat = app
+                    .chat(&item.chat)
+                    .map(|chat| chat.name.clone())
+                    .unwrap_or_else(|| item.chat.clone());
+                let text_id = egui::Id::new(("scheduled-text", item.id));
+                let minutes_id = egui::Id::new(("scheduled-minutes", item.id));
+                let mut text = ui
+                    .data_mut(|data| data.get_temp::<String>(text_id))
+                    .unwrap_or_else(|| item.text.clone());
+                let remaining = ((item.send_at - crate::util::now()).max(60) + 59) / 60;
+                let mut minutes = ui
+                    .data_mut(|data| data.get_temp::<String>(minutes_id))
+                    .unwrap_or_else(|| remaining.to_string());
+                egui::Frame::new()
+                    .fill(palette.surface)
+                    .corner_radius(8)
+                    .inner_margin(12)
+                    .show(ui, |ui| {
+                        super::widgets::rich_text(ui, &chat, theme::semibold(14.0), palette.text);
+                        super::widgets::rich_text(
+                            ui,
+                            &crate::util::moment_stamp(app.locale, item.send_at),
+                            theme::regular(12.0),
+                            palette.secondary,
+                        );
+                        if item.kind == crate::archive::ScheduledKind::Text {
+                            ui.add(egui::TextEdit::multiline(&mut text).desired_rows(2));
+                        } else {
+                            super::widgets::rich_text(
+                                ui,
+                                "Voice message",
+                                theme::regular(13.5),
+                                palette.text,
+                            );
+                        }
+                        ui.horizontal(|ui| {
+                            ui.label("Send in (minutes)");
+                            ui.add(egui::TextEdit::singleline(&mut minutes).desired_width(70.0));
+                            minutes.retain(|c| c.is_ascii_digit());
+                            let delay = minutes.parse::<i64>().ok().filter(|value| *value > 0);
+                            if ui
+                                .add_enabled(
+                                    delay.is_some()
+                                        && (item.kind == crate::archive::ScheduledKind::Voice
+                                            || !text.trim().is_empty()),
+                                    egui::Button::new("Save"),
+                                )
+                                .clicked()
+                            {
+                                app.actions.push(Action::UpdateScheduled {
+                                    id: item.id,
+                                    text: (item.kind == crate::archive::ScheduledKind::Text)
+                                        .then(|| text.trim().to_owned()),
+                                    send_at: crate::util::now() + delay.unwrap_or_default() * 60,
+                                });
+                            }
+                            if ui.button("Cancel sending").clicked() {
+                                app.actions.push(Action::DeleteScheduled(item.id));
+                            }
+                        });
+                    });
+                ui.data_mut(|data| {
+                    data.insert_temp(text_id, text);
+                    data.insert_temp(minutes_id, minutes);
+                });
+                ui.add_space(8.0);
+            }
+        });
+    if ui.button("Refresh").clicked() {
+        app.actions.push(Action::RefreshScheduled);
+    }
+}
+
+fn dialog_title(app: &mut App, ui: &mut egui::Ui, title: &str) {
+    let palette = app.palette;
+    ui.horizontal(|ui| {
+        super::widgets::rich_text(ui, title, theme::semibold(18.0), palette.text);
+        ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
+            if theme::icon_button(ui, Icon::X, 16.0, palette.secondary, palette.text, "Close")
+                .clicked()
+            {
+                app.actions.push(Action::CloseDialog);
+            }
+        });
+    });
 }
 
 fn schedule_message(app: &mut App, ui: &mut egui::Ui, chat: &str) {
@@ -595,7 +737,7 @@ fn forward(app: &mut App, ui: &mut egui::Ui, from_chat: &str, messages: &[String
                     ui.allocate_exact_size(vec2(ui.available_width(), row_height), Sense::click());
                 if ui.is_rect_visible(rect) {
                     if response.hovered() {
-                        ui.painter().rect_filled(rect, 8.0, palette.surface_hover);
+                        super::widgets::dialog_row_highlight(ui, rect, palette.surface_hover);
                     }
                     let avatar = egui::Rect::from_center_size(
                         pos2(rect.left() + 23.0, rect.center().y),
@@ -622,11 +764,6 @@ fn forward(app: &mut App, ui: &mut egui::Ui, from_chat: &str, messages: &[String
                         ui,
                         pos2(rect.left() + 50.0, rect.center().y - line.size().y / 2.0),
                         palette.text,
-                    );
-                    ui.painter().hline(
-                        (rect.left() + 50.0)..=rect.right(),
-                        rect.bottom() - 0.5,
-                        Stroke::new(1.0, palette.outline),
                     );
                 }
                 if response
@@ -678,10 +815,54 @@ fn title(ui: &mut egui::Ui, app: &mut App, label: &str) {
     ui.add_space(4.0);
 }
 
+/// The shortcuts dialog's width with its two columns, and with one.
+const SHORTCUTS_WIDE: f32 = 920.0;
+const SHORTCUTS_NARROW: f32 = 540.0;
+/// The space between the two columns.
+const SHORTCUTS_GUTTER: f32 = 32.0;
+
+/// How wide the shortcuts dialog is in a window `window` wide: two columns
+/// where they fit, one otherwise, and never wider than the window.
+fn shortcuts_width(window: f32) -> f32 {
+    let room = window - 64.0;
+    if room >= SHORTCUTS_WIDE {
+        SHORTCUTS_WIDE
+    } else {
+        SHORTCUTS_NARROW.min(room).max(180.0)
+    }
+}
+
+/// One shortcut: its keys in a column `keys_width` wide, then what it does,
+/// wrapped in the room that is left.
+fn shortcut_row(
+    ui: &mut egui::Ui,
+    palette: &theme::Palette,
+    keys_width: f32,
+    keys: &str,
+    what: &str,
+) {
+    ui.horizontal_top(|ui| {
+        let rest = (ui.available_width() - keys_width - ui.spacing().item_spacing.x).max(60.0);
+        ui.allocate_ui_with_layout(vec2(keys_width, 0.0), Layout::top_down(Align::Min), |ui| {
+            ui.set_width(keys_width);
+            theme::text(
+                ui,
+                super::keys::label(keys),
+                theme::semibold(13.0),
+                palette.text,
+            );
+        });
+        ui.allocate_ui_with_layout(vec2(rest, 0.0), Layout::top_down(Align::Min), |ui| {
+            ui.set_width(rest);
+            theme::paragraph(ui, what, theme::regular(13.0), palette.secondary);
+        });
+    });
+}
+
 fn shortcuts(app: &mut App, ui: &mut egui::Ui) {
     let palette = app.palette;
     title(ui, app, "Keyboard shortcuts");
-    // Reserve enough width for the longest shortcut before laying out the grid.
+    // Reserve enough width for the longest shortcut before laying out the rows.
     let keys_width = super::keys::SHORTCUTS
         .iter()
         .map(|(keys, _)| {
@@ -694,22 +875,36 @@ fn shortcuts(app: &mut App, ui: &mut egui::Ui) {
                 .size()
                 .x
         })
-        .fold(0.0, f32::max);
-    egui::Grid::new("shortcuts")
-        .num_columns(2)
-        .min_col_width(keys_width)
-        .spacing([18.0, 8.0])
+        .fold(0.0, f32::max)
+        .ceil();
+    // Two columns in a window wide enough for them; whatever the window
+    // still cannot show scrolls, so the title and the close button stay.
+    let width = ui.available_width();
+    let columns = if width >= SHORTCUTS_WIDE { 2 } else { 1 };
+    let column = (width - SHORTCUTS_GUTTER * (columns - 1) as f32) / columns as f32;
+    let per_column = super::keys::SHORTCUTS.len().div_ceil(columns);
+    let height = (ui.ctx().content_rect().height() - 190.0).max(120.0);
+    egui::ScrollArea::vertical()
+        .id_salt("shortcuts")
+        .max_height(height)
+        .auto_shrink([false, true])
         .show(ui, |ui| {
-            for (keys, what) in super::keys::SHORTCUTS {
-                theme::text(
-                    ui,
-                    super::keys::label(keys),
-                    theme::semibold(13.0),
-                    palette.text,
-                );
-                theme::text(ui, *what, theme::regular(13.0), palette.secondary);
-                ui.end_row();
-            }
+            ui.horizontal_top(|ui| {
+                ui.spacing_mut().item_spacing.x = SHORTCUTS_GUTTER;
+                for rows in super::keys::SHORTCUTS.chunks(per_column) {
+                    ui.allocate_ui_with_layout(
+                        vec2(column, 0.0),
+                        Layout::top_down(Align::Min),
+                        |ui| {
+                            ui.set_width(column);
+                            ui.spacing_mut().item_spacing = vec2(18.0, 8.0);
+                            for (keys, what) in rows {
+                                shortcut_row(ui, &palette, keys_width, keys, what);
+                            }
+                        },
+                    );
+                }
+            });
         });
     ui.add_space(12.0);
     // The hint bar's × hides it; this brings it back.
@@ -730,13 +925,7 @@ fn about(app: &mut App, ui: &mut egui::Ui) {
     title(ui, app, "About");
     ui.horizontal(|ui| {
         let (logo, _) = ui.allocate_exact_size(egui::Vec2::splat(44.0), egui::Sense::hover());
-        theme::logo(
-            ui,
-            logo.center(),
-            44.0,
-            palette.accent,
-            egui::Color32::WHITE,
-        );
+        theme::mark(ui, logo.center(), 44.0);
         ui.vertical(|ui| {
             theme::text(ui, crate::identity::NAME, theme::bold(17.0), palette.text);
             theme::text(
@@ -1145,7 +1334,13 @@ fn confirm_start_over(app: &mut App, ui: &mut egui::Ui) {
 
 /// Confirms deleting one message. Enter is deliberately not bound here: a
 /// stray keypress must not destroy a message.
-fn confirm_delete_message(app: &mut App, ui: &mut egui::Ui, id: &str, for_everyone: bool) {
+fn confirm_delete_message(
+    app: &mut App,
+    ui: &mut egui::Ui,
+    chat: &str,
+    id: &str,
+    for_everyone: bool,
+) {
     let palette = app.palette;
     let (heading, body) = if for_everyone {
         (
@@ -1164,10 +1359,11 @@ fn confirm_delete_message(app: &mut App, ui: &mut egui::Ui, id: &str, for_everyo
     ui.horizontal(|ui| {
         ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
             if danger_button(ui, app, "Delete") {
+                let (chat, id) = (chat.to_owned(), id.to_owned());
                 let action = if for_everyone {
-                    Action::DeleteForEveryone(id.to_owned())
+                    Action::DeleteForEveryone { chat, id }
                 } else {
-                    Action::DeleteForMe(id.to_owned())
+                    Action::DeleteForMe { chat, id }
                 };
                 app.actions.push(action);
                 app.actions.push(Action::CloseDialog);
@@ -1195,6 +1391,40 @@ fn confirm_unlink(app: &mut App, ui: &mut egui::Ui) {
                 app.actions.push(Action::Unlink);
             }
             if theme::pill_button(ui, &palette, "Cancel", false).clicked() {
+                app.actions.push(Action::CloseDialog);
+            }
+        });
+    });
+}
+
+fn confirm_remove(app: &mut App, ui: &mut egui::Ui, id: crate::model::AccountId) {
+    let palette = app.palette;
+    let locale = app.locale;
+    title(
+        ui,
+        app,
+        &crate::i18n::gettext(locale, "Remove this account?"),
+    );
+    theme::paragraph(
+        ui,
+        crate::i18n::gettext(
+            locale,
+            "This unlinks the number on this computer and deletes its local chats. Other accounts stay.",
+        )
+        .as_ref(),
+        theme::regular(13.5),
+        palette.text,
+    );
+    ui.add_space(10.0);
+    ui.horizontal(|ui| {
+        ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
+            if danger_button(ui, app, &crate::i18n::gettext(locale, "Remove")) {
+                app.actions.push(Action::RemoveAccount(id));
+                app.actions.push(Action::CloseDialog);
+            }
+            if theme::pill_button(ui, &palette, &crate::i18n::gettext(locale, "Cancel"), false)
+                .clicked()
+            {
                 app.actions.push(Action::CloseDialog);
             }
         });
@@ -1731,10 +1961,7 @@ fn chat_info(app: &mut App, ui: &mut egui::Ui, id: &str) {
             let status = if presence.online {
                 "online".to_owned()
             } else if let Some(seen) = presence.last_seen {
-                format!(
-                    "last seen {}",
-                    crate::util::chat_stamp(app.locale, seen).to_lowercase()
-                )
+                crate::util::last_seen(app.locale, seen)
             } else {
                 String::new()
             };
@@ -1800,7 +2027,7 @@ fn chat_info(app: &mut App, ui: &mut egui::Ui, id: &str) {
                     );
                     if ui.is_rect_visible(rect) {
                         if response.hovered() {
-                            ui.painter().rect_filled(rect, 6.0, palette.surface_hover);
+                            super::widgets::dialog_row_highlight(ui, rect, palette.surface_hover);
                         }
                         let picture = app.avatar(member);
                         let avatar = egui::Rect::from_center_size(
@@ -1882,7 +2109,10 @@ fn chat_info(app: &mut App, ui: &mut egui::Ui, id: &str) {
         buttons.push((
             Icon::User,
             if known { "Rename" } else { "Add to contacts" },
-            vec![Action::EditContact(name.trim_start_matches('~').to_owned())],
+            vec![Action::EditContact {
+                id: id.to_owned(),
+                name: name.trim_start_matches('~').to_owned(),
+            }],
         ));
     }
     if let Some(phone) = chat.phone() {
@@ -2099,7 +2329,7 @@ pub fn group_name_field_id() -> egui::Id {
 }
 
 /// A filled button for a destructive action.
-fn danger_button(ui: &mut egui::Ui, app: &mut App, label: &str) -> bool {
+pub(super) fn danger_button(ui: &mut egui::Ui, app: &mut App, label: &str) -> bool {
     let palette = app.palette;
     let galley = ui.painter().layout_no_wrap(
         label.to_owned(),

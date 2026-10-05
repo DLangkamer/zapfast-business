@@ -11,6 +11,7 @@ use crate::model::{Chat, ChatKind, Contact, Content, Delivery, LastMessage, Mess
 
 mod drafts;
 mod encryption;
+pub use encryption::{archive_key_identity, copy_archive_key, forget_archive_key};
 mod favorites;
 pub use favorites::Favorite;
 mod labels;
@@ -19,6 +20,7 @@ mod polls;
 mod quick_replies;
 mod receipts;
 mod scheduled;
+pub use scheduled::{ScheduledKind, ScheduledMessage};
 mod stickers;
 pub use polls::PollVote;
 pub use stickers::FavoriteSticker;
@@ -160,6 +162,11 @@ const MIGRATIONS: &[(&str, &str, &str)] = &[
     // NULL until the group's metadata says whether only admins edit its info.
     ("chats", "info_locked", "INTEGER"),
     ("chats", "group_admin", "INTEGER NOT NULL DEFAULT 0"),
+    // Set once the phone says it holds nothing older than what it sent.
+    ("chats", "history_start", "INTEGER NOT NULL DEFAULT 0"),
+    ("contacts", "first_name", "TEXT"),
+    ("scheduled_messages", "kind", "TEXT NOT NULL DEFAULT 'text'"),
+    ("scheduled_messages", "voice", "BLOB"),
 ];
 const CHAT_JOIN: &str = "FROM chats c
              LEFT JOIN messages m ON m.chat = c.id AND m.rowid = (
@@ -462,6 +469,29 @@ impl Archive {
             params![id, left],
         )?;
         Ok(())
+    }
+
+    /// Records that the phone holds nothing older for this chat, so asking
+    /// it for earlier history again is pointless.
+    pub fn set_history_start(&self, id: &str) -> Result<()> {
+        self.connection.execute(
+            "UPDATE chats SET history_start = 1 WHERE id = ?1",
+            params![id],
+        )?;
+        Ok(())
+    }
+
+    /// Whether the phone said this chat's history starts at what we hold.
+    pub fn history_start(&self, id: &str) -> Result<bool> {
+        Ok(self
+            .connection
+            .query_row(
+                "SELECT history_start FROM chats WHERE id = ?1",
+                params![id],
+                |row| row.get(0),
+            )
+            .optional()?
+            .unwrap_or(false))
     }
 
     pub fn rename_chat(&self, id: &str, name: &str) -> Result<()> {
@@ -1216,6 +1246,16 @@ impl Archive {
         rows.collect()
     }
 
+    /// Photo, video, and audio messages with their raw protobuf.
+    pub fn media_with_raw(&self) -> Result<Vec<(String, String, Vec<u8>)>> {
+        let mut statement = self.connection.prepare(
+            "SELECT chat, id, raw FROM messages WHERE raw IS NOT NULL AND json_valid(content)
+             AND json_extract(content, '$.kind') IN ('image', 'video', 'audio')",
+        )?;
+        let rows = statement.query_map([], |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)))?;
+        rows.collect()
+    }
+
     /// Interactive messages eligible for a derived presentation upgrade.
     /// Deleted and edited rows are left intact; callers preserve local media paths.
     pub fn interactive_placeholders(&self) -> Result<Vec<(String, String, Vec<u8>)>> {
@@ -1616,11 +1656,18 @@ impl Archive {
 
     pub fn upsert_contact(&self, contact: &Contact) -> Result<()> {
         self.connection.execute(
-            "INSERT INTO contacts (id, full_name, push_name) VALUES (?1, ?2, ?3)
+            "INSERT INTO contacts (id, full_name, first_name, push_name) VALUES (?1, ?2, ?3, ?4)
              ON CONFLICT(id) DO UPDATE SET
+                first_name = CASE WHEN excluded.full_name IS NULL THEN first_name
+                    ELSE excluded.first_name END,
                 full_name = COALESCE(excluded.full_name, full_name),
                 push_name = COALESCE(excluded.push_name, push_name)",
-            params![contact.id, contact.full_name, contact.push_name],
+            params![
+                contact.id,
+                contact.full_name,
+                contact.first_name,
+                contact.push_name
+            ],
         )?;
         Ok(())
     }
@@ -1629,13 +1676,14 @@ impl Archive {
     pub fn contact(&self, id: &str) -> Result<Option<Contact>> {
         self.connection
             .query_row(
-                "SELECT id, full_name, push_name FROM contacts WHERE id = ?1",
+                "SELECT id, full_name, first_name, push_name FROM contacts WHERE id = ?1",
                 params![id],
                 |row| {
                     Ok(Contact {
                         id: row.get(0)?,
                         full_name: row.get(1)?,
-                        push_name: row.get(2)?,
+                        first_name: row.get(2)?,
+                        push_name: row.get(3)?,
                     })
                 },
             )
@@ -1645,12 +1693,13 @@ impl Archive {
     pub fn contacts(&self) -> Result<Vec<Contact>> {
         let mut statement = self
             .connection
-            .prepare("SELECT id, full_name, push_name FROM contacts")?;
+            .prepare("SELECT id, full_name, first_name, push_name FROM contacts")?;
         let rows = statement.query_map([], |row| {
             Ok(Contact {
                 id: row.get(0)?,
                 full_name: row.get(1)?,
-                push_name: row.get(2)?,
+                first_name: row.get(2)?,
+                push_name: row.get(3)?,
             })
         })?;
         rows.collect()
@@ -2167,6 +2216,28 @@ pub(crate) mod tests {
         assert_eq!(archive.chat(id).unwrap().unwrap().info_locked, Some(true));
     }
 
+    /// An archive from before the history-start mark migrates every chat as
+    /// worth asking, and the mark persists once the phone sets it.
+    #[test]
+    fn history_start_migrates_unset_and_persists() {
+        let connection = Connection::open_in_memory().expect("opens");
+        connection.execute_batch(SCHEMA).expect("the older schema");
+        connection
+            .execute_batch(
+                "INSERT INTO chats (id, name, kind) VALUES ('1@s.whatsapp.net', 'A', 'direct');",
+            )
+            .expect("row");
+        let archive = Archive::prepare(connection).expect("the migration adds the column");
+        let id = "1@s.whatsapp.net";
+        assert!(!archive.history_start(id).unwrap());
+        archive.set_history_start(id).unwrap();
+        assert!(archive.history_start(id).unwrap());
+        assert!(
+            !archive.history_start("2@s.whatsapp.net").unwrap(),
+            "an unknown chat has not reached its start"
+        );
+    }
+
     #[test]
     fn group_info_is_kept() {
         let archive = Archive::in_memory().expect("opens");
@@ -2668,6 +2739,7 @@ pub(crate) mod tests {
             .upsert_contact(&Contact {
                 id: id.into(),
                 full_name: None,
+                first_name: None,
                 push_name: Some("~slavic".into()),
             })
             .expect("stores");
@@ -2675,6 +2747,7 @@ pub(crate) mod tests {
             .upsert_contact(&Contact {
                 id: id.into(),
                 full_name: Some("Slavic".into()),
+                first_name: None,
                 push_name: None,
             })
             .expect("renames");
@@ -2686,6 +2759,45 @@ pub(crate) mod tests {
                 .contact("nobody@s.whatsapp.net")
                 .expect("reads")
                 .is_none()
+        );
+    }
+
+    #[test]
+    fn a_first_name_travels_with_its_saved_name() {
+        let archive = Archive::in_memory().expect("opens");
+        let id = "491700000002@s.whatsapp.net";
+        let saved = |full: Option<&str>, first: Option<&str>, push: Option<&str>| Contact {
+            id: id.into(),
+            full_name: full.map(Into::into),
+            first_name: first.map(Into::into),
+            push_name: push.map(Into::into),
+        };
+        let first_name = || {
+            archive
+                .contact(id)
+                .expect("reads")
+                .expect("exists")
+                .first_name
+        };
+        archive
+            .upsert_contact(&saved(Some("My Dih"), Some("My Dih"), None))
+            .expect("stores");
+        assert_eq!(first_name().as_deref(), Some("My Dih"));
+        archive
+            .upsert_contact(&saved(None, None, Some("dih")))
+            .expect("push name");
+        assert_eq!(
+            first_name().as_deref(),
+            Some("My Dih"),
+            "a push name leaves the saved names alone"
+        );
+        archive
+            .upsert_contact(&saved(Some("Dih"), None, None))
+            .expect("renames");
+        assert_eq!(
+            first_name(),
+            None,
+            "a rename without a first name drops the old one"
         );
     }
 

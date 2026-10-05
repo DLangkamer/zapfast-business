@@ -1,40 +1,18 @@
-//! Single-instance coordination over a private local channel.
+//! One running ZapFast per user, through fastframe-instance.
 //!
-//! The running instance holds an exclusive lock on a file in the per-user
-//! runtime directory. The operating system releases the lock when the process
-//! ends, even after a crash, so leftover files never block a later launch. A
-//! second launch sends the running instance one request and exits.
-//!
-//! On Unix requests travel over a socket in that directory, which only the
-//! user can open. Windows listens on an ephemeral loopback port that any local
-//! process can reach, so every connection must first present a random token
-//! that the running instance writes to the directory.
+//! The crate holds the lock in the per-user runtime directory and serves the
+//! private channel a later launch hands its request over (a socket only the
+//! user can open, or a token-checked loopback port on Windows). ZapFast keeps
+//! Its slot and wire prefix are exclusive to ZapFast Business, so the original
+//! application can remain open at the same time.
 
-use std::io::{Read, Write};
-use std::net::{Ipv4Addr, TcpListener, TcpStream};
 use std::path::Path;
 use std::sync::{Arc, Mutex};
-use std::time::{Duration, Instant};
 
-const LOCK_FILE: &str = "instance.lock";
-#[cfg(unix)]
-const SOCKET_FILE: &str = "instance.sock";
-#[cfg(any(not(unix), test))]
-const KEY_FILE: &str = "instance.key";
-
-/// Business instances never use the upstream legacy port or wire identity.
-const PREFIX: &str = "zapfast-business:";
-const OK_REPLY: &str = "zapfast-business:ok";
-
-/// Longest request accepted, token included.
-const REQUEST_LIMIT: usize = 256;
-/// Time a client gets to send its whole request. Requests are served one at
-/// a time, so this bounds how long a stray connection holds up the others.
-const REQUEST_TIME: Duration = Duration::from_secs(1);
-/// Time a client waits for the reply, which may queue behind a stray one.
-const REPLY_TIME: Duration = Duration::from_secs(5);
-/// How long a later launch waits for a starting instance to listen.
-const STARTUP_WAIT: Duration = Duration::from_secs(3);
+/// Stable wire identity used only by Business releases.
+const NAME: &str = crate::identity::SLUG;
+/// What ZapFast answers a request it takes: `zapfast-business:ok` on the wire.
+const OK: &str = "ok";
 
 pub enum Outcome {
     /// This process owns the instance guard.
@@ -58,12 +36,12 @@ pub enum ControlCommand {
 
 type Queue = Arc<Mutex<Vec<ControlCommand>>>;
 
-/// Owns the lock that marks this process as the running instance.
+/// Marks this process as the running instance until it exits.
 pub struct Guard {
     /// Requests queued by later launches.
     commands: Queue,
     /// Held until the process exits.
-    _lock: Option<std::fs::File>,
+    _claim: fastframe_instance::Guard,
 }
 
 impl Guard {
@@ -73,246 +51,60 @@ impl Guard {
     }
 }
 
+/// ZapFast's slot: its runtime directory, with the prefix older copies use.
+fn slot(dir: &Path) -> fastframe_instance::Slot {
+    fastframe_instance::Slot::at(dir, NAME)
+}
+
 /// Becomes the running instance, or hands `verb` to the one already running.
 pub fn acquire(dir: &Path, waker: &crate::backend::Waker, verb: &str) -> Outcome {
-    let lock = match lock(dir) {
-        Ok(Some(lock)) => lock,
-        Ok(None) => return hand_over(dir, verb),
-        Err(error) => {
-            log::warn!("cannot take the instance lock; running unguarded: {error}");
-            return Outcome::Only(Guard {
-                commands: Default::default(),
-                _lock: None,
-            });
+    let commands = Queue::default();
+    let claim = match claim(dir, verb, &commands, waker) {
+        fastframe_instance::Claim::First(claim) => claim,
+        fastframe_instance::Claim::Running(_) => return Outcome::Surfaced,
+        // A copy that refuses the verb is reported as before, when it
+        // simply did not answer.
+        fastframe_instance::Claim::Unanswered | fastframe_instance::Claim::Declined => {
+            return Outcome::Unanswered;
         }
     };
-    let guard = Guard {
-        commands: Default::default(),
-        _lock: Some(lock),
-    };
-    if let Err(error) = listen(dir, guard.commands(), waker.clone()) {
-        log::warn!("cannot listen for other launches: {error}");
-    }
-    Outcome::Only(guard)
+    // The Business fork must never probe or bind the legacy ZapFast port: the
+    // original application may be running at the same time.
+    Outcome::Only(Guard {
+        commands,
+        _claim: claim,
+    })
 }
 
-/// Takes the instance lock, or returns `None` when another process holds it.
-fn lock(dir: &Path) -> std::io::Result<Option<std::fs::File>> {
-    let mut builder = std::fs::DirBuilder::new();
-    builder.recursive(true);
-    let mut options = std::fs::OpenOptions::new();
-    options.read(true).write(true).create(true).truncate(false);
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::{DirBuilderExt, OpenOptionsExt, PermissionsExt};
-        builder.mode(0o700);
-        options.mode(0o600);
-        builder.create(dir)?;
-        std::fs::set_permissions(dir, std::fs::Permissions::from_mode(0o700))?;
-    }
-    #[cfg(not(unix))]
-    builder.create(dir)?;
-    let file = options.open(dir.join(LOCK_FILE))?;
-    match file.try_lock() {
-        Ok(()) => Ok(Some(file)),
-        Err(std::fs::TryLockError::WouldBlock) => Ok(None),
-        Err(std::fs::TryLockError::Error(error)) => Err(error),
-    }
-}
-
-/// Sends `verb` to the lock holder, waiting while it may still be starting.
-fn hand_over(dir: &Path, verb: &str) -> Outcome {
-    let deadline = Instant::now() + STARTUP_WAIT;
-    loop {
-        match send(dir, verb) {
-            Ok(()) => return Outcome::Surfaced,
-            Err(error) if Instant::now() >= deadline => {
-                log::warn!("the running instance did not answer: {error}");
-                return Outcome::Unanswered;
-            }
-            Err(_) => std::thread::sleep(Duration::from_millis(100)),
-        }
-    }
-}
-
-/// Sends one request to the running instance and verifies its reply.
-#[cfg(unix)]
-pub fn send(dir: &Path, verb: &str) -> std::io::Result<()> {
-    let stream = std::os::unix::net::UnixStream::connect(dir.join(SOCKET_FILE))?;
-    request(stream, None, verb)
-}
-
-/// Sends one request to the running instance and verifies its reply.
-#[cfg(not(unix))]
-pub fn send(dir: &Path, verb: &str) -> std::io::Result<()> {
-    let (port, token) = read_key(dir)?;
-    let stream = TcpStream::connect((Ipv4Addr::LOCALHOST, port))?;
-    request(stream, Some(&token), verb)
-}
-
-/// Listens on a socket only the user can open. Only the lock holder gets
-/// here, so a socket that already exists was left by an instance that ended.
-#[cfg(unix)]
-fn listen(dir: &Path, commands: Queue, waker: crate::backend::Waker) -> std::io::Result<()> {
-    use std::os::unix::fs::PermissionsExt;
-
-    let path = dir.join(SOCKET_FILE);
-    match std::fs::remove_file(&path) {
-        Err(error) if error.kind() != std::io::ErrorKind::NotFound => return Err(error),
-        _ => {}
-    }
-    let listener = std::os::unix::net::UnixListener::bind(&path)?;
-    std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o600))?;
-    spawn(move || serve(listener.incoming(), None, &commands, &waker))
-}
-
-/// Listens on an ephemeral loopback port and publishes it with a new token.
-/// Only the lock holder gets here, so it replaces the file of an earlier run.
-#[cfg(not(unix))]
-fn listen(dir: &Path, commands: Queue, waker: crate::backend::Waker) -> std::io::Result<()> {
-    let listener = TcpListener::bind((Ipv4Addr::LOCALHOST, 0))?;
-    let token = new_token()?;
-    write_key(dir, listener.local_addr()?.port(), &token)?;
-    spawn(move || serve(listener.incoming(), Some(&token), &commands, &waker))
-}
-
-fn spawn(serve: impl FnOnce() + Send + 'static) -> std::io::Result<()> {
-    std::thread::Builder::new()
-        .name("zapfast-instance".to_owned())
-        .spawn(serve)
-        .map(drop)
-}
-
-/// Secret that authenticates requests over loopback TCP, as 64 hex digits.
-#[cfg(any(not(unix), test))]
-fn new_token() -> std::io::Result<String> {
-    let mut bytes = [0u8; 32];
-    getrandom::fill(&mut bytes).map_err(std::io::Error::other)?;
-    Ok(bytes.iter().map(|byte| format!("{byte:02x}")).collect())
-}
-
-/// Compares without stopping at the first difference, so response time
-/// reveals nothing about the token.
-fn token_matches(expected: &str, presented: &[u8]) -> bool {
-    let expected = expected.as_bytes();
-    presented.len() == expected.len()
-        && presented
-            .iter()
-            .zip(expected)
-            .fold(0u8, |difference, (a, b)| difference | (a ^ b))
-            == 0
-}
-
-/// Writes the port and token readable only by the user. Windows keeps the
-/// runtime directory in the user's profile, which other users cannot read.
-#[cfg(any(not(unix), test))]
-fn write_key(dir: &Path, port: u16, token: &str) -> std::io::Result<()> {
-    let partial = dir.join(format!("{KEY_FILE}.partial"));
-    let mut options = std::fs::OpenOptions::new();
-    options.write(true).create(true).truncate(true);
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::OpenOptionsExt;
-        options.mode(0o600);
-    }
-    options
-        .open(&partial)?
-        .write_all(format!("{port}\n{token}\n").as_bytes())?;
-    // Clients never read a half-written file.
-    std::fs::rename(partial, dir.join(KEY_FILE))
-}
-
-#[cfg(any(not(unix), test))]
-fn read_key(dir: &Path) -> std::io::Result<(u16, String)> {
-    let text = std::fs::read_to_string(dir.join(KEY_FILE))?;
-    let mut lines = text.lines();
-    let port = lines.next().and_then(|port| port.parse().ok());
-    match (port, lines.next()) {
-        (Some(port), Some(token)) => Ok((port, token.to_owned())),
-        _ => Err(std::io::Error::new(
-            std::io::ErrorKind::InvalidData,
-            "the instance key file is damaged",
-        )),
-    }
-}
-
-/// Stream either side of the control channel.
-trait Connection: Read + Write {
-    fn set_timeouts(&self, timeout: Option<Duration>) -> std::io::Result<()>;
-}
-
-impl Connection for TcpStream {
-    fn set_timeouts(&self, timeout: Option<Duration>) -> std::io::Result<()> {
-        self.set_read_timeout(timeout)?;
-        self.set_write_timeout(timeout)
-    }
-}
-
-#[cfg(unix)]
-impl Connection for std::os::unix::net::UnixStream {
-    fn set_timeouts(&self, timeout: Option<Duration>) -> std::io::Result<()> {
-        self.set_read_timeout(timeout)?;
-        self.set_write_timeout(timeout)
-    }
-}
-
-/// Sends the token line, when there is one, and the verb, then verifies the
-/// ZapFast reply prefix.
-fn request(mut stream: impl Connection, token: Option<&str>, verb: &str) -> std::io::Result<()> {
-    stream.set_timeouts(Some(REPLY_TIME))?;
-    let token = token.map(|token| format!("{token}\n")).unwrap_or_default();
-    stream.write_all(format!("{token}{PREFIX}{verb}\n").as_bytes())?;
-    // Read the one-line reply until the connection closes.
-    let mut reply = String::new();
-    stream
-        .take(REQUEST_LIMIT as u64)
-        .read_to_string(&mut reply)?;
-    if reply.lines().next() == Some(OK_REPLY) {
-        Ok(())
-    } else {
-        Err(std::io::Error::new(
-            std::io::ErrorKind::InvalidData,
-            "the channel is held by something other than ZapFast",
-        ))
-    }
-}
-
-/// Handles one request and reply per connection until the listener closes.
-fn serve<C: Connection>(
-    incoming: impl Iterator<Item = std::io::Result<C>>,
-    token: Option<&str>,
-    commands: &Mutex<Vec<ControlCommand>>,
+/// Takes the slot, queueing what later launches ask for, or hands `verb` to
+/// the copy that holds it.
+fn claim(
+    dir: &Path,
+    verb: &str,
+    commands: &Queue,
     waker: &crate::backend::Waker,
-) {
-    for mut stream in incoming.flatten() {
-        // Ignore clients without the token or the ZapFast prefix.
-        if let Some(command) = receive(&mut stream, token) {
-            let _ = stream.write_all(format!("{OK_REPLY}\n").as_bytes());
-            commands
-                .lock()
-                .unwrap_or_else(|p| p.into_inner())
-                .push(command);
-            waker.wake();
-        }
-    }
+) -> fastframe_instance::Claim {
+    let (commands, waker) = (Arc::clone(commands), waker.clone());
+    slot(dir).claim(verb, move |request| {
+        let command = parse(request)?;
+        commands
+            .lock()
+            .unwrap_or_else(|p| p.into_inner())
+            .push(command);
+        waker.wake();
+        Some(OK.to_owned())
+    })
 }
 
-/// Reads one request, rejecting it unless its first line is the token when
-/// the transport needs one.
-fn receive(stream: &mut impl Connection, token: Option<&str>) -> Option<ControlCommand> {
-    let lines = 1 + usize::from(token.is_some());
-    let request = read_lines(stream, lines)?;
-    let mut request = request.split(|&byte| byte == b'\n');
-    if let Some(token) = token
-        && !token_matches(token, request.next()?)
-    {
-        return None;
-    }
-    parse(std::str::from_utf8(request.next()?).ok()?)
+/// Sends one request to the running instance. An error of kind `NotFound`
+/// or `ConnectionRefused` means none is running.
+pub fn send(dir: &Path, verb: &str) -> std::io::Result<()> {
+    slot(dir).send(verb).map(drop)
 }
 
-fn parse(line: &str) -> Option<ControlCommand> {
-    match line.trim_end().strip_prefix(PREFIX)? {
+/// The verbs another launch may send. Anything else is declined.
+fn parse(verb: &str) -> Option<ControlCommand> {
+    match verb {
         "show" => Some(ControlCommand::Show),
         "reload-themes" => Some(ControlCommand::ReloadThemes),
         "ping" => Some(ControlCommand::Ping),
@@ -320,186 +112,102 @@ fn parse(line: &str) -> Option<ControlCommand> {
     }
 }
 
-/// Reads until `lines` newlines within the size and time limits. Rejects read
-/// errors, oversized input, and clients that stall.
-fn read_lines(stream: &mut impl Connection, lines: usize) -> Option<Vec<u8>> {
-    let deadline = Instant::now() + REQUEST_TIME;
-    let mut buffer = [0u8; REQUEST_LIMIT];
-    let mut filled = 0;
-    loop {
-        if filled == buffer.len() {
-            return None;
-        }
-        let left = deadline.checked_duration_since(Instant::now())?;
-        stream
-            .set_timeouts(Some(left.max(Duration::from_millis(1))))
-            .ok()?;
-        match stream.read(&mut buffer[filled..]) {
-            Ok(0) => break,
-            Ok(read) => {
-                filled += read;
-                let newlines = buffer[..filled].iter().filter(|&&b| b == b'\n').count();
-                if newlines >= lines {
-                    break;
-                }
-            }
-            Err(_) => return None,
-        }
-    }
-    Some(buffer[..filled].to_vec())
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::io::{Read, Write};
+    use std::net::{Ipv4Addr, TcpStream};
 
     #[test]
-    fn only_our_own_show_is_understood() {
-        assert_eq!(parse("zapfast-business:show\n"), Some(ControlCommand::Show));
-        assert_eq!(parse("zapfast-business:show"), Some(ControlCommand::Show));
-        assert_eq!(parse("zapfast-business:ping"), Some(ControlCommand::Ping));
+    fn only_our_own_verbs_are_understood() {
+        assert_eq!(parse("show"), Some(ControlCommand::Show));
+        assert_eq!(parse("ping"), Some(ControlCommand::Ping));
+        assert_eq!(parse("reload-themes"), Some(ControlCommand::ReloadThemes));
         assert_eq!(parse("GET / HTTP/1.1"), None);
-        assert_eq!(parse("zapfast-business:frobnicate"), None);
+        assert_eq!(parse("frobnicate"), None);
         assert_eq!(parse(""), None);
-        assert_eq!(parse("fastsapp:show"), None);
-        assert_eq!(parse("zapfast:show"), None);
-    }
-
-    fn dir(name: &str) -> std::path::PathBuf {
-        let dir =
-            std::env::temp_dir().join(format!("zapfast-instance-{name}-{}", std::process::id()));
-        let _ = std::fs::remove_dir_all(&dir);
-        dir
-    }
-
-    /// Serves loopback TCP with a token, as on Windows.
-    fn tcp_server() -> (u16, String, Queue) {
-        let listener = TcpListener::bind((Ipv4Addr::LOCALHOST, 0)).expect("a loopback port");
-        let port = listener.local_addr().expect("a bound address").port();
-        let token = new_token().expect("random bytes");
-        let served = token.clone();
-        let commands: Queue = Default::default();
-        let queue = Arc::clone(&commands);
-        std::thread::spawn(move || {
-            let waker = crate::backend::Waker::default();
-            serve(listener.incoming(), Some(&served), &queue, &waker);
-        });
-        (port, token, commands)
     }
 
     fn connect(port: u16) -> TcpStream {
         TcpStream::connect((Ipv4Addr::LOCALHOST, port)).expect("a connection")
     }
 
-    #[test]
-    fn tokens_are_random_and_compared_whole() {
-        let token = new_token().unwrap();
-        assert_eq!(token.len(), 64);
-        assert_ne!(token, new_token().unwrap());
-        assert!(token_matches(&token, token.as_bytes()));
-        assert!(!token_matches(&token, &token.as_bytes()[..63]));
-        assert!(!token_matches(&token, format!("{token}0").as_bytes()));
-        assert!(!token_matches(&token, b""));
-    }
-
-    #[test]
-    fn tcp_requests_need_the_token() {
-        let (port, token, commands) = tcp_server();
-        request(connect(port), Some(&token), "show").expect("answered as ZapFast");
-        let wrong = new_token().unwrap();
-        assert!(request(connect(port), Some(&wrong), "show").is_err());
-        assert!(request(connect(port), None, "reload-themes").is_err());
-        // Browsers reaching localhost send HTTP, which never carries the token.
-        let mut browser = connect(port);
-        browser
-            .write_all(b"GET /zapfast-business:show HTTP/1.1\r\nHost: localhost\r\n\r\n")
-            .unwrap();
-        let mut reply = Vec::new();
-        browser.read_to_end(&mut reply).unwrap();
-        assert!(reply.is_empty());
-        assert!(request(connect(port), Some(&token), "frobnicate").is_err());
-        assert_eq!(*commands.lock().unwrap(), vec![ControlCommand::Show]);
-    }
-
-    #[test]
-    fn oversized_and_stalled_clients_do_not_block_the_listener() {
-        let (port, token, commands) = tcp_server();
-        let mut flood = connect(port);
-        // The listener stops reading at the limit and closes the connection,
-        // so later writes may fail.
-        let _ = flood.write_all(&[b'a'; REQUEST_LIMIT * 4]);
-        // A client that sends a partial request and then waits is dropped
-        // when its time runs out.
-        let mut stalled = connect(port);
-        stalled.write_all(token.as_bytes()).unwrap();
-        let started = Instant::now();
-        request(connect(port), Some(&token), "ping").expect("served after the others");
-        assert!(started.elapsed() < REQUEST_TIME * 3);
-        let mut reply = Vec::new();
-        stalled.read_to_end(&mut reply).unwrap();
-        assert!(reply.is_empty());
-        assert_eq!(*commands.lock().unwrap(), vec![ControlCommand::Ping]);
-    }
-
-    #[test]
-    fn key_file_round_trips_and_stays_private() {
-        let dir = dir("key");
-        std::fs::create_dir_all(&dir).unwrap();
-        let token = new_token().unwrap();
-        write_key(&dir, 4242, &token).unwrap();
-        assert_eq!(read_key(&dir).unwrap(), (4242, token));
+    /// Sends `line` the way a copy from before fastframe-instance does, with
+    /// `token` first on Windows, and returns the raw reply.
+    fn raw_request(dir: &Path, line: &str, token: Option<&str>) -> String {
         #[cfg(unix)]
-        {
-            use std::os::unix::fs::PermissionsExt;
-            let mode = std::fs::metadata(dir.join(KEY_FILE))
-                .unwrap()
-                .permissions()
-                .mode();
-            assert_eq!(mode & 0o777, 0o600);
-        }
-        std::fs::remove_dir_all(dir).unwrap();
+        let mut stream = {
+            let _ = token;
+            std::os::unix::net::UnixStream::connect(dir.join("instance.sock")).unwrap()
+        };
+        #[cfg(not(unix))]
+        let mut stream = {
+            let key = std::fs::read_to_string(dir.join("instance.key")).unwrap();
+            let mut key = key.lines();
+            let port: u16 = key.next().unwrap().parse().unwrap();
+            let written = key.next().unwrap().to_owned();
+            let mut stream = connect(port);
+            let token = token.map_or(written, str::to_owned);
+            stream.write_all(format!("{token}\n").as_bytes()).unwrap();
+            stream
+        };
+        stream.write_all(format!("{line}\n").as_bytes()).unwrap();
+        let mut reply = String::new();
+        let _ = stream.read_to_string(&mut reply);
+        reply
     }
 
-    /// Verifies a request crosses the socket into the app queue, that the
-    /// lock keeps a second holder out, and that files are private.
-    #[cfg(unix)]
+    /// A second launch reaches the first, whether it is this version or one
+    /// from before fastframe-instance, which writes and expects the same
+    /// lines: `zapfast-business:show` in, `zapfast-business:ok` out. Themes reload without a
+    /// window. Unknown verbs are declined, and on Windows a wrong token gets
+    /// no reply.
     #[test]
-    fn a_second_launch_reaches_the_queue() {
-        use std::os::unix::fs::PermissionsExt;
-
-        let dir = dir("unix");
-        let first = lock(&dir).unwrap().expect("the first lock");
-        assert!(lock(&dir).unwrap().is_none());
-        // A socket left by a crash is replaced.
-        std::fs::write(dir.join(SOCKET_FILE), b"stale").unwrap();
-        let commands: Queue = Default::default();
-        listen(
-            &dir,
-            Arc::clone(&commands),
-            crate::backend::Waker::default(),
-        )
-        .unwrap();
-
-        send(&dir, "show").expect("answered as ZapFast");
-        // Unknown verbs close the connection without a reply.
-        assert!(send(&dir, "frobnicate").is_err());
-        assert_eq!(*commands.lock().unwrap(), vec![ControlCommand::Show]);
-
-        let mode = |name: &str| {
-            let path = if name.is_empty() {
-                dir.clone()
-            } else {
-                dir.join(name)
-            };
-            std::fs::metadata(path).unwrap().permissions().mode() & 0o777
+    fn a_second_launch_reaches_the_queue_on_the_old_wire() {
+        let home = tempfile::tempdir().unwrap();
+        let dir = home.path().join("runtime");
+        let waker = crate::backend::Waker::default();
+        let commands = Queue::default();
+        let fastframe_instance::Claim::First(first) = claim(&dir, "show", &commands, &waker) else {
+            panic!("the first launch takes the slot");
         };
-        assert_eq!(mode(""), 0o700);
-        assert_eq!(mode(LOCK_FILE), 0o600);
-        assert_eq!(mode(SOCKET_FILE), 0o600);
 
-        // The lock is free again once its holder is gone.
+        // A launch of this version.
+        let second = claim(&dir, "show", &Queue::default(), &waker);
+        assert!(matches!(second, fastframe_instance::Claim::Running(reply) if reply == OK));
+        send(&dir, "reload-themes").expect("themes reload without a window");
+        let declined = send(&dir, "frobnicate").unwrap_err();
+        assert_eq!(declined.kind(), std::io::ErrorKind::PermissionDenied);
+        assert!(matches!(
+            claim(&dir, "frobnicate", &Queue::default(), &waker),
+            fastframe_instance::Claim::Declined
+        ));
+
+        // A launch of an older version.
+        assert_eq!(
+            raw_request(&dir, "zapfast-business:show", None),
+            "zapfast-business:ok\n"
+        );
+        assert_eq!(
+            raw_request(&dir, "zapfast-business:frobnicate", None),
+            "zapfast-business!declined\n",
+            "which an older copy reads as no answer"
+        );
+        #[cfg(not(unix))]
+        assert_eq!(
+            raw_request(&dir, "zapfast-business:show", Some(&"0".repeat(64))),
+            "",
+            "a wrong token is refused"
+        );
+
+        assert_eq!(
+            *commands.lock().unwrap(),
+            vec![
+                ControlCommand::Show,
+                ControlCommand::ReloadThemes,
+                ControlCommand::Show,
+            ]
+        );
         drop(first);
-        assert!(lock(&dir).unwrap().is_some());
-        std::fs::remove_dir_all(dir).unwrap();
     }
 }

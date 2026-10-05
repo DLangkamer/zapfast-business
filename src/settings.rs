@@ -1,5 +1,6 @@
 //! User preferences stored in JSON.
 
+use std::collections::HashSet;
 use std::path::Path;
 
 use serde::{Deserialize, Serialize};
@@ -8,11 +9,11 @@ use serde::{Deserialize, Serialize};
 /// typed string. ponytail: fixed cost, revisit if it lags the search field.
 const CHAT_LOCK_ROUNDS: std::num::NonZeroU32 = std::num::NonZeroU32::new(200_000).unwrap();
 
-fn hex(bytes: &[u8]) -> String {
+pub(crate) fn hex(bytes: &[u8]) -> String {
     bytes.iter().map(|byte| format!("{byte:02x}")).collect()
 }
 
-fn unhex(value: &str) -> Option<Vec<u8>> {
+pub(crate) fn unhex(value: &str) -> Option<Vec<u8>> {
     value
         .len()
         .is_multiple_of(2)
@@ -42,6 +43,28 @@ impl ThemeChoice {
             Self::Dark => "Dark",
             Self::Light => "Light",
             Self::System => "Follow system",
+        }
+    }
+}
+
+/// The typeface the interface is drawn with.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum FontChoice {
+    /// The platform's own interface font.
+    #[default]
+    System,
+    /// The bundled Inter, the same on every machine.
+    Inter,
+}
+
+impl FontChoice {
+    pub const ALL: [FontChoice; 2] = [Self::System, Self::Inter];
+
+    pub fn label(self) -> &'static str {
+        match self {
+            Self::System => "System",
+            Self::Inter => "Inter",
         }
     }
 }
@@ -290,6 +313,37 @@ impl WallpaperColor {
     }
 }
 
+/// How long ZapFast may go without input before the app lock locks it:
+/// WhatsApp Web's three choices.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum AutoLock {
+    OneMinute,
+    #[default]
+    FifteenMinutes,
+    OneHour,
+}
+
+impl AutoLock {
+    pub const ALL: [AutoLock; 3] = [Self::OneMinute, Self::FifteenMinutes, Self::OneHour];
+
+    pub fn duration(self) -> std::time::Duration {
+        std::time::Duration::from_secs(match self {
+            Self::OneMinute => 60,
+            Self::FifteenMinutes => 15 * 60,
+            Self::OneHour => 60 * 60,
+        })
+    }
+
+    pub fn label(self, locale: crate::i18n::Locale) -> std::borrow::Cow<'static, str> {
+        match self {
+            Self::OneMinute => crate::i18n::gettext(locale, "After 1 minute"),
+            Self::FifteenMinutes => crate::i18n::gettext(locale, "After 15 minutes"),
+            Self::OneHour => crate::i18n::gettext(locale, "After 1 hour"),
+        }
+    }
+}
+
 /// The sound a new-message notification makes.
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -316,6 +370,8 @@ pub struct Settings {
     #[serde(default)]
     pub version: u32,
     pub theme: ThemeChoice,
+    /// The interface's typeface.
+    pub font: FontChoice,
     /// Interface language. `None` follows the operating system's locale.
     pub interface_language: Option<crate::i18n::Locale>,
     /// Filename of the selected local JSON palette.
@@ -414,6 +470,11 @@ pub struct Settings {
     pub chat_lock_code_hash: Option<String>,
     /// The one-time locked-chat code hint has been opened.
     pub chat_lock_hint_dismissed: bool,
+    /// Salted, slow verifier of the app lock password
+    /// ([`crate::app_lock::verifier`]); `None` leaves the app lock off.
+    pub app_lock_hash: Option<String>,
+    /// How long ZapFast may go unused before the app lock locks it.
+    pub app_lock_after: AutoLock,
 }
 
 impl Default for Settings {
@@ -421,6 +482,7 @@ impl Default for Settings {
         Self {
             version: SETTINGS_VERSION,
             theme: ThemeChoice::Dark,
+            font: FontChoice::System,
             interface_language: None,
             custom_theme: None,
             custom_theme_cache: None,
@@ -459,6 +521,8 @@ impl Default for Settings {
             chat_lock_code: None,
             chat_lock_code_hash: None,
             chat_lock_hint_dismissed: false,
+            app_lock_hash: None,
+            app_lock_after: AutoLock::default(),
         }
     }
 }
@@ -626,6 +690,136 @@ impl Settings {
     }
 }
 
+/// Preferences that belong to one WhatsApp account.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct AccountSettings {
+    pub send_read_receipts: bool,
+    pub send_typing: bool,
+    #[serde(alias = "auto_download_images")]
+    pub auto_download: bool,
+    pub last_chat: Option<String>,
+    pub notifications: bool,
+    pub save_contacts_to_phone: bool,
+    /// This account's copy of the chosen chat wallpaper image.
+    pub wallpaper_image: Option<std::path::PathBuf>,
+}
+
+impl Default for AccountSettings {
+    fn default() -> Self {
+        Self {
+            send_read_receipts: true,
+            send_typing: true,
+            auto_download: true,
+            last_chat: None,
+            notifications: true,
+            save_contacts_to_phone: true,
+            wallpaper_image: None,
+        }
+    }
+}
+
+impl AccountSettings {
+    pub fn from_legacy(settings: &Settings) -> Self {
+        Self {
+            send_read_receipts: settings.send_read_receipts,
+            send_typing: settings.send_typing,
+            auto_download: settings.auto_download,
+            last_chat: settings.last_chat.clone(),
+            notifications: settings.notifications,
+            save_contacts_to_phone: settings.save_contacts_to_phone,
+            wallpaper_image: settings.wallpaper_image.clone(),
+        }
+    }
+
+    pub fn load(path: &Path) -> Self {
+        match std::fs::read_to_string(path) {
+            Ok(contents) => serde_json::from_str(&contents).unwrap_or_else(|error| {
+                log::warn!("account settings are unreadable, using the defaults: {error}");
+                Self::default()
+            }),
+            Err(_) => Self::default(),
+        }
+    }
+
+    pub fn save(&self, path: &Path) -> std::io::Result<()> {
+        if let Some(parent) = path.parent() {
+            std::fs::create_dir_all(parent)?;
+        }
+        let contents = serde_json::to_string_pretty(self).map_err(std::io::Error::other)?;
+        let temp = path.with_extension("json.tmp");
+        std::fs::write(&temp, contents)?;
+        std::fs::rename(&temp, path)
+    }
+}
+
+/// Which accounts exist on this computer.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct AccountRoster {
+    pub next_id: u32,
+    pub active: String,
+    pub order: Vec<String>,
+}
+
+impl Default for AccountRoster {
+    fn default() -> Self {
+        Self {
+            next_id: 2,
+            active: "1".into(),
+            order: vec!["1".into()],
+        }
+    }
+}
+
+impl AccountRoster {
+    pub fn load(path: &Path) -> std::io::Result<Self> {
+        let mut roster = match std::fs::read_to_string(path) {
+            Ok(contents) => serde_json::from_str(&contents).map_err(std::io::Error::other)?,
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => Self::default(),
+            Err(error) => return Err(error),
+        };
+        roster.sanitize();
+        Ok(roster)
+    }
+
+    /// Drops ids that cannot be folder names, so a hand-edited file cannot
+    /// point state or a later delete at an arbitrary path. Keeps the first
+    /// spelling of a repeated id so two workers never share one archive.
+    pub fn sanitize(&mut self) {
+        let mut seen = HashSet::new();
+        self.order
+            .retain(|id| crate::model::AccountId::is_safe(id) && seen.insert(id.clone()));
+        if !self.order.iter().any(|id| id == &self.active) {
+            self.active = self.order.first().cloned().unwrap_or_else(|| "1".into());
+        }
+        let highest = self
+            .order
+            .iter()
+            .filter_map(|id| id.parse::<u32>().ok())
+            .max()
+            .unwrap_or(1);
+        self.next_id = self.next_id.max(highest + 1).max(2);
+    }
+
+    pub fn save(&self, path: &Path) -> std::io::Result<()> {
+        if let Some(parent) = path.parent() {
+            std::fs::create_dir_all(parent)?;
+        }
+        let contents = serde_json::to_string_pretty(self).map_err(std::io::Error::other)?;
+        let temp = path.with_extension("json.tmp");
+        std::fs::write(&temp, contents)?;
+        std::fs::rename(&temp, path)
+    }
+
+    pub fn allocate(&mut self) -> crate::model::AccountId {
+        let id = crate::model::AccountId(self.next_id.to_string());
+        self.next_id += 1;
+        self.order.push(id.0.clone());
+        self.active = id.0.clone();
+        id
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -647,6 +841,18 @@ mod tests {
         assert_eq!(settings.message_sound, NotificationSound::System);
         assert_eq!(settings.mention_sound, NotificationSound::Alert);
         assert!(settings.group_sounds);
+    }
+
+    /// Settings written before the font could be chosen draw with the
+    /// platform's; the choice is saved by name.
+    #[test]
+    fn the_font_defaults_to_the_platform_and_is_saved_by_name() {
+        let older: Settings = serde_json::from_str(r#"{"theme":"light"}"#).unwrap();
+        assert_eq!(older.font, FontChoice::System);
+        let chosen: Settings = serde_json::from_str(r#"{"font":"inter"}"#).unwrap();
+        assert_eq!(chosen.font, FontChoice::Inter);
+        let saved = serde_json::to_value(&chosen).unwrap();
+        assert_eq!(saved["font"], "inter");
     }
 
     #[test]
@@ -865,6 +1071,70 @@ mod tests {
             chosen,
             "loading again changes nothing"
         );
+    }
+
+    #[test]
+    fn a_hand_edited_account_id_cannot_leave_the_accounts_folder() {
+        use crate::model::AccountId;
+        assert!(AccountId::is_safe("1"));
+        assert!(AccountId::is_safe("12"));
+        assert!(!AccountId::is_safe(""));
+        assert!(!AccountId::is_safe("0"));
+        assert!(!AccountId::is_safe("01"));
+        assert!(!AccountId::is_safe(".."));
+        assert!(!AccountId::is_safe("/tmp"));
+        assert!(!AccountId::is_safe("1/../etc"));
+    }
+
+    #[test]
+    fn a_roster_drops_unsafe_ids() {
+        let mut roster = AccountRoster {
+            next_id: 4,
+            active: "../etc".into(),
+            order: vec!["1".into(), "..".into(), "/tmp".into()],
+        };
+        roster.sanitize();
+        assert_eq!(roster.order, ["1".to_string()]);
+        assert_eq!(roster.active, "1");
+        assert!(roster.next_id > 1);
+    }
+
+    #[test]
+    fn a_roster_keeps_the_first_copy_of_a_repeated_id() {
+        let mut roster = AccountRoster {
+            next_id: 3,
+            active: "1".into(),
+            order: vec!["1".into(), "1".into(), "2".into()],
+        };
+        roster.sanitize();
+        assert_eq!(roster.order, ["1".to_string(), "2".to_string()]);
+    }
+
+    #[test]
+    fn a_broken_roster_file_does_not_become_the_default() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("accounts.json");
+        std::fs::write(&path, "{").unwrap();
+        assert!(AccountRoster::load(&path).is_err());
+        assert_eq!(std::fs::read_to_string(&path).unwrap(), "{");
+    }
+
+    #[test]
+    fn allocating_an_account_advances_the_roster() {
+        let mut roster = AccountRoster::default();
+        assert_eq!(roster.order, ["1".to_string()]);
+        let second = roster.allocate();
+        assert_eq!(second.as_str(), "2");
+        assert_eq!(roster.next_id, 3);
+        assert_eq!(roster.active, "2");
+        assert_eq!(roster.order, ["1".to_string(), "2".to_string()]);
+    }
+
+    #[test]
+    fn a_missing_roster_file_starts_with_the_first_account() {
+        let dir = tempfile::tempdir().unwrap();
+        let roster = AccountRoster::load(&dir.path().join("accounts.json")).unwrap();
+        assert_eq!(roster, AccountRoster::default());
     }
 }
 

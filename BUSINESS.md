@@ -1,7 +1,7 @@
 # ZapFast Business for Windows
 
 Independent fork of [Carmine Paolino's ZapFast](https://github.com/crmne/zapfast).
-Base: upstream 0.17.0, commit `76d0789`.
+Base: upstream 0.19.0.
 Branch: `business/windows-isolation`. Keep `main` as an upstream reference.
 
 This variant also exposes WhatsApp Business labels and quick replies already
@@ -63,7 +63,7 @@ cargo test --locked --all-targets --all-features
 $env:RUSTDOCFLAGS = '-D warnings'
 cargo doc --locked --all-features --no-deps
 cargo build --locked --release
-iscc /DVersion=0.17.4 /DNumericVersion=0.17.4 /DArch=x86_64 /DBinary="$PWD\target\release\zapfast-business.exe" /DOutputDir="$PWD\dist" packaging\windows\zapfast.iss
+iscc /DVersion=0.19.1 /DNumericVersion=0.19.1 /DArch=x86_64 /DBinary="$PWD\target\release\zapfast-business.exe" /DOutputDir="$PWD\dist" packaging\windows\zapfast.iss
 ```
 
 Do not run the original multi-platform release workflow to publish this fork.
@@ -93,11 +93,13 @@ inspect and reply in direct chats or groups without clearing their unread
 state. Recording and sending voice messages also preserve that state. Use the
 chat's existing **Mark as read** action when you want to clear it.
 
-Text messages can be scheduled from the `+` menu beside the composer. Scheduled
-text is stored in the encrypted Business archive and uses the ordinary send
-path when its time arrives. ZapFast Business must be running and connected at
-that time. This first scheduling version supports one destination at a time;
-management, retry controls and opt-in broadcast lists remain future work.
+Text messages can be scheduled from the `+` menu beside the composer. Use
+**Scheduled messages** in the same menu to review every pending item for the
+active account, edit its text or time, or cancel it. While recording a voice
+message, the calendar button schedules that recording instead of sending it
+immediately. Scheduled text and audio samples stay in the encrypted Business
+archive. ZapFast Business must be running; an item that becomes due while the
+account is offline waits until it reconnects.
 
 Stable releases are published at `DLangkamer/zapfast-business`. Version 0.17.2
 is the trusted bootstrap: it embeds the Business public key and accepts only a
