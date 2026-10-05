@@ -273,6 +273,60 @@ pub fn moment_stamp(locale: Locale, unix_seconds: i64) -> String {
 /// A contact's last-seen line as WhatsApp words it: "last seen today at
 /// 14:05", "last seen yesterday at 14:05", a weekday within the week, and
 /// only the date before that. The time follows the system's clock.
+/// Formats a future scheduled timestamp clearly (e.g. "Today at 18:30", "Tomorrow at 09:00", "23 Sep at 15:00").
+pub fn schedule_stamp(locale: Locale, unix_seconds: i64) -> String {
+    let Some(when) = zoned(unix_seconds) else {
+        return String::new();
+    };
+    let time = hour_minute(&when);
+    let today = today();
+    let date = when.date();
+    if date == today {
+        crate::i18n::gettext(locale, "Today at {time}").replace("{time}", &time)
+    } else if let Ok(tomorrow) = today.tomorrow() {
+        if date == tomorrow {
+            crate::i18n::gettext(locale, "Tomorrow at {time}").replace("{time}", &time)
+        } else {
+            crate::i18n::gettext(locale, "{date} at {time}")
+                .replace("{date}", &short_date(locale, date))
+                .replace("{time}", &time)
+        }
+    } else {
+        crate::i18n::gettext(locale, "{date} at {time}")
+            .replace("{date}", &short_date(locale, date))
+            .replace("{time}", &time)
+    }
+}
+
+/// Converts a local date and hour/minute into a Unix timestamp in seconds.
+pub fn to_unix_seconds(date: Date, hour: u8, minute: u8) -> Option<i64> {
+    let dt = date.at(hour as i8, minute as i8, 0, 0);
+    let z = dt.to_zoned(zone()).ok()?;
+    Some(z.timestamp().as_second())
+}
+
+/// Converts a Unix timestamp in seconds into local (Date, hour, minute).
+pub fn local_datetime(unix_seconds: i64) -> Option<(Date, u8, u8)> {
+    let z = zoned(unix_seconds)?;
+    Some((z.date(), z.hour() as u8, z.minute() as u8))
+}
+
+/// Advances or rewinds a calendar month by `direction` steps.
+pub fn month_step(month: Date, direction: i32) -> Date {
+    let (year, number) = if direction < 0 {
+        if month.month() == 1 {
+            (month.year() - 1, 12)
+        } else {
+            (month.year(), month.month() - 1)
+        }
+    } else if month.month() == 12 {
+        (month.year() + 1, 1)
+    } else {
+        (month.year(), month.month() + 1)
+    };
+    Date::new(year, number, 1).unwrap_or(month)
+}
+
 pub fn last_seen(locale: Locale, unix_seconds: i64) -> String {
     let Some(when) = zoned(unix_seconds) else {
         return String::new();

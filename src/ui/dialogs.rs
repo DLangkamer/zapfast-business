@@ -1,6 +1,8 @@
 //! Shortcuts, account, linking, contact, and chat dialogs.
 
-use egui::{Align, CornerRadius, Frame, Layout, Margin, Sense, Stroke, pos2, vec2};
+use crate::i18n::Locale;
+use egui::{Align, Align2, CornerRadius, Frame, Layout, Margin, Sense, Stroke, pos2, vec2};
+use jiff::civil::Date;
 
 use crate::app::App;
 use crate::model::{Action, Dialog};
@@ -48,14 +50,14 @@ pub fn show(app: &mut App, ctx: &egui::Context) {
                 | Dialog::MessageInfo { .. } => {
                     420.0_f32.min((ui.ctx().content_rect().width() - 64.0).max(180.0))
                 }
-                Dialog::Labels | Dialog::QuickReplies | Dialog::ScheduledMessages => 520.0,
+                Dialog::Labels | Dialog::QuickReplies | Dialog::ScheduledMessages(_) => 520.0,
             });
             ui.spacing_mut().item_spacing.y = 8.0;
             match dialog {
                 Dialog::CreatePoll(chat) => super::polls::create(app, ui, &chat),
                 Dialog::ScheduleMessage(chat) => schedule_message(app, ui, &chat),
                 Dialog::ScheduleVoice(chat) => schedule_voice(app, ui, &chat),
-                Dialog::ScheduledMessages => scheduled_messages(app, ui),
+                Dialog::ScheduledMessages(filter) => scheduled_messages(app, ui, filter.as_deref()),
                 Dialog::PollResults { chat, message } => {
                     super::polls::results(app, ui, &chat, &message)
                 }
@@ -99,6 +101,269 @@ pub fn show(app: &mut App, ctx: &egui::Context) {
     }
 }
 
+fn date_time_picker(
+    ui: &mut egui::Ui,
+    locale: Locale,
+    palette: &theme::Palette,
+    id_source: &str,
+    date: &mut Date,
+    hour: &mut u8,
+    minute: &mut u8,
+) -> Option<i64> {
+    let now = crate::util::now();
+    let today = crate::util::today();
+
+    let month_id = egui::Id::new((id_source, "viewed-month"));
+    let mut viewed_month = ui
+        .data_mut(|d| d.get_temp::<Date>(month_id))
+        .unwrap_or_else(|| date.first_of_month());
+
+    let can_go_back = (viewed_month.year(), viewed_month.month()) > (today.year(), today.month());
+
+    ui.horizontal(|ui| {
+        super::widgets::rich_text(
+            ui,
+            &crate::util::month_heading(locale, viewed_month),
+            theme::semibold(14.5),
+            palette.text,
+        );
+        ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
+            if theme::icon_button(
+                ui,
+                Icon::ChevronRight,
+                16.0,
+                palette.secondary,
+                palette.text,
+                "Next month",
+            )
+            .clicked()
+            {
+                viewed_month = crate::util::month_step(viewed_month, 1);
+                ui.data_mut(|d| d.insert_temp(month_id, viewed_month));
+            }
+            if can_go_back
+                && theme::icon_button(
+                    ui,
+                    Icon::ChevronLeft,
+                    16.0,
+                    palette.secondary,
+                    palette.text,
+                    "Previous month",
+                )
+                .clicked()
+            {
+                viewed_month = crate::util::month_step(viewed_month, -1);
+                ui.data_mut(|d| d.insert_temp(month_id, viewed_month));
+            }
+        });
+    });
+
+    ui.add_space(4.0);
+
+    let headings = crate::util::weekday_headings(locale);
+    let cell_size = 28.0;
+
+    ui.horizontal(|ui| {
+        ui.spacing_mut().item_spacing.x = 0.0;
+        for heading in &headings {
+            let (rect, _) = ui.allocate_exact_size(vec2(cell_size, 18.0), Sense::hover());
+            ui.painter().text(
+                rect.center(),
+                Align2::CENTER_CENTER,
+                heading,
+                theme::medium(11.0),
+                palette.dim,
+            );
+        }
+    });
+
+    let first = viewed_month.first_of_month();
+    let lead = usize::try_from(first.weekday().to_monday_zero_offset()).unwrap_or(0);
+    let days_in_month = first.days_in_month();
+    let total_cells = lead + days_in_month as usize;
+    let rows = (total_cells + 6) / 7;
+
+    for row_idx in 0..rows {
+        ui.horizontal(|ui| {
+            ui.spacing_mut().item_spacing.x = 0.0;
+            for col_idx in 0..7 {
+                let cell_idx = row_idx * 7 + col_idx;
+                if cell_idx < lead || cell_idx >= lead + days_in_month as usize {
+                    ui.allocate_exact_size(vec2(cell_size, cell_size), Sense::hover());
+                } else {
+                    let day = (cell_idx - lead + 1) as i8;
+                    if let Ok(cell_date) = Date::new(viewed_month.year(), viewed_month.month(), day)
+                    {
+                        let past = cell_date < today;
+                        let selected = *date == cell_date;
+                        let is_today = cell_date == today;
+
+                        let (cell_rect, response) = ui.allocate_exact_size(
+                            vec2(cell_size, cell_size),
+                            if past { Sense::hover() } else { Sense::click() },
+                        );
+
+                        let radius = cell_size / 2.0 - 2.0;
+                        if selected {
+                            ui.painter()
+                                .circle_filled(cell_rect.center(), radius, palette.accent);
+                        } else if response.hovered() && !past {
+                            ui.painter().circle_filled(
+                                cell_rect.center(),
+                                radius,
+                                palette.surface_hover,
+                            );
+                        } else if is_today {
+                            ui.painter().circle_stroke(
+                                cell_rect.center(),
+                                radius,
+                                Stroke::new(1.0, palette.surface_active),
+                            );
+                        }
+
+                        let text_color = if selected {
+                            palette.on_accent
+                        } else if past {
+                            palette.dim
+                        } else {
+                            palette.text
+                        };
+
+                        ui.painter().text(
+                            cell_rect.center(),
+                            Align2::CENTER_CENTER,
+                            day.to_string(),
+                            theme::regular(12.5),
+                            text_color,
+                        );
+
+                        if response.clicked() && !past {
+                            *date = cell_date;
+                        }
+                    }
+                }
+            }
+        });
+    }
+
+    ui.add_space(8.0);
+
+    ui.horizontal(|ui| {
+        super::widgets::rich_text(
+            ui,
+            &crate::i18n::gettext(locale, "Time:"),
+            theme::medium(13.5),
+            palette.text,
+        );
+        ui.add_space(4.0);
+
+        if ui.button("◀").on_hover_text("-1h").clicked() {
+            *hour = if *hour == 0 { 23 } else { *hour - 1 };
+        }
+        let (rect_h, _) = ui.allocate_exact_size(vec2(28.0, 22.0), Sense::hover());
+        ui.painter()
+            .rect_filled(rect_h, CornerRadius::same(4), palette.surface_hover);
+        ui.painter().text(
+            rect_h.center(),
+            Align2::CENTER_CENTER,
+            format!("{:02}", *hour),
+            theme::semibold(13.5),
+            palette.text,
+        );
+        if ui.button("▶").on_hover_text("+1h").clicked() {
+            *hour = (*hour + 1) % 24;
+        }
+
+        super::widgets::rich_text(ui, ":", theme::bold(14.0), palette.text);
+
+        if ui.button("◀").on_hover_text("-5m").clicked() {
+            *minute = if *minute < 5 { 55 } else { *minute - 5 };
+        }
+        let (rect_m, _) = ui.allocate_exact_size(vec2(28.0, 22.0), Sense::hover());
+        ui.painter()
+            .rect_filled(rect_m, CornerRadius::same(4), palette.surface_hover);
+        ui.painter().text(
+            rect_m.center(),
+            Align2::CENTER_CENTER,
+            format!("{:02}", *minute),
+            theme::semibold(13.5),
+            palette.text,
+        );
+        if ui.button("▶").on_hover_text("+5m").clicked() {
+            *minute = (*minute + 5) % 60;
+        }
+    });
+
+    ui.add_space(4.0);
+
+    ui.horizontal_wrapped(|ui| {
+        let presets: [(&str, i64); 5] = [
+            ("+15 min", 15 * 60),
+            ("+30 min", 30 * 60),
+            ("+1 h", 60 * 60),
+            ("+3 h", 3 * 3600),
+            ("Amanhã 09:00", -1),
+        ];
+
+        for (label, offset) in presets {
+            if ui.button(label).clicked() {
+                if offset == -1 {
+                    if let Ok(tom) = today.tomorrow() {
+                        *date = tom;
+                        *hour = 9;
+                        *minute = 0;
+                        viewed_month = tom.first_of_month();
+                        ui.data_mut(|d| d.insert_temp(month_id, viewed_month));
+                    }
+                } else {
+                    let target = now + offset;
+                    if let Some((target_d, target_h, target_m)) =
+                        crate::util::local_datetime(target)
+                    {
+                        *date = target_d;
+                        *hour = target_h;
+                        *minute = target_m;
+                        viewed_month = target_d.first_of_month();
+                        ui.data_mut(|d| d.insert_temp(month_id, viewed_month));
+                    }
+                }
+            }
+        }
+    });
+
+    ui.add_space(6.0);
+
+    let send_at_ts = crate::util::to_unix_seconds(*date, *hour, *minute);
+    match send_at_ts {
+        Some(ts) if ts > now => {
+            let stamp = crate::util::schedule_stamp(locale, ts);
+            super::widgets::rich_text(
+                ui,
+                &format!(
+                    "📅 {}: {}",
+                    crate::i18n::gettext(locale, "Scheduled for"),
+                    stamp
+                ),
+                theme::semibold(13.0),
+                palette.accent,
+            );
+            Some(ts)
+        }
+        _ => {
+            super::widgets::rich_text(
+                ui,
+                &format!(
+                    "⚠️ {}",
+                    crate::i18n::gettext(locale, "Please select a date and time in the future.")
+                ),
+                theme::regular(12.5),
+                palette.dim,
+            );
+            None
+        }
+    }
+}
+
 fn schedule_voice(app: &mut App, ui: &mut egui::Ui, chat: &str) {
     let palette = app.palette;
     dialog_title(app, ui, "Schedule voice message");
@@ -108,119 +373,281 @@ fn schedule_voice(app: &mut App, ui: &mut egui::Ui, chat: &str) {
         theme::regular(13.0),
         palette.secondary,
     );
-    let id = egui::Id::new("schedule-voice-minutes");
-    let mut minutes = ui
-        .data_mut(|data| data.get_temp::<String>(id))
-        .unwrap_or_else(|| "60".into());
-    ui.horizontal(|ui| {
-        ui.label("Minutes from now");
-        ui.add(egui::TextEdit::singleline(&mut minutes).desired_width(90.0));
+    ui.add_space(8.0);
+
+    let date_id = egui::Id::new("schedule-voice-date");
+    let hour_id = egui::Id::new("schedule-voice-hour");
+    let minute_id = egui::Id::new("schedule-voice-minute");
+
+    let default_ts = crate::util::now() + 3600;
+    let (def_date, def_hour, def_min) =
+        crate::util::local_datetime(default_ts).unwrap_or((crate::util::today(), 12, 0));
+    let def_min = ((def_min + 4) / 5) * 5 % 60;
+
+    let mut date = ui
+        .data_mut(|d| d.get_temp::<Date>(date_id))
+        .unwrap_or(def_date);
+    let mut hour = ui
+        .data_mut(|d| d.get_temp::<u8>(hour_id))
+        .unwrap_or(def_hour);
+    let mut minute = ui
+        .data_mut(|d| d.get_temp::<u8>(minute_id))
+        .unwrap_or(def_min);
+
+    let valid_send_at = date_time_picker(
+        ui,
+        app.locale,
+        &palette,
+        "schedule-voice-picker",
+        &mut date,
+        &mut hour,
+        &mut minute,
+    );
+
+    ui.data_mut(|d| {
+        d.insert_temp(date_id, date);
+        d.insert_temp(hour_id, hour);
+        d.insert_temp(minute_id, minute);
     });
-    minutes.retain(|c| c.is_ascii_digit());
-    let delay = minutes.parse::<i64>().ok().filter(|value| *value > 0);
-    ui.data_mut(|data| data.insert_temp(id, minutes));
+
+    ui.add_space(10.0);
     ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
         if theme::soft_button(
             ui,
             &palette,
             Some(Icon::Calendar),
             "Schedule",
-            delay.is_some(),
+            valid_send_at.is_some(),
         )
         .clicked()
         {
-            app.actions.push(Action::ScheduleVoice {
-                chat: chat.to_owned(),
-                send_at: crate::util::now() + delay.unwrap_or_default() * 60,
-            });
-            app.actions.push(Action::CloseDialog);
+            if let Some(send_at) = valid_send_at {
+                app.actions.push(Action::ScheduleVoice {
+                    chat: chat.to_owned(),
+                    send_at,
+                });
+                app.actions.push(Action::CloseDialog);
+            }
         }
     });
 }
 
-fn scheduled_messages(app: &mut App, ui: &mut egui::Ui) {
+fn scheduled_messages(app: &mut App, ui: &mut egui::Ui, initial_filter: Option<&str>) {
     let palette = app.palette;
     dialog_title(app, ui, "Scheduled messages");
-    if app.scheduled_messages.is_empty() {
+
+    let filter_id = egui::Id::new("scheduled-messages-filter");
+    let mut active_filter = ui
+        .data_mut(|d| d.get_temp::<Option<String>>(filter_id))
+        .unwrap_or_else(|| initial_filter.map(|s| s.to_owned()));
+
+    if let Some(ref chat_id) = active_filter {
+        let chat_name = app
+            .chat(chat_id)
+            .map(|c| c.name.clone())
+            .unwrap_or_else(|| chat_id.clone());
+        ui.horizontal(|ui| {
+            super::widgets::rich_text(
+                ui,
+                &format!(
+                    "{}: {}",
+                    crate::i18n::gettext(app.locale, "Conversation"),
+                    chat_name
+                ),
+                theme::semibold(13.0),
+                palette.accent,
+            );
+            if ui
+                .button(crate::i18n::gettext(app.locale, "Show all chats"))
+                .clicked()
+            {
+                active_filter = None;
+                ui.data_mut(|d| d.insert_temp(filter_id, None::<String>));
+            }
+        });
+        ui.add_space(6.0);
+    }
+
+    let messages: Vec<_> = app
+        .scheduled_messages
+        .iter()
+        .filter(|item| {
+            if let Some(ref filter_chat) = active_filter {
+                item.chat == *filter_chat
+            } else {
+                true
+            }
+        })
+        .cloned()
+        .collect();
+
+    if messages.is_empty() {
         super::widgets::rich_text(
             ui,
-            "There are no scheduled messages for this account.",
+            if active_filter.is_some() {
+                "There are no scheduled messages for this conversation."
+            } else {
+                "There are no scheduled messages for this account."
+            },
             theme::regular(13.5),
             palette.secondary,
         );
     }
+
     egui::ScrollArea::vertical()
-        .max_height(430.0)
+        .max_height(460.0)
         .show(ui, |ui| {
-            for item in app.scheduled_messages.clone() {
-                let chat = app
+            for item in messages {
+                let chat_title = app
                     .chat(&item.chat)
                     .map(|chat| chat.name.clone())
                     .unwrap_or_else(|| item.chat.clone());
+
+                let edit_id = egui::Id::new(("scheduled-edit-open", item.id));
+                let mut is_editing = ui
+                    .data_mut(|d| d.get_temp::<bool>(edit_id))
+                    .unwrap_or(false);
+
                 let text_id = egui::Id::new(("scheduled-text", item.id));
-                let minutes_id = egui::Id::new(("scheduled-minutes", item.id));
                 let mut text = ui
-                    .data_mut(|data| data.get_temp::<String>(text_id))
+                    .data_mut(|d| d.get_temp::<String>(text_id))
                     .unwrap_or_else(|| item.text.clone());
-                let remaining = ((item.send_at - crate::util::now()).max(60) + 59) / 60;
-                let mut minutes = ui
-                    .data_mut(|data| data.get_temp::<String>(minutes_id))
-                    .unwrap_or_else(|| remaining.to_string());
+
+                let (cur_d, cur_h, cur_m) = crate::util::local_datetime(item.send_at).unwrap_or((
+                    crate::util::today(),
+                    12,
+                    0,
+                ));
+
+                let date_id = egui::Id::new(("scheduled-date", item.id));
+                let hour_id = egui::Id::new(("scheduled-hour", item.id));
+                let minute_id = egui::Id::new(("scheduled-minute", item.id));
+
+                let mut date = ui
+                    .data_mut(|d| d.get_temp::<Date>(date_id))
+                    .unwrap_or(cur_d);
+                let mut hour = ui.data_mut(|d| d.get_temp::<u8>(hour_id)).unwrap_or(cur_h);
+                let mut minute = ui
+                    .data_mut(|d| d.get_temp::<u8>(minute_id))
+                    .unwrap_or(cur_m);
+
                 egui::Frame::new()
                     .fill(palette.surface)
                     .corner_radius(8)
                     .inner_margin(12)
                     .show(ui, |ui| {
-                        super::widgets::rich_text(ui, &chat, theme::semibold(14.0), palette.text);
-                        super::widgets::rich_text(
-                            ui,
-                            &crate::util::moment_stamp(app.locale, item.send_at),
-                            theme::regular(12.0),
-                            palette.secondary,
-                        );
-                        if item.kind == crate::archive::ScheduledKind::Text {
-                            ui.add(egui::TextEdit::multiline(&mut text).desired_rows(2));
-                        } else {
+                        ui.horizontal(|ui| {
                             super::widgets::rich_text(
                                 ui,
-                                "Voice message",
-                                theme::regular(13.5),
+                                &chat_title,
+                                theme::semibold(14.0),
                                 palette.text,
                             );
-                        }
-                        ui.horizontal(|ui| {
-                            ui.label("Send in (minutes)");
-                            ui.add(egui::TextEdit::singleline(&mut minutes).desired_width(70.0));
-                            minutes.retain(|c| c.is_ascii_digit());
-                            let delay = minutes.parse::<i64>().ok().filter(|value| *value > 0);
-                            if ui
-                                .add_enabled(
-                                    delay.is_some()
-                                        && (item.kind == crate::archive::ScheduledKind::Voice
-                                            || !text.trim().is_empty()),
-                                    egui::Button::new("Save"),
-                                )
-                                .clicked()
-                            {
-                                app.actions.push(Action::UpdateScheduled {
-                                    id: item.id,
-                                    text: (item.kind == crate::archive::ScheduledKind::Text)
-                                        .then(|| text.trim().to_owned()),
-                                    send_at: crate::util::now() + delay.unwrap_or_default() * 60,
-                                });
-                            }
-                            if ui.button("Cancel sending").clicked() {
-                                app.actions.push(Action::DeleteScheduled(item.id));
-                            }
+                            ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
+                                let badge_text = if item.kind == crate::archive::ScheduledKind::Text
+                                {
+                                    "Text"
+                                } else {
+                                    "Voice"
+                                };
+                                super::widgets::rich_text(
+                                    ui,
+                                    badge_text,
+                                    theme::regular(11.5),
+                                    palette.dim,
+                                );
+                            });
                         });
+
+                        let schedule_label = crate::util::schedule_stamp(app.locale, item.send_at);
+                        super::widgets::rich_text(
+                            ui,
+                            &format!("📅 {schedule_label}"),
+                            theme::medium(12.5),
+                            palette.accent,
+                        );
+
+                        ui.add_space(4.0);
+
+                        if is_editing {
+                            if item.kind == crate::archive::ScheduledKind::Text {
+                                ui.add(egui::TextEdit::multiline(&mut text).desired_rows(2));
+                            }
+                            let new_send_at = date_time_picker(
+                                ui,
+                                app.locale,
+                                &palette,
+                                &format!("edit-scheduled-{}", item.id),
+                                &mut date,
+                                &mut hour,
+                                &mut minute,
+                            );
+
+                            ui.horizontal(|ui| {
+                                let can_save = new_send_at.is_some()
+                                    && (item.kind == crate::archive::ScheduledKind::Voice
+                                        || !text.trim().is_empty());
+                                if ui
+                                    .add_enabled(can_save, egui::Button::new("Save changes"))
+                                    .clicked()
+                                {
+                                    if let Some(target_ts) = new_send_at {
+                                        app.actions.push(Action::UpdateScheduled {
+                                            id: item.id,
+                                            text: (item.kind
+                                                == crate::archive::ScheduledKind::Text)
+                                                .then(|| text.trim().to_owned()),
+                                            send_at: target_ts,
+                                        });
+                                        is_editing = false;
+                                        ui.data_mut(|d| d.insert_temp(edit_id, false));
+                                    }
+                                }
+                                if ui.button("Cancel edit").clicked() {
+                                    is_editing = false;
+                                    ui.data_mut(|d| d.insert_temp(edit_id, false));
+                                }
+                            });
+                        } else {
+                            if item.kind == crate::archive::ScheduledKind::Text {
+                                super::widgets::rich_text(
+                                    ui,
+                                    &item.text,
+                                    theme::regular(13.0),
+                                    palette.text,
+                                );
+                            } else {
+                                super::widgets::rich_text(
+                                    ui,
+                                    "Voice message (audio)",
+                                    theme::regular(13.0),
+                                    palette.secondary,
+                                );
+                            }
+                            ui.add_space(4.0);
+                            ui.horizontal(|ui| {
+                                if ui.button("Edit / Reschedule").clicked() {
+                                    is_editing = true;
+                                    ui.data_mut(|d| d.insert_temp(edit_id, true));
+                                }
+                                if ui.button("Cancel sending").clicked() {
+                                    app.actions.push(Action::DeleteScheduled(item.id));
+                                }
+                            });
+                        }
                     });
-                ui.data_mut(|data| {
-                    data.insert_temp(text_id, text);
-                    data.insert_temp(minutes_id, minutes);
+
+                ui.data_mut(|d| {
+                    d.insert_temp(text_id, text);
+                    d.insert_temp(date_id, date);
+                    d.insert_temp(hour_id, hour);
+                    d.insert_temp(minute_id, minute);
                 });
                 ui.add_space(8.0);
             }
         });
+
+    ui.add_space(6.0);
     if ui.button("Refresh").clicked() {
         app.actions.push(Action::RefreshScheduled);
     }
@@ -241,11 +668,9 @@ fn dialog_title(app: &mut App, ui: &mut egui::Ui, title: &str) {
 }
 
 fn schedule_message(app: &mut App, ui: &mut egui::Ui, chat: &str) {
-    use super::widgets;
-
     let palette = app.palette;
     ui.horizontal(|ui| {
-        widgets::rich_text(
+        super::widgets::rich_text(
             ui,
             &crate::i18n::gettext(app.locale, "Schedule message"),
             theme::semibold(18.0),
@@ -259,7 +684,7 @@ fn schedule_message(app: &mut App, ui: &mut egui::Ui, chat: &str) {
             }
         });
     });
-    widgets::rich_text(
+    super::widgets::rich_text(
         ui,
         &crate::i18n::gettext(
             app.locale,
@@ -269,64 +694,61 @@ fn schedule_message(app: &mut App, ui: &mut egui::Ui, chat: &str) {
         palette.secondary,
     );
     ui.add_space(8.0);
-    widgets::rich_text(ui, app.composer.trim(), theme::regular(14.0), palette.text);
-    ui.add_space(10.0);
+    super::widgets::rich_text(ui, app.composer.trim(), theme::regular(14.0), palette.text);
+    ui.add_space(8.0);
 
-    let delay_id = egui::Id::new("schedule-delay-minutes");
-    let mut minutes = ui
-        .data_mut(|data| data.get_temp::<String>(delay_id))
-        .unwrap_or_else(|| "60".into());
-    widgets::setting_row(
+    let date_id = egui::Id::new("schedule-text-date");
+    let hour_id = egui::Id::new("schedule-text-hour");
+    let minute_id = egui::Id::new("schedule-text-minute");
+
+    let default_ts = crate::util::now() + 3600;
+    let (def_date, def_hour, def_min) =
+        crate::util::local_datetime(default_ts).unwrap_or((crate::util::today(), 12, 0));
+    let def_min = ((def_min + 4) / 5) * 5 % 60;
+
+    let mut date = ui
+        .data_mut(|d| d.get_temp::<Date>(date_id))
+        .unwrap_or(def_date);
+    let mut hour = ui
+        .data_mut(|d| d.get_temp::<u8>(hour_id))
+        .unwrap_or(def_hour);
+    let mut minute = ui
+        .data_mut(|d| d.get_temp::<u8>(minute_id))
+        .unwrap_or(def_min);
+
+    let valid_send_at = date_time_picker(
         ui,
+        app.locale,
         &palette,
-        &crate::i18n::gettext(app.locale, "Send in"),
-        &crate::i18n::gettext(app.locale, "Minutes from now"),
-        |ui| {
-            ui.add(
-                egui::TextEdit::singleline(&mut minutes)
-                    .desired_width(90.0)
-                    .char_limit(7),
-            );
-        },
+        "schedule-text-picker",
+        &mut date,
+        &mut hour,
+        &mut minute,
     );
-    minutes.retain(|character| character.is_ascii_digit());
-    let delay = minutes.parse::<i64>().ok().filter(|value| *value > 0);
-    ui.data_mut(|data| data.insert_temp(delay_id, minutes));
 
-    ui.horizontal(|ui| {
-        for (label, value) in [("15 min", 15_i64), ("1 hour", 60), ("Tomorrow", 24 * 60)] {
-            if ui.button(crate::i18n::gettext(app.locale, label)).clicked() {
-                ui.data_mut(|data| data.insert_temp(delay_id, value.to_string()));
-            }
-        }
+    ui.data_mut(|d| {
+        d.insert_temp(date_id, date);
+        d.insert_temp(hour_id, hour);
+        d.insert_temp(minute_id, minute);
     });
-    if let Some(delay) = delay {
-        let send_at = crate::util::now().saturating_add(delay.saturating_mul(60));
-        widgets::rich_text(
-            ui,
-            &crate::i18n::gettext(app.locale, "Scheduled for {time}")
-                .replace("{time}", &crate::util::moment_stamp(app.locale, send_at)),
-            theme::regular(12.5),
-            palette.secondary,
-        );
-    }
-    ui.add_space(12.0);
-    let ready = delay.is_some() && !app.composer.trim().is_empty() && app.editing.is_none();
+
+    ui.add_space(10.0);
+    let ready = valid_send_at.is_some() && !app.composer.trim().is_empty() && app.editing.is_none();
     ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
         let label = crate::i18n::gettext(app.locale, "Schedule");
         if theme::soft_button(ui, &palette, Some(Icon::Calendar), &label, ready).clicked() {
-            let send_at = crate::util::now() + delay.unwrap_or_default() * 60;
-            app.actions.push(Action::ScheduleText {
-                chat: chat.to_owned(),
-                text: app.composer.clone(),
-                quoting: app.reply_to.clone(),
-                send_at,
-            });
-            app.actions.push(Action::CloseDialog);
+            if let Some(send_at) = valid_send_at {
+                app.actions.push(Action::ScheduleText {
+                    chat: chat.to_owned(),
+                    text: app.composer.clone(),
+                    quoting: app.reply_to.clone(),
+                    send_at,
+                });
+                app.actions.push(Action::CloseDialog);
+            }
         }
     });
 }
-
 fn interactive_list(app: &mut App, ui: &mut egui::Ui, chat: &str, message: &str, button: usize) {
     use super::widgets;
     use crate::model::{Content, InteractiveAction};

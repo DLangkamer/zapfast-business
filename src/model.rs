@@ -1157,7 +1157,7 @@ pub enum Dialog {
     CreatePoll(ChatId),
     /// Schedules the current text composer for a private chat or group.
     ScheduleMessage(ChatId),
-    ScheduledMessages,
+    ScheduledMessages(Option<ChatId>),
     ScheduleVoice(ChatId),
     PollResults {
         chat: ChatId,

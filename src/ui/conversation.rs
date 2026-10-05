@@ -222,6 +222,36 @@ fn header(app: &mut App, ui: &mut egui::Ui, chat: &Chat) -> Rect {
                     crate::i18n::gettext(app.locale, "Leave group")
                 };
                 ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
+                    let scheduled_in_chat = app
+                        .scheduled_messages
+                        .iter()
+                        .filter(|item| item.chat == chat.id)
+                        .count();
+                    if scheduled_in_chat > 0 {
+                        let label = if scheduled_in_chat == 1 {
+                            crate::i18n::gettext(app.locale, "Scheduled message").into_owned()
+                        } else {
+                            format!(
+                                "{} ({scheduled_in_chat})",
+                                crate::i18n::gettext(app.locale, "Scheduled messages")
+                            )
+                        };
+                        let calendar_btn = theme::icon_button(
+                            ui,
+                            Icon::Calendar,
+                            18.0,
+                            palette.accent,
+                            palette.accent,
+                            &label,
+                        );
+                        if calendar_btn.clicked() {
+                            app.actions.push(Action::RefreshScheduled);
+                            app.actions
+                                .push(Action::ShowDialog(Dialog::ScheduledMessages(Some(
+                                    chat.id.clone(),
+                                ))));
+                        }
+                    }
                     let more = theme::icon_button(
                         ui,
                         Icon::Ellipsis,
@@ -1541,7 +1571,9 @@ fn composer_tools_menu(app: &mut App, chat: &Chat, plus: &egui::Response) {
                 if widgets::menu_item(ui, &app.palette, Some(Icon::Calendar), &scheduled) {
                     app.actions.push(Action::RefreshScheduled);
                     app.actions
-                        .push(Action::ShowDialog(Dialog::ScheduledMessages));
+                        .push(Action::ShowDialog(Dialog::ScheduledMessages(Some(
+                            chat.id.clone(),
+                        ))));
                 }
             });
     }

@@ -957,6 +957,7 @@ fn row(app: &mut App, ui: &mut egui::Ui, chat: &Chat) -> egui::Response {
     theme::reveal_focus(&response);
     // The preview area and the whole last message, when the row cuts it short.
     let mut full_preview: Option<(Rect, String, String)> = None;
+    let mut scheduled_clicked = false;
     response.widget_info(|| {
         egui::WidgetInfo::selected(
             egui::WidgetType::SelectableLabel,
@@ -1044,6 +1045,75 @@ fn row(app: &mut App, ui: &mut egui::Ui, chat: &Chat) -> egui::Response {
                 Rect::from_center_size(pos2(badge_right - 8.0, line_y + 8.0), Vec2::splat(14.0));
             Icon::Pin.image(palette.dim, 14.0).paint_at(ui, icon_rect);
             badge_right -= 20.0;
+        }
+        let scheduled_count = app
+            .scheduled_messages
+            .iter()
+            .filter(|item| item.chat == chat.id)
+            .count();
+        if scheduled_count > 0 {
+            let badge_width = if scheduled_count > 1 { 32.0 } else { 20.0 };
+            let badge_rect = Rect::from_center_size(
+                pos2(badge_right - badge_width / 2.0, line_y + 8.0),
+                vec2(badge_width, 18.0),
+            );
+            badge_right -= badge_width + 4.0;
+
+            let badge_resp = ui.interact(
+                badge_rect,
+                ui.id().with(("scheduled_badge", &chat.id)),
+                Sense::click(),
+            );
+            let hovered = badge_resp.hovered();
+            let bg_color = if hovered {
+                palette.surface_active
+            } else {
+                palette.surface_hover
+            };
+            ui.painter()
+                .rect_filled(badge_rect, egui::CornerRadius::same(5), bg_color);
+            ui.painter().rect_stroke(
+                badge_rect,
+                egui::CornerRadius::same(5),
+                egui::Stroke::new(1.0, palette.accent),
+                egui::StrokeKind::Inside,
+            );
+            let icon_center = if scheduled_count > 1 {
+                pos2(badge_rect.left() + 9.0, badge_rect.center().y)
+            } else {
+                badge_rect.center()
+            };
+            let icon_rect = Rect::from_center_size(icon_center, Vec2::splat(12.0));
+            Icon::Calendar
+                .image(palette.accent, 12.0)
+                .paint_at(ui, icon_rect);
+
+            if scheduled_count > 1 {
+                ui.painter().text(
+                    pos2(badge_rect.right() - 7.0, badge_rect.center().y),
+                    egui::Align2::CENTER_CENTER,
+                    scheduled_count.to_string(),
+                    theme::medium(11.0),
+                    palette.accent,
+                );
+            }
+
+            let tooltip = if scheduled_count == 1 {
+                crate::i18n::gettext(app.locale, "1 scheduled message - click to view").into_owned()
+            } else {
+                crate::i18n::gettext(app.locale, "{count} scheduled messages - click to view")
+                    .replace("{count}", &scheduled_count.to_string())
+            };
+            let badge_resp = badge_resp.on_hover_text(tooltip);
+
+            if badge_resp.clicked() {
+                scheduled_clicked = true;
+                app.actions.push(Action::RefreshScheduled);
+                app.actions
+                    .push(Action::ShowDialog(Dialog::ScheduledMessages(Some(
+                        chat.id.clone(),
+                    ))));
+            }
         }
         let mut x = left;
         // Keep the Business labels visible on the chat that wears them.
@@ -1140,7 +1210,7 @@ fn row(app: &mut App, ui: &mut egui::Ui, chat: &Chat) -> egui::Response {
     if let Some((area, prefix, full)) = full_preview {
         full_preview_tooltip(app, ui, &chat.id, area, &prefix, &full);
     }
-    if response.clicked() {
+    if response.clicked() && !scheduled_clicked {
         app.actions.push(Action::OpenChat(chat.id.clone()));
     }
     let menu_palette = palette;
