@@ -4,7 +4,7 @@
 //! and connecting the desktop app.
 
 use std::io::Read;
-use egui::{Layout, Vec2};
+use egui::Layout;
 use crate::app::App;
 use crate::model::Action;
 use crate::theme::{self, Icon};
@@ -15,7 +15,7 @@ pub fn show(app: &mut App, ui: &mut egui::Ui) {
     ui.vertical(|ui| {
         // Header
         ui.horizontal(|ui| {
-            theme::icon(ui, Icon::Globe, 22.0, palette.accent);
+            theme::icon(ui, Icon::Monitor, 22.0, palette.accent);
             ui.add_space(4.0);
             theme::text(
                 ui,
@@ -158,13 +158,13 @@ pub fn show(app: &mut App, ui: &mut egui::Ui) {
 
                         match ureq::post(&http_url)
                             .header("Content-Type", "application/json")
-                            .send_bytes(body.as_bytes())
+                            .send(body.as_bytes())
                         {
                             Ok(mut resp) => {
                                 let mut text = String::new();
                                 if let Ok(_) = resp.body_mut().read_to_string(&mut text) {
                                     if let Ok(val) = serde_json::from_str::<serde_json::Value>(&text) {
-                                        if let Some(tok) = val.get("token").and_then(|v| v.as_str()) {
+                                        if let Some(_tok) = val.get("token").and_then(|v| v.as_str()) {
                                             app.server_status_msg = Some("✔ Autenticado com sucesso no servidor!".to_string());
                                             app.toast(format!("Conectado ao servidor como {user}"));
                                             app.actions.push(Action::CloseDialog);
@@ -184,5 +184,5 @@ pub fn show(app: &mut App, ui: &mut egui::Ui) {
                 }
             });
         });
-    })
+    });
 }

@@ -12,6 +12,7 @@ use serde::{Deserialize, Serialize};
 use tokio::sync::broadcast;
 
 use crate::backend::{Backend, Command, Event, LinkStatus, Waker};
+use crate::model::AccountId;
 use crate::paths::AccountDirs;
 use crate::server::db::ServerDb;
 
@@ -90,8 +91,12 @@ impl InstanceManager {
         }
 
         let instance_dir = self.data_dir.join("accounts").join(id);
-        let _ = std::fs::create_dir_all(&instance_dir);
-        let dirs = AccountDirs::under(&instance_dir);
+        let dirs = AccountDirs {
+            id: AccountId::from(id),
+            state: instance_dir.join("state"),
+            cache: instance_dir.join("cache"),
+        };
+        let _ = dirs.ensure();
 
         let mut backend = Backend::spawn(dirs, Waker::default());
         if let Some(startup) = backend.take_startup() {
@@ -326,7 +331,7 @@ impl InstanceManager {
     pub fn remove_instance(&self, id: &str) -> bool {
         let mut map = self.instances.write().unwrap();
         if let Some(mut inst) = map.remove(id) {
-            if let Some(mut managed) = Arc::get_mut(&mut inst) {
+            if let Some(managed) = Arc::get_mut(&mut inst) {
                 if let Some(stop) = managed.stop_tx.take() {
                     let _ = stop.send(());
                 }

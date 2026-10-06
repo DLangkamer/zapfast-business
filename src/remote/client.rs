@@ -4,7 +4,6 @@
 //! authenticates with user credentials, and forwards events to the desktop UI.
 
 use std::sync::{Arc, Mutex};
-use std::time::Duration;
 use futures_util::{SinkExt, StreamExt};
 use serde::{Deserialize, Serialize};
 use tokio::sync::mpsc;

@@ -268,6 +268,7 @@ impl Worker {
             mentions: Vec::new(),
             forwarded: false,
             thumbnail: None,
+            revoked: false,
         };
         self.interactive_sending
             .insert((chat.clone(), source_id.clone()), id.clone());

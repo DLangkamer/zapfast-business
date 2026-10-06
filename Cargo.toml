@@ -24,6 +24,7 @@ path = "src/bin/server.rs"
 
 [dependencies]
 anyhow = "1"
+futures-util = { version = "0.3", features = ["sink", "std"] }
 # Hashes saved stickers by content. Already included through wacore.
 sha2 = "0.11"
 # Already in the tree through rustls; verifies lock codes.

@@ -1,7 +1,6 @@
 //! HTTP REST API and Static Web Server for ZapFast Server.
 
 use std::net::SocketAddr;
-use std::sync::Arc;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::{TcpListener, TcpStream};
 use tokio_websockets::ServerBuilder;
@@ -146,13 +145,13 @@ async fn route_http(
                 }
             }
         }
-        let _ = send_response(stream, 401, "application/json", br#"{"error":"Credenciais inválidas"}"#).await;
+        let _ = send_response(stream, 401, "application/json", r#"{"error":"Credenciais inválidas"}"#.as_bytes()).await;
         return;
     }
 
     // Protected endpoints
     let Some(user) = user else {
-        let _ = send_response(stream, 401, "application/json", br#"{"error":"Não autenticado"}"#).await;
+        let _ = send_response(stream, 401, "application/json", r#"{"error":"Não autenticado"}"#.as_bytes()).await;
         return;
     };
 
@@ -189,7 +188,7 @@ async fn route_http(
                 return;
             }
         }
-        let _ = send_response(stream, 400, "application/json", br#"{"error":"ID inválido"}"#).await;
+        let _ = send_response(stream, 400, "application/json", r#"{"error":"ID inválido"}"#.as_bytes()).await;
         return;
     }
 
@@ -221,7 +220,7 @@ async fn route_http(
             let _ = send_response(stream, 200, "application/json", resp.as_bytes()).await;
             return;
         }
-        let _ = send_response(stream, 500, "application/json", br#"{"error":"Erro ao listar usuários"}"#).await;
+        let _ = send_response(stream, 500, "application/json", r#"{"error":"Erro ao listar usuários"}"#.as_bytes()).await;
         return;
     }
 
@@ -242,7 +241,7 @@ async fn route_http(
                 }
             }
         }
-        let _ = send_response(stream, 400, "application/json", br#"{"error":"Dados inválidos"}"#).await;
+        let _ = send_response(stream, 400, "application/json", r#"{"error":"Dados inválidos"}"#.as_bytes()).await;
         return;
     }
 
@@ -273,7 +272,7 @@ async fn route_http(
                 return;
             }
         }
-        let _ = send_response(stream, 400, "application/json", br#"{"error":"Formato inválido"}"#).await;
+        let _ = send_response(stream, 400, "application/json", r#"{"error":"Formato inválido"}"#.as_bytes()).await;
         return;
     }
 

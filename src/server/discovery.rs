@@ -2,7 +2,6 @@
 //!
 //! Listens on UDP port 47120 for desktop client probes and responds with server metadata.
 
-use std::net::SocketAddr;
 use std::sync::Arc;
 use tokio::net::UdpSocket;
 

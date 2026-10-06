@@ -211,7 +211,7 @@ impl ChatFilter {
     }
 }
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct Chat {
     pub id: ChatId,
     /// Best known address-book, push, or phone-number name.
@@ -261,7 +261,7 @@ pub struct Chat {
     pub notification_sound: Option<crate::settings::NotificationSound>,
 }
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct LastMessage {
     pub from_me: bool,
     pub sender: String,

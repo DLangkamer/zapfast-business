@@ -329,7 +329,8 @@ pub fn hash_password(password: &str, salt: &str) -> String {
     hasher.update(salt.as_bytes());
     hasher.update(b":");
     hasher.update(password.as_bytes());
-    format!("{:x}", hasher.finalize())
+    let result = hasher.finalize();
+    result.iter().map(|b| format!("{b:02x}")).collect()
 }
 
 pub fn generate_random_token() -> String {

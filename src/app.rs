@@ -4702,11 +4702,7 @@ impl App {
                     .get_mut(&chat)
                     .and_then(|conversation| conversation.message_mut(&id))
                 {
-                    if self.is_demo() {
-                        message.content = Content::Revoked;
-                    } else {
-                        message.revoked = true;
-                    }
+                    message.revoked = true;
                 }
                 self.backend.send(Command::Revoke { chat, id });
             }

@@ -312,7 +312,7 @@ fn render_popovers(app: &mut App, ui: &mut egui::Ui, palette: &Palette) {
                         ("#f97316", "Laranja"),
                         ("#6b7280", "Cinza"),
                     ];
-                    for (hex, label) in colors {
+                    for (hex, _label) in colors {
                         let is_active = color_hex == hex;
                         let c = parse_hex_color(hex).unwrap_or(palette.accent);
                         let (r, resp) = ui.allocate_exact_size(Vec2::splat(16.0), egui::Sense::click());

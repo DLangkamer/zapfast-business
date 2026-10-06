@@ -2,12 +2,10 @@
 //!
 //! Handles real-time client communication with Desktop apps and the Web UI.
 
-use std::sync::Arc;
-use futures_core::Stream;
 use futures_util::{SinkExt, StreamExt};
 use serde::{Deserialize, Serialize};
 use tokio::net::TcpStream;
-use tokio_websockets::{Message, ServerBuilder, WebSocketStream};
+use tokio_websockets::{Message, WebSocketStream};
 
 use crate::backend::Command;
 use crate::server::db::{ServerDb, User};
@@ -152,7 +150,7 @@ pub async fn handle_ws_stream(
                         Ok(ClientWsMessage::MarkRead { instance_id, chat }) => {
                             if let Some(user) = &authenticated_user {
                                 if user.role == "admin" || allowed_instances.contains(&instance_id) {
-                                    manager.send_command(&instance_id, Command::MarkRead(chat));
+                                    manager.send_command(&instance_id, Command::MarkRead { chat, receipts: true });
                                 }
                             }
                         }

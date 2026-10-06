@@ -3752,13 +3752,13 @@ fn mirrored_row(
 }
 
 /// Banner indicating that a message was deleted by the sender, but preserved locally.
-fn revoked_banner(ui: &mut egui::Ui, palette: &Palette, locale: &str) {
+fn revoked_banner(ui: &mut egui::Ui, palette: &Palette, locale: crate::i18n::Locale) {
     let bg = palette.danger.gamma_multiply(0.12);
     let fg = palette.danger;
-    let label = if locale.starts_with("pt") {
-        "Esta mensagem foi apagada"
-    } else {
-        "This message was deleted"
+    let label = match locale {
+        crate::i18n::Locale::PortugueseBrazil => "Esta mensagem foi apagada",
+        crate::i18n::Locale::Spanish => "Este mensaje fue eliminado",
+        _ => "This message was deleted",
     };
     Frame::new()
         .fill(bg)
