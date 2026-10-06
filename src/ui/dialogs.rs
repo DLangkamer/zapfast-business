@@ -372,14 +372,44 @@ pub(crate) fn date_time_picker(
 
 fn schedule_voice(app: &mut App, ui: &mut egui::Ui, chat: &str) {
     let palette = app.palette;
-    dialog_title(app, ui, "Schedule voice message");
+    dialog_title(app, ui, "Programar mensagem de voz");
     super::widgets::rich_text(
         ui,
-        "The recording stays encrypted on this computer until it is sent.",
+        "A gravacao de audio permanece criptografada neste computador ate o envio.",
         theme::regular(13.0),
         palette.secondary,
     );
     ui.add_space(8.0);
+
+    if let Some((_, samples, _)) = &app.scheduled_voice {
+        let is_playing = app.player.status("preview_sched_voice").state == crate::audio::State::Playing;
+        let dur = samples.len() as f32 / crate::voice::RATE as f32;
+        let mins = (dur / 60.0) as u32;
+        let secs = (dur % 60.0) as u32;
+        ui.horizontal(|ui| {
+            if theme::soft_button(
+                ui,
+                &palette,
+                Some(if is_playing { Icon::Pause } else { Icon::Play }),
+                if is_playing { "Pausar" } else { "Ouvir gravacao" },
+                false,
+            )
+            .clicked()
+            {
+                app.actions.push(Action::PlayVoiceSamples {
+                    id: "preview_sched_voice".to_owned(),
+                    samples: samples.clone(),
+                });
+            }
+            theme::text(
+                ui,
+                format!("Audio gravado ({mins}:{secs:02})"),
+                theme::regular(12.5),
+                palette.accent,
+            );
+        });
+        ui.add_space(6.0);
+    }
 
     let date_id = egui::Id::new("schedule-voice-date");
     let hour_id = egui::Id::new("schedule-voice-hour");
@@ -422,7 +452,7 @@ fn schedule_voice(app: &mut App, ui: &mut egui::Ui, chat: &str) {
             ui,
             &palette,
             Some(Icon::Calendar),
-            "Schedule",
+            "Programar envio",
             valid_send_at.is_some(),
         )
         .clicked()
@@ -551,9 +581,9 @@ fn scheduled_messages(app: &mut App, ui: &mut egui::Ui, initial_filter: Option<&
                             );
                             ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
                                 let badge_text = match item.kind {
-                                    crate::archive::ScheduledKind::Text => "Text",
-                                    crate::archive::ScheduledKind::Voice => "Voice",
-                                    crate::archive::ScheduledKind::Files => "Media",
+                                    crate::archive::ScheduledKind::Text => "Texto",
+                                    crate::archive::ScheduledKind::Voice => "Áudio PTT",
+                                    crate::archive::ScheduledKind::Files => "Mídia",
                                 };
                                 super::widgets::rich_text(
                                     ui,
@@ -593,7 +623,7 @@ fn scheduled_messages(app: &mut App, ui: &mut egui::Ui, initial_filter: Option<&
                                     && (item.kind != crate::archive::ScheduledKind::Text
                                         || !text.trim().is_empty());
                                 if ui
-                                    .add_enabled(can_save, egui::Button::new("Save changes"))
+                                    .add_enabled(can_save, egui::Button::new("Salvar alterações"))
                                     .clicked()
                                 {
                                     if let Some(target_ts) = new_send_at {
@@ -608,7 +638,7 @@ fn scheduled_messages(app: &mut App, ui: &mut egui::Ui, initial_filter: Option<&
                                         ui.data_mut(|d| d.insert_temp(edit_id, false));
                                     }
                                 }
-                                if ui.button("Cancel edit").clicked() {
+                                if ui.button("Cancelar edição").clicked() {
                                     is_editing = false;
                                     ui.data_mut(|d| d.insert_temp(edit_id, false));
                                 }
@@ -622,20 +652,50 @@ fn scheduled_messages(app: &mut App, ui: &mut egui::Ui, initial_filter: Option<&
                                     palette.text,
                                 );
                             } else {
-                                super::widgets::rich_text(
-                                    ui,
-                                    "Voice message (audio)",
-                                    theme::regular(13.0),
-                                    palette.secondary,
-                                );
+                                ui.horizontal(|ui| {
+                                    if let Some(samples) = &item.voice {
+                                        let play_id = format!("preview_sched_item_{}", item.id);
+                                        let is_playing = app.player.status(&play_id).state == crate::audio::State::Playing;
+                                        let dur = samples.len() as f32 / crate::voice::RATE as f32;
+                                        let mins = (dur / 60.0) as u32;
+                                        let secs = (dur % 60.0) as u32;
+                                        if theme::soft_button(
+                                            ui,
+                                            &palette,
+                                            Some(if is_playing { Icon::Pause } else { Icon::Play }),
+                                            if is_playing { "Pausar" } else { "Ouvir áudio" },
+                                            false,
+                                        )
+                                        .clicked()
+                                        {
+                                            app.actions.push(Action::PlayVoiceSamples {
+                                                id: play_id,
+                                                samples: samples.clone(),
+                                            });
+                                        }
+                                        super::widgets::rich_text(
+                                            ui,
+                                            format!("Áudio gravado ({mins}:{secs:02})"),
+                                            theme::regular(12.5),
+                                            palette.secondary,
+                                        );
+                                    } else {
+                                        super::widgets::rich_text(
+                                            ui,
+                                            "Mensagem de voz (áudio)",
+                                            theme::regular(13.0),
+                                            palette.secondary,
+                                        );
+                                    }
+                                });
                             }
                             ui.add_space(4.0);
                             ui.horizontal(|ui| {
-                                if ui.button("Edit / Reschedule").clicked() {
+                                if ui.button("Editar / Reagendar").clicked() {
                                     is_editing = true;
                                     ui.data_mut(|d| d.insert_temp(edit_id, true));
                                 }
-                                if ui.button("Cancel sending").clicked() {
+                                if ui.button("Cancelar envio").clicked() {
                                     app.actions.push(Action::DeleteScheduled(item.id));
                                 }
                             });

@@ -520,6 +520,29 @@ fn content_input_section(app: &mut App, ui: &mut egui::Ui, palette: &Palette) {
                                 app.bulk_state.audio_duration = None;
                                 app.bulk_state.audio_samples = None;
                             }
+                            let is_playing = app.player.status("preview_bulk_audio").state
+                                == crate::audio::State::Playing;
+                            if theme::soft_button(
+                                ui,
+                                palette,
+                                Some(if is_playing { Icon::Pause } else { Icon::Play }),
+                                if is_playing { "Pausar" } else { "Ouvir áudio" },
+                                false,
+                            )
+                            .clicked()
+                            {
+                                if let Some(samples) = &app.bulk_state.audio_samples {
+                                    app.actions.push(Action::PlayVoiceSamples {
+                                        id: "preview_bulk_audio".to_owned(),
+                                        samples: samples.clone(),
+                                    });
+                                } else if let Some(path) = &app.bulk_state.audio_path {
+                                    app.actions.push(Action::PlayVoice {
+                                        message: "preview_bulk_audio".to_owned(),
+                                        path: path.clone(),
+                                    });
+                                }
+                            }
                         });
                     });
                 } else {

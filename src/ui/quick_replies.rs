@@ -32,7 +32,7 @@ pub fn manager(app: &mut App, ui: &mut egui::Ui, palette: &Palette) {
     ui.horizontal(|ui| {
         ui.label(theme::rich_text("Atalho (sem a barra)", theme::medium(13.0), palette.text));
         if app.quick_reply_editing.is_some() {
-            theme::text(ui, "(Editando resposta)", theme::semibold(12.0), palette.primary);
+            theme::text(ui, "(Editando resposta)", theme::semibold(12.0), palette.accent);
         }
     });
     ui.add(TextEdit::singleline(&mut app.quick_reply_shortcut).hint_text("ex: apresentacao ou preco"));
@@ -56,7 +56,7 @@ pub fn manager(app: &mut App, ui: &mut egui::Ui, palette: &Palette) {
                     egui::Button::new(
                         egui::RichText::new(tag)
                             .font(theme::mono(11.0))
-                            .color(palette.primary),
+                            .color(palette.accent),
                     )
                     .fill(palette.surface_active)
                     .stroke(Stroke::new(1.0, palette.outline))
@@ -88,12 +88,12 @@ pub fn manager(app: &mut App, ui: &mut egui::Ui, palette: &Palette) {
     if let Some(voice_name) = &app.quick_reply_voice_name {
         Frame::new()
             .fill(palette.surface_active)
-            .stroke(Stroke::new(1.0, palette.primary))
+            .stroke(Stroke::new(1.0, palette.accent))
             .corner_radius(CornerRadius::same(6))
             .inner_margin(Margin::same(8))
             .show(ui, |ui| {
                 ui.horizontal(|ui| {
-                    theme::text(ui, "🎙", theme::bold(15.0), palette.primary);
+                    theme::text(ui, "🎙", theme::bold(15.0), palette.accent);
                     ui.vertical(|ui| {
                         theme::text(ui, voice_name, theme::semibold(13.0), palette.text);
                         theme::text(
@@ -118,6 +118,25 @@ pub fn manager(app: &mut App, ui: &mut egui::Ui, palette: &Palette) {
                             app.quick_reply_voice_name = None;
                             app.quick_reply_voice_duration = None;
                         }
+                        if let Some(samples) = &app.quick_reply_voice {
+                            let is_playing = app.player.status("preview_qr_draft").state
+                                == crate::audio::State::Playing;
+                            if theme::icon_button(
+                                ui,
+                                if is_playing { Icon::Pause } else { Icon::Play },
+                                14.0,
+                                palette.secondary,
+                                palette.accent,
+                                if is_playing { "Pausar áudio" } else { "Ouvir áudio" },
+                            )
+                            .clicked()
+                            {
+                                app.actions.push(Action::PlayVoiceSamples {
+                                    id: "preview_qr_draft".to_owned(),
+                                    samples: samples.clone(),
+                                });
+                            }
+                        }
                     });
                 });
             });
@@ -128,7 +147,7 @@ pub fn manager(app: &mut App, ui: &mut egui::Ui, palette: &Palette) {
                     egui::Button::new(
                         egui::RichText::new("🎙 Anexar arquivo de audio (.mp3, .ogg, .wav, .m4a)")
                             .font(theme::medium(12.5))
-                            .color(palette.primary),
+                            .color(palette.accent),
                     )
                     .fill(palette.surface)
                     .stroke(Stroke::new(1.0, palette.outline))
@@ -184,7 +203,7 @@ pub fn manager(app: &mut App, ui: &mut egui::Ui, palette: &Palette) {
                 } else {
                     "Adicionar resposta rapida"
                 })
-                .fill(if ready { palette.primary } else { palette.surface })
+                .fill(if ready { palette.accent } else { palette.surface })
                 .corner_radius(6.0),
             )
             .clicked()
@@ -260,7 +279,7 @@ pub fn manager(app: &mut App, ui: &mut egui::Ui, palette: &Palette) {
                                     ui,
                                     format!("🎙 Audio PTT ({mins}:{secs:02})"),
                                     theme::semibold(12.0),
-                                    palette.primary,
+                                    palette.accent,
                                 );
                             }
                         });
@@ -321,8 +340,27 @@ pub fn manager(app: &mut App, ui: &mut egui::Ui, palette: &Palette) {
                                 .as_ref()
                                 .map(|v| v.len() as f32 / crate::voice::RATE as f32);
                         }
+                        if let Some(voice) = &reply.voice {
+                            let play_id = format!("preview_qr_{}", reply.id);
+                            let is_playing = app.player.status(&play_id).state == crate::audio::State::Playing;
+                            if theme::icon_button(
+                                ui,
+                                if is_playing { Icon::Pause } else { Icon::Play },
+                                15.0,
+                                palette.secondary,
+                                palette.accent,
+                                if is_playing { "Pausar áudio" } else { "Ouvir áudio" },
+                            )
+                            .clicked()
+                            {
+                                app.actions.push(Action::PlayVoiceSamples {
+                                    id: play_id,
+                                    samples: voice.clone(),
+                                });
+                            }
+                        }
                         if active_chat.is_some() {
-                            let (btn_label, is_primary) = if reply.voice.is_some() && !reply.message.trim().is_empty() {
+                            let (btn_label, is_accent) = if reply.voice.is_some() && !reply.message.trim().is_empty() {
                                 ("Enviar audio + texto", true)
                             } else if reply.voice.is_some() {
                                 ("Enviar audio agora", true)
@@ -334,10 +372,10 @@ pub fn manager(app: &mut App, ui: &mut egui::Ui, palette: &Palette) {
                                     egui::Button::new(
                                         egui::RichText::new(btn_label)
                                             .font(theme::medium(12.0))
-                                            .color(if is_primary { palette.primary } else { palette.text }),
+                                            .color(if is_accent { palette.accent } else { palette.text }),
                                     )
                                     .fill(palette.surface_active)
-                                    .stroke(Stroke::new(1.0, if is_primary { palette.primary } else { palette.outline }))
+                                    .stroke(Stroke::new(1.0, if is_accent { palette.accent } else { palette.outline }))
                                     .corner_radius(4.0),
                                 )
                                 .clicked()

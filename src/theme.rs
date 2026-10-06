@@ -369,6 +369,18 @@ pub fn bold(size: f32) -> egui::FontId {
     fastframe_fonts::Weight::Bold.font_id(size)
 }
 
+pub fn mono(size: f32) -> egui::FontId {
+    egui::FontId::monospace(size)
+}
+
+pub fn rich_text(
+    text: impl Into<String>,
+    font: egui::FontId,
+    color: Color32,
+) -> egui::RichText {
+    egui::RichText::new(text).font(font).color(color)
+}
+
 /// The face for counting timers (recording, playback positions): Inter at
 /// `weight`, whose figures are all one width, so a timer does not shift as
 /// it counts. San Francisco and Segoe UI draw proportional figures.

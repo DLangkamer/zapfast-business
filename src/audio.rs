@@ -322,6 +322,48 @@ impl Player {
         }
     }
 
+    /// Plays or pauses in-memory audio samples without touching disk.
+    pub fn toggle_samples(&mut self, id: &str, samples: Vec<f32>) -> Result<(), String> {
+        match self.loaded.as_mut() {
+            Some(loaded) if loaded.message == id => {
+                if loaded.done {
+                    return self.restart(0.0);
+                }
+                if let Some((_, sink)) = &self.output {
+                    if loaded.paused {
+                        sink.play();
+                    } else {
+                        sink.pause();
+                    }
+                    loaded.paused = !loaded.paused;
+                }
+                Ok(())
+            }
+            _ => {
+                self.stop();
+                if samples.is_empty() {
+                    return Err("The clip is empty".to_owned());
+                }
+                let samples = Arc::new(samples);
+                self.bars
+                    .entry(id.to_owned())
+                    .or_insert_with(|| voice::waveform(&samples));
+                self.loaded = Some(Loaded {
+                    message: id.to_owned(),
+                    buffer: Arc::clone(&samples),
+                    factor: 1.0,
+                    samples,
+                    base: Duration::ZERO,
+                    paused: false,
+                    done: false,
+                });
+                self.restart(0.0)?;
+                self.ensure_stretch();
+                Ok(())
+            }
+        }
+    }
+
     /// Clears the loaded clip and releases the output device.
     pub fn stop(&mut self) {
         self.output = None;

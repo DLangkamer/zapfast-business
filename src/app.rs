@@ -1948,7 +1948,7 @@ impl App {
         } else {
             (None, None)
         };
-        let first_name = if let (Some(chat), Some(ref name)) = (chat, &full_name) {
+        let first_name = if let (Some(chat), Some(name)) = (chat, full_name.as_deref()) {
             Some(self.short_name(&chat.id, name).to_owned())
         } else {
             None
@@ -4692,6 +4692,7 @@ impl App {
             }
             Action::ClearPending => self.pending.clear(),
             Action::PlayVoice { message, path } => self.play_voice(message, path),
+            Action::PlayVoiceSamples { id, samples } => self.play_voice_samples(id, samples),
             Action::PlayVideo { message, path } => self.play_video(message, path),
             Action::PlayVideoWhenDownloaded(message) => {
                 self.voice_chat = None;
@@ -5332,13 +5333,13 @@ impl App {
                 let chat_ref = self.active_chat().and_then(|id| self.chat(&id)).cloned();
                 if let Some(samples) = reply.voice {
                     if let Some(chat) = self.active_chat() {
-                        let quoting = self.replying_to.clone();
+                        let quoting = self.reply_to.take();
                         self.backend.send(Command::SendVoice {
                             chat: chat.clone(),
                             samples,
                             quoting,
                         });
-                        self.replying_to = None;
+                        self.follow_sent_chat();
                         if !reply.message.trim().is_empty() {
                             let resolved = self.resolve_template(&reply.message, chat_ref.as_ref());
                             self.backend.send(Command::SendText {
@@ -5347,6 +5348,7 @@ impl App {
                                 quoting: None,
                                 mentions: Vec::new(),
                             });
+                            self.follow_sent_chat();
                         }
                         self.composer.clear();
                     } else {
@@ -6214,6 +6216,16 @@ impl App {
             return;
         }
         self.tell_played(message);
+    }
+
+    /// Plays or pauses an in-memory audio sample buffer.
+    fn play_voice_samples(&mut self, id: String, samples: Vec<f32>) {
+        self.video.stop();
+        self.voice_wanted = None;
+        self.voice_chat = None;
+        if let Err(error) = self.player.toggle_samples(&id, samples) {
+            self.toast_error(error);
+        }
     }
 
     fn tell_played(&mut self, message: String) {

@@ -852,7 +852,7 @@ msgstr "Código-fonte"
 
 #: src/ui/settings.rs:789 src/ui/settings.rs:816
 msgid "App lock"
-msgstr ""
+msgstr "Bloqueio do aplicativo"
 
 #: src/ui/settings.rs:792
 msgid ""
@@ -860,81 +860,82 @@ msgid ""
 "this computer out of your chats and encrypts nothing more. A forgotten "
 "password means unlinking."
 msgstr ""
+"Pede uma senha ao iniciar e após um tempo sem uso. Mantém outras pessoas longe "
+"das suas conversas neste computador. Esquecer a senha requer reconectar."
 
 #: src/ui/settings.rs:799
 msgid "Turn off…"
-msgstr ""
+msgstr "Desativar…"
 
 #: src/ui/settings.rs:800
-#, fuzzy
 msgid "Change password…"
-msgstr "Alterar…"
+msgstr "Alterar senha…"
 
 #: src/ui/settings.rs:803
 msgid "Set password…"
-msgstr ""
+msgstr "Definir senha…"
 
 #: src/ui/settings.rs:817 src/ui/settings.rs:824
-#, fuzzy
 msgid "Lock after"
-msgstr "Trancadas"
+msgstr "Bloquear após"
 
 #: src/ui/settings.rs:827
 msgid ""
 "Time without using ZapFast, also counted while it is in the tray. "
 "Ctrl+Shift+L locks it at once."
 msgstr ""
+"Tempo sem usar o ZapFast, contado também na bandeja do sistema. "
+"Ctrl+Shift+L bloqueia na hora."
 
 #: src/ui/settings.rs:869
 msgid "Set an app lock password"
-msgstr ""
+msgstr "Definir senha de bloqueio"
 
 #: src/ui/settings.rs:870
 msgid "Change the app lock password"
-msgstr ""
+msgstr "Alterar senha de bloqueio"
 
 #: src/ui/settings.rs:871
 msgid "Turn off the app lock"
-msgstr ""
+msgstr "Desativar bloqueio do aplicativo"
 
 #: src/ui/settings.rs:881
 msgid "Current password"
-msgstr ""
+msgstr "Senha atual"
 
 #: src/ui/settings.rs:888
 #, rust-format
 msgid "New password, at least {count} characters"
-msgstr ""
+msgstr "Nova senha, pelo menos {count} caracteres"
 
 #: src/ui/settings.rs:893
 msgid "Type the new password again"
-msgstr ""
+msgstr "Digite a nova senha novamente"
 
 #: src/ui/settings.rs:917
 #, rust-format
 msgid "The password needs at least {count} characters."
-msgstr ""
+msgstr "A senha precisa de pelo menos {count} caracteres."
 
 #: src/ui/settings.rs:919
 msgid "The two new passwords are different."
-msgstr ""
+msgstr "As duas senhas digitadas são diferentes."
 
 #: src/ui/settings.rs:920 src/ui/lock.rs:85
 msgid "Wrong password. Try again."
-msgstr ""
+msgstr "Senha incorreta. Tente novamente."
 
 #: src/ui/settings.rs:927
 msgid "Turn on"
-msgstr ""
+msgstr "Ativar"
 
 #: src/ui/settings.rs:928
-#, fuzzy
 msgid "Change password"
-msgstr "Alterar foto"
+msgstr "Alterar senha"
 
 #: src/ui/settings.rs:929
 msgid "Turn off"
-msgstr ""
+msgstr "Desativar"
 
 #: src/ui/settings.rs:1032
 msgid "How to make a theme"
@@ -1087,7 +1088,7 @@ msgstr "Ninguém ainda"
 
 #: src/app.rs:1368
 msgid "Could not delete the removed account's files"
-msgstr ""
+msgstr "Não foi possível excluir os arquivos da conta removida"
 
 #: src/app.rs:1836
 #, rust-format
@@ -1134,11 +1135,11 @@ msgstr "Você tem {limit} etiquetas, o máximo que o ZapFast guarda."
 
 #: src/app.rs:5834
 msgid "App lock password saved"
-msgstr ""
+msgstr "Senha de bloqueio salva"
 
 #: src/app.rs:5842
 msgid "App lock turned off"
-msgstr ""
+msgstr "Bloqueio do aplicativo desativado"
 
 #: src/app.rs:5955
 msgid "This video opens in your system player"

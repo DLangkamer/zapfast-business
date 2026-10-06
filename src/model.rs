@@ -1434,6 +1434,11 @@ pub enum Action {
         message: String,
         path: PathBuf,
     },
+    /// Plays or pauses an in-memory voice note preview.
+    PlayVoiceSamples {
+        id: String,
+        samples: Vec<f32>,
+    },
     /// Seeks to a fraction from 0 to 1 and starts playback.
     SeekVoice {
         message: String,

@@ -246,6 +246,11 @@ impl Account {
             log::warn!("could not save account settings: {error}");
         }
     }
+
+    /// The chat currently open in the active account.
+    pub fn active_chat(&self) -> Option<ChatId> {
+        self.open_chat.clone()
+    }
 }
 
 fn resolve_wallpaper_path(dirs: &AccountDirs, settings: &mut AccountSettings) {
