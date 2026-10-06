@@ -156,6 +156,25 @@ listar, editar horário/texto e cancelar por conta. A voz é guardada como amost
 `f32` codificadas em bytes e só passa pelo envio normal quando vence. Não crie
 um segundo caminho de envio que ignore as validações do worker.
 
+O calendário visual interativo fica em `src/ui/dialogs.rs` (`render_calendar_picker`),
+oferecendo seleção visual de dia, mês, hora e minutos com atalhos de tempo (+15m, +30m,
++1h, +3h, Amanhã 09:00). Indicadores e botões com contadores de agendamentos
+(`scheduled_count`) ficam disponíveis diretamente na lista de conversas (`src/ui/chats.rs`)
+e no cabeçalho da conversa aberta (`src/ui/conversation.rs`), permitindo acesso imediato
+e reagendamento visual.
+
+O módulo de Disparo em Massa e Listas de Transmissão fica em `src/ui/bulk_dispatch.rs`:
+- **Colar Números**: suporta listas coladas separadas por linha, vírgula ou ponto-e-vírgula.
+  O utilitário `parse_phone_number` sanitiza pontuações, valida o formato internacional e
+  injeta automaticamente o DDI 55 para números brasileiros sem prefixo de país.
+- **Listas de Transmissão Segmentadas**: criação e edição de listas de contatos e grupos,
+  persistidas na tabela SQLCipher `business_broadcast_lists` (`src/archive/broadcast_lists.rs`).
+- **Áudio PTT Autêntico**: suporte a arquivos de áudio (.mp3, .ogg, .wav, .m4a) convertidos
+  nativamente em mono 48 kHz com waveform de 64 barras, entregues como notas de voz genuínas.
+- **Envio Intercalado Anti-Bloqueio**: slider e atalhos rápidos de intervalo (5s a 2 min)
+  com estimativa dinâmica de tempo total. No modo agendado, o escalonamento é registrado no
+  banco de dados com timestamps espaçados (`due_at = schedule_at + i * interval_seconds`).
+
 Nunca use conversas reais como fixture. Testes devem usar bancos temporários,
 chats e áudios sintéticos. Não leia nem copie conteúdo do perfil instalado.
 

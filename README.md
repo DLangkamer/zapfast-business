@@ -20,7 +20,13 @@ A instalação não substitui nem reutiliza dados do ZapFast, FastsApp ou FastWh
 
 ### Recursos desta edição
 
-- Funciona simultaneamente com o ZapFast pessoal.
+- Funciona simultaneamente com o ZapFast pessoal (isolamento completo de dados, credenciais e execução).
+- **Disparo em Massa Inteligente**: cole listas de telefones (um por linha, vírgulas ou ponto-e-vírgula) com higienização automática e adição do DDI 55 para números brasileiros sem prefixo.
+- **Listas de Transmissão Segmentadas**: crie, edite e organize listas customizadas de contatos e grupos com envio em lote direcionado.
+- **Áudio PTT Autêntico**: suporte a envio de arquivos de áudio (.mp3, .ogg, .wav, .m4a) entregues como notas de voz legítimas do WhatsApp com waveform de 64 barras.
+- **Agendamento com Calendário Visual**: selecione data, hora e minutos com atalhos de tempo (+15m, +30m, +1h, +3h, Amanhã 09:00), tanto para mensagens individuais quanto para disparos em massa.
+- **Envio Intercalado Anti-Bloqueio**: configure intervalos seguros de envio (5s a 2 min) com cálculo dinâmico da estimativa total de tempo.
+- **Contadores de Agendamentos**: badges e botões de calendário na lista de conversas e no cabeçalho indicam mensagens programadas e facilitam o reagendamento.
 - Sincroniza etiquetas do WhatsApp Business, inclusive em grupos.
 - Sincroniza e gerencia respostas rápidas; digite `/` numa conversa para localizar uma.
 - Mantém dados e credenciais totalmente separados no Windows.

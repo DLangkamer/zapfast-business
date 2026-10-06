@@ -63,7 +63,7 @@ cargo test --locked --all-targets --all-features
 $env:RUSTDOCFLAGS = '-D warnings'
 cargo doc --locked --all-features --no-deps
 cargo build --locked --release
-iscc /DVersion=0.19.1 /DNumericVersion=0.19.1 /DArch=x86_64 /DBinary="$PWD\target\release\zapfast-business.exe" /DOutputDir="$PWD\dist" packaging\windows\zapfast.iss
+iscc /DVersion=0.19.3 /DNumericVersion=0.19.3 /DArch=x86_64 /DBinary="$PWD\target\release\zapfast-business.exe" /DOutputDir="$PWD\dist" packaging\windows\zapfast.iss
 ```
 
 Do not run the original multi-platform release workflow to publish this fork.
@@ -93,13 +93,30 @@ inspect and reply in direct chats or groups without clearing their unread
 state. Recording and sending voice messages also preserve that state. Use the
 chat's existing **Mark as read** action when you want to clear it.
 
-Text messages can be scheduled from the `+` menu beside the composer. Use
-**Scheduled messages** in the same menu to review every pending item for the
-active account, edit its text or time, or cancel it. While recording a voice
-message, the calendar button schedules that recording instead of sending it
-immediately. Scheduled text and audio samples stay in the encrypted Business
-archive. ZapFast Business must be running; an item that becomes due while the
-account is offline waits until it reconnects.
+### Scheduled messages and visual calendar
+
+Text and voice messages can be scheduled from the `+` menu beside the composer
+or by clicking the calendar icon during audio recording. The visual calendar
+dialog lets you pick the day, hour, and minute, with quick presets (+15m, +30m,
++1h, +3h, Tomorrow 09:00). Chats with scheduled messages display a visible
+calendar badge and count directly in the chat list and header. The **Scheduled
+messages** management center allows editing text/time or cancelling pending
+items per account. Scheduled data stays in the SQLCipher-encrypted archive.
+
+### Mass dispatch and broadcast lists
+
+Open **Bulk dispatch** from the broadcast button in the chat list header,
+from the `+` menu, or via right-click on chats ("Add to broadcast list..."):
+- **Phone number paste**: Paste raw phone numbers separated by newlines, commas,
+  or semicolons. Numbers are sanitized and Brazilian numbers automatically
+  receive country code 55.
+- **Segmented broadcast lists**: Create and maintain custom lists of contacts
+  and groups stored in `business_broadcast_lists`.
+- **Authentic PTT voice notes**: Transmit audio files (.mp3, .ogg, .wav, .m4a)
+  converted natively to mono 48 kHz with WhatsApp 64-bar waveforms.
+- **Intercalated delivery**: Adjustable delays (5s to 2 min) protect against
+  rate limits, with total delivery time estimates. Dispatches can be started
+  immediately or scheduled for a specific date and time.
 
 Stable releases are published at `DLangkamer/zapfast-business`. Version 0.17.2
 is the trusted bootstrap: it embeds the Business public key and accepts only a
