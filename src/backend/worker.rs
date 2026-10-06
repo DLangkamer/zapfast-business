@@ -2642,12 +2642,20 @@ impl Worker {
                 ) && !shortcut.is_empty()
                     && !message.is_empty()
                 {
+                    let existing_voice = self
+                        .archive
+                        .quick_replies()
+                        .unwrap_or_default()
+                        .into_iter()
+                        .find(|r| r.id == update.id)
+                        .and_then(|r| r.voice);
                     let reply = QuickReply {
                         id: update.id.clone(),
                         shortcut,
                         message,
                         keywords: update.action.keywords.clone(),
                         count: update.action.count.unwrap_or(0),
+                        voice: existing_voice,
                     };
                     if let Err(error) = self.archive.upsert_quick_reply(&reply) {
                         log::warn!("could not cache a quick reply: {error}");
@@ -5727,6 +5735,7 @@ impl Worker {
                 shortcut,
                 message,
                 keywords,
+                voice,
             } => {
                 let id = id.unwrap_or_else(|| {
                     std::time::SystemTime::now()
@@ -5735,39 +5744,48 @@ impl Worker {
                         .as_millis()
                         .to_string()
                 });
-                let count = self
+                let existing = self
                     .archive
                     .quick_replies()
                     .unwrap_or_default()
                     .into_iter()
-                    .find(|reply| reply.id == id)
-                    .map_or(0, |reply| reply.count);
-                let reply = QuickReply {
-                    id: id.clone(),
-                    shortcut: shortcut.trim().trim_start_matches('/').to_owned(),
-                    message: message.trim().to_owned(),
-                    keywords,
-                    count,
-                };
-                if reply.shortcut.is_empty() || reply.message.is_empty() {
+                    .find(|reply| reply.id == id);
+                let count = existing.as_ref().map_or(0, |reply| reply.count);
+                let voice = voice.or_else(|| existing.and_then(|r| r.voice));
+                let trimmed_shortcut = shortcut.trim().trim_start_matches('/').to_owned();
+                let trimmed_message = message.trim().to_owned();
+                if trimmed_shortcut.is_empty() || (trimmed_message.is_empty() && voice.is_none()) {
                     self.emit(Event::Error(
-                        "A quick reply needs a shortcut and message".into(),
+                        "A quick reply needs a shortcut and message or voice audio".into(),
                     ));
                     return;
                 }
+                let reply = QuickReply {
+                    id: id.clone(),
+                    shortcut: trimmed_shortcut,
+                    message: trimmed_message,
+                    keywords,
+                    count,
+                    voice,
+                };
                 if let Err(error) = self.archive.upsert_quick_reply(&reply) {
                     log::warn!("could not cache a quick reply: {error}");
                     return;
                 }
                 self.emit_quick_replies();
                 if let Some(client) = self.client.clone() {
+                    let sync_message = if reply.message.is_empty() {
+                        format!("[Áudio PTT] /{}", reply.shortcut)
+                    } else {
+                        reply.message.clone()
+                    };
                     tokio::spawn(async move {
                         let _ = client
                             .quick_replies()
                             .set_quick_reply(
                                 &reply.id,
                                 &reply.shortcut,
-                                &reply.message,
+                                &sync_message,
                                 reply.keywords,
                                 reply.count,
                             )

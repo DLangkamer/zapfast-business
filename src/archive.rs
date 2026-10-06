@@ -168,6 +168,7 @@ const MIGRATIONS: &[(&str, &str, &str)] = &[
     ("contacts", "first_name", "TEXT"),
     ("scheduled_messages", "kind", "TEXT NOT NULL DEFAULT 'text'"),
     ("scheduled_messages", "voice", "BLOB"),
+    ("business_quick_replies", "voice", "BLOB"),
 ];
 const CHAT_JOIN: &str = "FROM chats c
              LEFT JOIN messages m ON m.chat = c.id AND m.rowid = (

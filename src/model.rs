@@ -81,7 +81,7 @@ pub struct Label {
 }
 
 /// A WhatsApp Business canned response synced between linked devices.
-#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
 pub struct QuickReply {
     pub id: String,
     /// Slash command without the leading slash.
@@ -89,6 +89,8 @@ pub struct QuickReply {
     pub message: String,
     pub keywords: Vec<String>,
     pub count: i32,
+    /// Decoded audio samples (mono 48 kHz f32) sent as an authentic live PTT voice note.
+    pub voice: Option<Vec<f32>>,
 }
 
 /// A WhatsApp Business broadcast list for bulk dispatch.
@@ -1679,12 +1681,15 @@ pub enum Action {
     DeleteLabel(String),
     /// Inserts a synced WhatsApp Business quick reply into the composer.
     InsertQuickReply(String),
+    /// Applies a quick reply: inserts text into composer, or sends an authentic live PTT audio note.
+    ApplyQuickReply(QuickReply),
     /// Creates or updates a WhatsApp Business quick reply.
     SaveQuickReply {
         id: Option<String>,
         shortcut: String,
         message: String,
         keywords: Vec<String>,
+        voice: Option<Vec<f32>>,
     },
     DeleteQuickReply(String),
     SaveBroadcastList(BroadcastList),

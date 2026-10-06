@@ -540,6 +540,9 @@ pub struct App {
     pub quick_reply_shortcut: String,
     pub quick_reply_message: String,
     pub quick_reply_keywords: String,
+    pub quick_reply_voice: Option<Vec<f32>>,
+    pub quick_reply_voice_name: Option<String>,
+    pub quick_reply_voice_duration: Option<f32>,
     /// Recording waiting for the schedule time to be chosen.
     pub scheduled_voice: Option<(ChatId, Vec<f32>, Option<String>)>,
     /// Chats opened from the Unread list, kept there until the filter changes.
@@ -1091,6 +1094,9 @@ impl App {
             quick_reply_shortcut: String::new(),
             quick_reply_message: String::new(),
             quick_reply_keywords: String::new(),
+            quick_reply_voice: None,
+            quick_reply_voice_name: None,
+            quick_reply_voice_duration: None,
             scheduled_voice: None,
             unread_kept: HashSet::new(),
             toasts: Vec::new(),
@@ -5294,26 +5300,54 @@ impl App {
                 self.quick_reply_selected = 0;
                 self.focus_composer = true;
             }
+            Action::ApplyQuickReply(reply) => {
+                self.quick_reply_selected = 0;
+                if let Some(samples) = reply.voice {
+                    if let Some(chat) = self.active_chat() {
+                        let quoting = self.replying_to.clone();
+                        self.backend.send(Command::SendVoice {
+                            chat,
+                            samples,
+                            quoting,
+                        });
+                        self.replying_to = None;
+                        self.composer.clear();
+                    } else {
+                        self.toast_error("Abra uma conversa para enviar o audio rapido.");
+                    }
+                } else {
+                    self.composer = reply.message;
+                    self.focus_composer = true;
+                }
+            }
             Action::SaveQuickReply {
                 id,
                 shortcut,
                 message,
                 keywords,
+                voice,
             } => {
                 self.backend.send(Command::SaveQuickReply {
                     id,
                     shortcut,
                     message,
                     keywords,
+                    voice,
                 });
                 self.quick_reply_editing = None;
                 self.quick_reply_shortcut.clear();
                 self.quick_reply_message.clear();
                 self.quick_reply_keywords.clear();
+                self.quick_reply_voice = None;
+                self.quick_reply_voice_name = None;
+                self.quick_reply_voice_duration = None;
             }
             Action::DeleteQuickReply(id) => {
                 self.backend.send(Command::DeleteQuickReply(id));
                 self.quick_reply_editing = None;
+                self.quick_reply_voice = None;
+                self.quick_reply_voice_name = None;
+                self.quick_reply_voice_duration = None;
             }
             Action::SaveBroadcastList(list) => {
                 self.backend.send(Command::SaveBroadcastList(list));

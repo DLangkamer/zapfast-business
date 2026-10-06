@@ -339,6 +339,7 @@ pub enum Command {
         shortcut: String,
         message: String,
         keywords: Vec<String>,
+        voice: Option<Vec<f32>>,
     },
     DeleteQuickReply(String),
     SaveBroadcastList(crate::model::BroadcastList),

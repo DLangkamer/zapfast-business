@@ -735,7 +735,7 @@ fn quick_reply_suggestions(app: &mut App, ui: &mut egui::Ui, field: egui::Id) {
     }
     app.quick_reply_selected = app.quick_reply_selected.min(candidates.len() - 1);
     let submit = take_plain_key(ui, Key::Enter) || take_plain_key(ui, Key::Tab);
-    let mut picked = submit.then(|| candidates[app.quick_reply_selected].message.clone());
+    let mut picked = submit.then(|| candidates[app.quick_reply_selected].clone());
     let palette = app.palette;
     ui.add_space(4.0);
     Frame::new()
@@ -745,15 +745,31 @@ fn quick_reply_suggestions(app: &mut App, ui: &mut egui::Ui, field: egui::Id) {
         .inner_margin(Margin::same(4))
         .show(ui, |ui| {
             for (index, reply) in candidates.iter().enumerate() {
-                let label = format!("/{}  {}", reply.shortcut, reply.message.replace('\n', " "));
+                let label = if let Some(voice) = &reply.voice {
+                    let dur = voice.len() as f32 / crate::voice::RATE as f32;
+                    let mins = (dur / 60.0) as u32;
+                    let secs = (dur % 60.0) as u32;
+                    let dur_str = format!("{mins}:{secs:02}");
+                    if reply.message.trim().is_empty() {
+                        format!("🎙 /{}  [Áudio PTT {dur_str}]", reply.shortcut)
+                    } else {
+                        format!(
+                            "🎙 /{}  [Áudio PTT {dur_str}] {}",
+                            reply.shortcut,
+                            reply.message.replace('\n', " ")
+                        )
+                    }
+                } else {
+                    format!("/{}  {}", reply.shortcut, reply.message.replace('\n', " "))
+                };
                 let response = ui.selectable_label(index == app.quick_reply_selected, label);
                 if response.clicked() {
-                    picked = Some(reply.message.clone());
+                    picked = Some(reply.clone());
                 }
             }
         });
-    if let Some(message) = picked {
-        app.actions.push(Action::InsertQuickReply(message));
+    if let Some(reply) = picked {
+        app.actions.push(Action::ApplyQuickReply(reply));
     }
 }
 
