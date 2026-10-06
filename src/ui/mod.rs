@@ -81,11 +81,15 @@ pub fn show(app: &mut App, ui: &mut egui::Ui) {
         SidebarDisplayMode::CollapsedIconsOnly => chats::compact_show(app, ui),
     }
     let search_overlay = pane::show(app, ui);
-    if app.show_crm_sidecar && app.page == Page::Chats {
+    let sidecar_overlay = if app.show_crm_sidecar && app.page == Page::Chats {
         if let Some(chat) = app.current_chat().cloned() {
-            crm_sidecar::show_panel(app, ui, &chat);
+            crm_sidecar::show(app, ui, &chat)
+        } else {
+            None
         }
-    }
+    } else {
+        None
+    };
     egui::CentralPanel::default()
         .frame(central_frame(app))
         .show(ui, |ui| match app.page {
@@ -95,6 +99,11 @@ pub fn show(app: &mut App, ui: &mut egui::Ui) {
         });
     if let Some(region) = search_overlay {
         pane::show_overlay(app, ctx, region);
+    }
+    if let Some(region) = sidecar_overlay {
+        if let Some(chat) = app.current_chat().cloned() {
+            crm_sidecar::show_overlay(app, ctx, region, &chat);
+        }
     }
     focus::finish(ctx, main_navigation);
     update::show(app, ctx);

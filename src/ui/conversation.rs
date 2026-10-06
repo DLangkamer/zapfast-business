@@ -33,6 +33,7 @@ const NOT_SENT_HINT: &str =
     "This message could not be sent, and ZapFast will not retry it. Send it again yourself.";
 
 pub fn show(app: &mut App, ui: &mut egui::Ui) {
+    ui.set_clip_rect(ui.max_rect());
     let Some(chat) = app.current_chat().cloned() else {
         if theme::macos_chrome(ui.ctx()) {
             super::banner(app, ui);

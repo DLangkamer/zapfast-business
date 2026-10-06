@@ -1,38 +1,85 @@
 //! Client sidecar panel (Mini-CRM): encrypted internal notes, pipeline stage selector,
 //! deal value (R$), tags, and follow-up reminders attached to the active chat.
 
-use egui::{vec2, Align, Color32, CornerRadius, Frame, Layout, Margin, Stroke, Vec2};
+use egui::{pos2, vec2, Align, Color32, CornerRadius, Frame, Layout, Margin, Rect, Stroke, Vec2};
 
 use crate::app::App;
 use crate::model::{Action, Chat, CrmDeal, CrmFollowup, Dialog};
 use crate::theme::{self, Icon, Palette};
 
-/// Renders the CRM sidecar as a native right-docked panel at the root UI level,
-/// preventing overlap with the conversation messages and ensuring full interactivity.
-pub fn show_panel(app: &mut App, ui: &mut egui::Ui, chat: &Chat) {
+pub const MIN_WIDTH: f32 = 280.0;
+pub const MAX_WIDTH: f32 = 420.0;
+/// The narrowest conversation a docked pane leaves beside it. Below this the
+/// pane lies over the conversation as an overlay instead of squeezing it.
+pub const CONVERSATION_MIN: f32 = 360.0;
+
+/// Docks the CRM sidecar when there is room, before the conversation is laid out.
+/// Otherwise returns the conversation's rect for [`show_overlay`], drawn
+/// after the conversation so it lies cleanly on top without being covered.
+pub fn show(app: &mut App, ui: &mut egui::Ui, chat: &Chat) -> Option<Rect> {
+    let region = ui.available_rect_before_wrap();
+    if region.width() < MIN_WIDTH + CONVERSATION_MIN {
+        return Some(region);
+    }
     let palette = app.palette;
-    let width = 320.0;
-    let panel = egui::Panel::right("crm_sidecar_panel")
-        .resizable(false)
-        .default_size(width)
-        .size_range(width..=width)
+    let max = (region.width() - CONVERSATION_MIN).clamp(MIN_WIDTH, MAX_WIDTH);
+    let wanted = 320.0_f32.clamp(MIN_WIDTH, max);
+    let id = egui::Id::new("crm_sidecar_panel");
+    ui.ctx().data_mut(|data| data.remove::<egui::PanelState>(id));
+
+    let response = egui::Panel::right(id)
+        .resizable(true)
+        .default_size(wanted)
+        .size_range(MIN_WIDTH..=max)
         .show_separator_line(false)
-        .frame(Frame::new().fill(palette.panel).inner_margin(Margin::ZERO));
+        .frame(Frame::new().fill(palette.panel).inner_margin(Margin::ZERO))
+        .show(ui, |ui| {
+            render_content(app, ui, chat);
+        });
 
-    let response = panel.show(ui, |ui| {
-        show(app, ui, chat);
-    });
-
-    // Draw subtle vertical separator line on the left edge of the sidecar
     let rect = response.response.rect;
     ui.painter().vline(
         rect.left(),
         rect.y_range(),
         Stroke::new(1.0, palette.outline),
     );
+    None
 }
 
-pub fn show(app: &mut App, ui: &mut egui::Ui, chat: &Chat) {
+/// The sidecar panel floating over the right of a conversation too narrow to share,
+/// with a drop shadow, floating on top of bubbles and wallpaper.
+pub fn show_overlay(app: &mut App, ctx: &egui::Context, region: Rect, chat: &Chat) {
+    let palette = app.palette;
+    let width = 320.0_f32.min(region.width()).max(MIN_WIDTH.min(region.width()));
+    let rect = Rect::from_min_max(pos2(region.right() - width, region.top()), region.max);
+    egui::Area::new(egui::Id::new("crm-sidecar-overlay"))
+        .order(egui::Order::Middle)
+        .fixed_pos(rect.min)
+        .constrain(false)
+        .show(ctx, |ui| {
+            ui.set_clip_rect(rect.expand2(vec2(24.0, 0.0)));
+            Frame::new()
+                .fill(palette.panel)
+                .shadow(egui::epaint::Shadow {
+                    offset: [-4, 0],
+                    blur: 16,
+                    spread: 0,
+                    color: palette.shadow,
+                })
+                .show(ui, |ui| {
+                    ui.set_min_size(rect.size());
+                    ui.set_max_size(rect.size());
+                    render_content(app, ui, chat);
+                });
+            ui.painter().vline(
+                rect.left(),
+                rect.y_range(),
+                Stroke::new(1.0, palette.outline),
+            );
+        });
+}
+
+fn render_content(app: &mut App, ui: &mut egui::Ui, chat: &Chat) {
     let palette = app.palette;
     let deal = app
         .crm_deals
@@ -51,16 +98,15 @@ pub fn show(app: &mut App, ui: &mut egui::Ui, chat: &Chat) {
             updated_at: crate::util::now(),
         });
 
-    ui.allocate_ui_with_layout(
-        vec2(ui.available_width().max(0.0), ui.available_height().max(0.0)),
-        Layout::top_down(Align::Min),
-        |ui| {
+    Frame::new()
+        .inner_margin(Margin::symmetric(14, 10))
+        .show(ui, |ui| {
             // Header with Contact info, Kanban shortcut and close button
             render_header(app, ui, &palette, chat);
 
             ui.add_space(8.0);
             ui.separator();
-            ui.add_space(6.0);
+            ui.add_space(8.0);
 
             // Scrollable CRM body
             egui::ScrollArea::vertical()
@@ -85,8 +131,7 @@ pub fn show(app: &mut App, ui: &mut egui::Ui, chat: &Chat) {
 
                     ui.add_space(20.0);
                 });
-        },
-    );
+        });
 }
 
 fn render_header(app: &mut App, ui: &mut egui::Ui, palette: &Palette, chat: &Chat) {
@@ -126,7 +171,11 @@ fn render_header(app: &mut App, ui: &mut egui::Ui, palette: &Palette, chat: &Cha
 }
 
 fn render_stage_selector(app: &mut App, ui: &mut egui::Ui, palette: &Palette, deal: &CrmDeal) {
-    let columns = app.crm_columns.clone();
+    let columns = if app.crm_columns.is_empty() {
+        crate::ui::kanban::default_columns()
+    } else {
+        app.crm_columns.clone()
+    };
     let current_col = columns.iter().find(|c| c.id == deal.column_id);
     let current_title = current_col.map(|c| c.title.as_str()).unwrap_or("Selecione");
     let current_color = current_col
@@ -215,7 +264,7 @@ fn render_deal_value(app: &mut App, ui: &mut egui::Ui, palette: &Palette, deal: 
 
                 ui.add_space(6.0);
 
-                let value_input_id = ui.id().with("sidecar_deal_value_input");
+                let value_input_id = egui::Id::new("sidecar_deal_value_input");
                 let mut val_str = ui.ctx().data(|d| d.get_temp::<String>(value_input_id)).unwrap_or_else(|| {
                     if deal.value_cents > 0 {
                         format!("{:.2}", deal.value_cents as f64 / 100.0)
@@ -229,7 +278,7 @@ fn render_deal_value(app: &mut App, ui: &mut egui::Ui, palette: &Palette, deal: 
                     let response = ui.add(
                         egui::TextEdit::singleline(&mut val_str)
                             .hint_text("0,00")
-                            .desired_width(ui.available_width() - 70.0),
+                            .desired_width(ui.available_width() - 65.0),
                     );
 
                     let save_clicked = ui.button("Salvar").clicked();
@@ -292,7 +341,7 @@ fn render_tags(app: &mut App, ui: &mut egui::Ui, palette: &Palette, deal: &CrmDe
                 }
 
                 // Add tag row
-                let tag_input_id = ui.id().with("sidecar_new_tag_input");
+                let tag_input_id = egui::Id::new("sidecar_new_tag_input");
                 let mut new_tag = ui.ctx().data(|d| d.get_temp::<String>(tag_input_id)).unwrap_or_default();
 
                 ui.horizontal(|ui| {
@@ -339,7 +388,7 @@ fn render_internal_notes(app: &mut App, ui: &mut egui::Ui, palette: &Palette, de
 
                 ui.add_space(4.0);
 
-                let notes_id = ui.id().with("sidecar_internal_notes");
+                let notes_id = egui::Id::new("sidecar_internal_notes");
                 let mut notes_draft = ui
                     .ctx()
                     .data(|d| d.get_temp::<String>(notes_id))
@@ -442,7 +491,7 @@ fn render_followups(app: &mut App, ui: &mut egui::Ui, palette: &Palette, chat_id
 
                 // Add reminder section
                 ui.add_space(4.0);
-                let reminder_input_id = ui.id().with("sidecar_new_followup_title");
+                let reminder_input_id = egui::Id::new("sidecar_new_followup_title");
                 let mut title = ui.ctx().data(|d| d.get_temp::<String>(reminder_input_id)).unwrap_or_default();
 
                 ui.add(

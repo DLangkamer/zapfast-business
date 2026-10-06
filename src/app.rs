@@ -5506,9 +5506,16 @@ impl App {
                 self.show_crm_sidecar = !self.show_crm_sidecar;
             }
             Action::SaveCrmColumn(col) => {
+                if let Some(pos) = self.crm_columns.iter().position(|c| c.id == col.id) {
+                    self.crm_columns[pos] = col.clone();
+                } else {
+                    self.crm_columns.push(col.clone());
+                }
+                self.crm_columns.sort_by_key(|c| c.order);
                 self.backend.send(Command::SaveCrmColumn(col));
             }
             Action::DeleteCrmColumn(id) => {
+                self.crm_columns.retain(|c| c.id != id);
                 self.backend.send(Command::DeleteCrmColumn(id));
             }
             Action::SaveCrmDeal(deal) => {
