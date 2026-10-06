@@ -54,9 +54,13 @@ pub fn show(app: &mut App, ctx: &egui::Context) {
                 | Dialog::QuickReplies
                 | Dialog::ScheduledMessages(_)
                 | Dialog::BulkDispatch(_) => 520.0,
+                Dialog::CrmMetrics => 680.0,
+                Dialog::Kanban => 920.0_f32.min((ui.ctx().content_rect().width() - 40.0).max(300.0)),
             });
             ui.spacing_mut().item_spacing.y = 8.0;
             match dialog {
+                Dialog::Kanban => super::kanban::show(app, ui),
+                Dialog::CrmMetrics => super::crm_metrics::show(app, ui),
                 Dialog::CreatePoll(chat) => super::polls::create(app, ui, &chat),
                 Dialog::ScheduleMessage(chat) => schedule_message(app, ui, &chat),
                 Dialog::ScheduleVoice(chat) => schedule_voice(app, ui, &chat),

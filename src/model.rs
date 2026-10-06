@@ -119,6 +119,48 @@ pub enum BulkDispatchContent {
     },
 }
 
+/// A pipeline column in the visual sales Kanban board.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct CrmColumn {
+    pub id: String,
+    pub title: String,
+    pub color: String,
+    pub order: i32,
+}
+
+/// A client deal/negotiation with internal encrypted notes, value, and tags.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct CrmDeal {
+    pub chat_id: String,
+    pub column_id: String,
+    pub value_cents: i64,
+    pub notes: String,
+    pub tags: Vec<String>,
+    pub updated_at: i64,
+}
+
+/// A scheduled follow-up reminder with snooze capabilities.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct CrmFollowup {
+    pub id: String,
+    pub chat_id: String,
+    pub title: String,
+    pub remind_at: i64,
+    pub done: bool,
+    pub created_at: i64,
+}
+
+/// Portable CRM backup structure for machine migration and data retention.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct CrmBackup {
+    pub version: u32,
+    pub exported_at: i64,
+    pub account_id: Option<String>,
+    pub columns: Vec<CrmColumn>,
+    pub deals: Vec<CrmDeal>,
+    pub followups: Vec<CrmFollowup>,
+}
+
 /// Chat-list filter chosen from the chips under the search field.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub enum ChatFilter {
@@ -1188,6 +1230,8 @@ pub enum Dialog {
     ScheduledMessages(Option<ChatId>),
     ScheduleVoice(ChatId),
     BulkDispatch(Option<BulkDispatchInitial>),
+    Kanban,
+    CrmMetrics,
     PollResults {
         chat: ChatId,
         message: String,
@@ -1469,8 +1513,10 @@ pub enum Action {
     },
     /// Puts the video covering the window back in its message.
     CollapseVideo,
-    /// Starts, cancels, or sends a voice recording.
+    /// Starts, cancels, pauses, resumes or sends a voice recording.
     StartRecording,
+    PauseRecording,
+    ResumeRecording,
     CancelRecording,
     SendRecording,
     /// Drops a voice message the worker refused to send.
@@ -1705,6 +1751,17 @@ pub enum Action {
         interval_seconds: u32,
         send_at: Option<i64>,
     },
+    ToggleCrmSidecar,
+    SaveCrmColumn(CrmColumn),
+    DeleteCrmColumn(String),
+    SaveCrmDeal(CrmDeal),
+    SaveCrmFollowup(CrmFollowup),
+    DeleteCrmFollowup(String),
+    CompleteCrmFollowup(String),
+    SnoozeCrmFollowup { id: String, until: i64 },
+    ExportCrmBackup(std::path::PathBuf),
+    ImportCrmBackup(std::path::PathBuf),
+    RefreshCrmData,
     /// Shows or leaves the archived chats.
     ShowArchived(bool),
     /// Mutes (`true`) or unmutes every followed channel.

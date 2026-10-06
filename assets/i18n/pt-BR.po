@@ -1574,4 +1574,19 @@ msgstr ""
 #: src/ui/accounts.rs:232
 #, rust-format
 msgid "{count} unread chats"
-msgstr ""
+msgstr "{count} conversas não lidas"
+
+msgid "Pause recording"
+msgstr "Pausar gravação"
+
+msgid "Continue recording"
+msgstr "Continuar gravando"
+
+msgid "Play recorded audio"
+msgstr "Ouvir áudio gravado"
+
+msgid "Schedule recording"
+msgstr "Agendar gravação"
+
+msgid "Discard voice message"
+msgstr "Descartar gravação"

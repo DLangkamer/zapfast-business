@@ -345,6 +345,19 @@ pub enum Command {
     SaveBroadcastList(crate::model::BroadcastList),
     DeleteBroadcastList(String),
     ListBroadcastLists,
+    ListCrmData,
+    SaveCrmColumn(crate::model::CrmColumn),
+    DeleteCrmColumn(String),
+    SaveCrmDeal(crate::model::CrmDeal),
+    SaveCrmFollowup(crate::model::CrmFollowup),
+    DeleteCrmFollowup(String),
+    CompleteCrmFollowup(String),
+    SnoozeCrmFollowup {
+        id: String,
+        until: i64,
+    },
+    ExportCrmBackup(PathBuf),
+    ImportCrmBackup(PathBuf),
     BulkDispatch {
         targets: Vec<ChatId>,
         content: crate::model::BulkDispatchContent,
@@ -795,6 +808,11 @@ pub enum Event {
     /// WhatsApp Business canned responses cached for slash completion.
     QuickReplies(Vec<crate::model::QuickReply>),
     BroadcastLists(Vec<crate::model::BroadcastList>),
+    CrmData {
+        columns: Vec<crate::model::CrmColumn>,
+        deals: Vec<crate::model::CrmDeal>,
+        followups: Vec<crate::model::CrmFollowup>,
+    },
     ScheduledMessages(Vec<crate::archive::ScheduledMessage>),
     /// Unsent text stored for each chat, sent once at startup.
     Drafts(Vec<(ChatId, String)>),

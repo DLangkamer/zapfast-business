@@ -1166,6 +1166,7 @@ impl Worker {
                 self.emit_labels();
                 self.emit_quick_replies();
                 self.emit_broadcast_lists();
+                self.emit_crm_data();
                 self.emit(Event::Drafts(self.archive.drafts().unwrap_or_default()));
             }
             Err(error) => log::warn!("could not list chats: {error}"),
@@ -1191,6 +1192,25 @@ impl Worker {
         match self.archive.broadcast_lists() {
             Ok(lists) => self.emit(Event::BroadcastLists(lists)),
             Err(error) => log::warn!("could not list broadcast lists: {error}"),
+        }
+    }
+
+    fn emit_crm_data(&self) {
+        match (
+            self.archive.crm_columns(),
+            self.archive.crm_deals(),
+            self.archive.crm_followups(),
+        ) {
+            (Ok(columns), Ok(deals), Ok(followups)) => {
+                self.emit(Event::CrmData {
+                    columns,
+                    deals,
+                    followups,
+                });
+            }
+            (Err(err), _, _) | (_, Err(err), _) | (_, _, Err(err)) => {
+                log::warn!("could not list crm data: {err}");
+            }
         }
     }
 
@@ -5837,6 +5857,64 @@ impl Worker {
             }
             Command::ListBroadcastLists => {
                 self.emit_broadcast_lists();
+            }
+            Command::ListCrmData => {
+                self.emit_crm_data();
+            }
+            Command::SaveCrmColumn(col) => {
+                let _ = self.archive.upsert_crm_column(&col);
+                self.emit_crm_data();
+            }
+            Command::DeleteCrmColumn(id) => {
+                let _ = self.archive.delete_crm_column(&id);
+                self.emit_crm_data();
+            }
+            Command::SaveCrmDeal(deal) => {
+                let _ = self.archive.upsert_crm_deal(&deal);
+                self.emit_crm_data();
+            }
+            Command::SaveCrmFollowup(f) => {
+                let _ = self.archive.upsert_crm_followup(&f);
+                self.emit_crm_data();
+            }
+            Command::DeleteCrmFollowup(id) => {
+                let _ = self.archive.delete_crm_followup(&id);
+                self.emit_crm_data();
+            }
+            Command::CompleteCrmFollowup(id) => {
+                let _ = self.archive.complete_crm_followup(&id);
+                self.emit_crm_data();
+            }
+            Command::SnoozeCrmFollowup { id, until } => {
+                let _ = self.archive.snooze_crm_followup(&id, until);
+                self.emit_crm_data();
+            }
+            Command::ExportCrmBackup(path) => {
+                match self.archive.export_crm_backup() {
+                    Ok(backup) => match serde_json::to_string_pretty(&backup) {
+                        Ok(json) => match std::fs::write(&path, json) {
+                            Ok(_) => self.emit(Event::Info(format!("Backup do CRM exportado: {}", path.display()))),
+                            Err(e) => self.emit(Event::Error(format!("Erro ao salvar backup: {e}"))),
+                        },
+                        Err(e) => self.emit(Event::Error(format!("Erro ao gerar JSON: {e}"))),
+                    },
+                    Err(e) => self.emit(Event::Error(format!("Erro ao exportar dados do CRM: {e}"))),
+                }
+            }
+            Command::ImportCrmBackup(path) => {
+                match std::fs::read_to_string(&path) {
+                    Ok(json) => match serde_json::from_str::<crate::model::CrmBackup>(&json) {
+                        Ok(backup) => match self.archive.import_crm_backup(&backup) {
+                            Ok(_) => {
+                                self.emit_crm_data();
+                                self.emit(Event::Info("Backup do CRM importado com sucesso!".into()));
+                            }
+                            Err(e) => self.emit(Event::Error(format!("Erro ao importar dados no banco: {e}"))),
+                        },
+                        Err(e) => self.emit(Event::Error(format!("Arquivo de backup inválido: {e}"))),
+                    },
+                    Err(e) => self.emit(Event::Error(format!("Erro ao ler arquivo de backup: {e}"))),
+                }
             }
             Command::BulkDispatch {
                 targets,

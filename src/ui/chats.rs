@@ -194,6 +194,19 @@ fn header(app: &mut App, ui: &mut egui::Ui) {
                         }
                         if theme::icon_button(
                             ui,
+                            Icon::ListChecks,
+                            18.0,
+                            palette.secondary,
+                            palette.text,
+                            "Funil de Vendas (Kanban)",
+                        )
+                        .clicked()
+                        {
+                            app.actions
+                                .push(Action::ShowDialog(crate::model::Dialog::Kanban));
+                        }
+                        if theme::icon_button(
+                            ui,
                             Icon::Users,
                             18.0,
                             palette.secondary,
@@ -317,6 +330,19 @@ fn macos_header(app: &mut App, ui: &mut egui::Ui) {
                     .clicked()
                     {
                         app.actions.push(Action::ShowDialog(Dialog::NewChat));
+                    }
+                    if theme::icon_button(
+                        ui,
+                        Icon::ListChecks,
+                        18.0,
+                        palette.secondary,
+                        palette.text,
+                        "Funil de Vendas (Kanban)",
+                    )
+                    .clicked()
+                    {
+                        app.actions
+                            .push(Action::ShowDialog(Dialog::Kanban));
                     }
                     if theme::icon_button(
                         ui,

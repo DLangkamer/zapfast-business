@@ -473,6 +473,8 @@ pub struct App {
     voice_wanted: Option<(ChatId, String, Instant)>,
     /// Active voice recorder.
     pub recording: Option<Recorder>,
+    /// A paused voice recording for the current chat, allowing preview, continue, or send.
+    pub(crate) recording_paused: Option<(ChatId, Vec<f32>)>,
     /// A voice message the worker refused, kept with its chat so it can be
     /// sent again from that chat or discarded.
     pub(crate) unsent_voice: Option<(ChatId, Vec<f32>)>,
@@ -534,6 +536,12 @@ pub struct App {
     pub label_filter: Option<String>,
     pub broadcast_lists: Vec<BroadcastList>,
     pub bulk_state: crate::ui::bulk_dispatch::BulkDispatchState,
+    pub crm_columns: Vec<crate::model::CrmColumn>,
+    pub crm_deals: std::collections::HashMap<String, crate::model::CrmDeal>,
+    pub crm_followups: Vec<crate::model::CrmFollowup>,
+    pub show_crm_sidecar: bool,
+    pub crm_search: String,
+    pub crm_notified_followups: HashSet<String>,
     pub quick_replies: Vec<QuickReply>,
     pub quick_reply_selected: usize,
     pub quick_reply_editing: Option<String>,
@@ -1004,6 +1012,7 @@ impl App {
             mention_selected: 0,
             reply_to: None,
             editing: None,
+            recording_paused: None,
             unsent_voice: None,
             composing: false,
             last_keystroke: None,
@@ -1088,6 +1097,12 @@ impl App {
             label_filter: None,
             broadcast_lists: Vec::new(),
             bulk_state: Default::default(),
+            crm_columns: Vec::new(),
+            crm_deals: std::collections::HashMap::new(),
+            crm_followups: Vec::new(),
+            show_crm_sidecar: false,
+            crm_search: String::new(),
+            crm_notified_followups: HashSet::new(),
             quick_replies: Vec::new(),
             quick_reply_selected: 0,
             quick_reply_editing: None,
@@ -2468,6 +2483,11 @@ impl App {
             }
             Event::BroadcastLists(lists) => {
                 self.broadcast_lists = lists;
+            }
+            Event::CrmData { columns, deals, followups } => {
+                self.crm_columns = columns;
+                self.crm_deals = deals.into_iter().map(|d| (d.chat_id.clone(), d)).collect();
+                self.crm_followups = followups;
             }
             Event::ScheduledMessages(messages) => {
                 self.scheduled_messages = messages;
@@ -4273,19 +4293,31 @@ impl App {
                 self.schedule_text(chat, text, quoting, send_at);
             }
             Action::PrepareScheduledVoice => {
-                let Some(recorder) = self.recording.take() else {
-                    return;
-                };
                 let Some(chat) = self.open_chat.clone() else {
                     return;
                 };
-                match recorder.finish() {
-                    Ok(samples) if samples.len() >= crate::voice::RATE as usize / 2 => {
-                        self.scheduled_voice = Some((chat.clone(), samples, self.reply_to.take()));
-                        self.dialog = Some(Dialog::ScheduleVoice(chat));
+                let mut final_samples = Vec::new();
+                if let Some((paused_chat, paused_samples)) = self.recording_paused.take() {
+                    if paused_chat == chat {
+                        final_samples.extend(paused_samples);
                     }
-                    Ok(_) => self.toast_error("Record at least half a second before scheduling"),
-                    Err(error) => self.toast_error(format!("Could not record: {error}")),
+                }
+                if let Some(recorder) = self.recording.take() {
+                    match recorder.finish() {
+                        Ok(samples) => final_samples.extend(samples),
+                        Err(error) => {
+                            self.toast_error(format!("Could not record: {error}"));
+                            return;
+                        }
+                    }
+                }
+                let preview_id = format!("preview_paused_{chat}");
+                self.player.stop();
+                if final_samples.len() >= crate::voice::RATE as usize / 2 {
+                    self.scheduled_voice = Some((chat.clone(), final_samples, self.reply_to.take()));
+                    self.dialog = Some(Dialog::ScheduleVoice(chat));
+                } else {
+                    self.toast_error("Grave pelo menos meio segundo antes de agendar");
                 }
             }
             Action::ScheduleVoice { chat, send_at } => {
@@ -4738,6 +4770,7 @@ impl App {
                 if self.open_chat.is_some() && self.recording.is_none() {
                     self.picker = None;
                     self.composer_tools_open = false;
+                    self.recording_paused = None;
                     // An offline demo never opens the microphone.
                     #[cfg(any(test, feature = "demo"))]
                     let recorder = if self.backend.is_offline() {
@@ -4750,8 +4783,59 @@ impl App {
                     self.recording = Some(recorder);
                 }
             }
+            Action::PauseRecording => {
+                if let Some(recorder) = self.recording.take() {
+                    if let Some(chat) = self.open_chat.clone() {
+                        match recorder.finish() {
+                            Ok(new_samples) => {
+                                if let Some((paused_chat, existing)) = &mut self.recording_paused {
+                                    if *paused_chat == chat {
+                                        existing.extend(new_samples);
+                                    } else {
+                                        self.recording_paused = Some((chat, new_samples));
+                                    }
+                                } else {
+                                    self.recording_paused = Some((chat, new_samples));
+                                }
+                            }
+                            Err(error) => {
+                                self.toast_error(format!("Could not record: {error}"));
+                            }
+                        }
+                    }
+                }
+            }
+            Action::ResumeRecording => {
+                if let Some(chat) = self.open_chat.clone() {
+                    if self.recording.is_none()
+                        && self
+                            .recording_paused
+                            .as_ref()
+                            .is_some_and(|(c, _)| *c == chat)
+                    {
+                        let preview_id = format!("preview_paused_{chat}");
+                        if self.player.status(&preview_id).state == crate::audio::State::Playing {
+                            self.player.stop();
+                        }
+                        #[cfg(any(test, feature = "demo"))]
+                        let recorder = if self.backend.is_offline() {
+                            Recorder::simulated(self.waker.clone())
+                        } else {
+                            Recorder::start(self.waker.clone())
+                        };
+                        #[cfg(not(any(test, feature = "demo")))]
+                        let recorder = Recorder::start(self.waker.clone());
+                        self.recording = Some(recorder);
+                    }
+                }
+            }
             Action::CancelRecording => {
                 self.recording = None;
+                if let Some(chat) = self.open_chat.as_ref() {
+                    let preview_id = format!("preview_paused_{chat}");
+                    self.player.stop();
+                }
+                self.recording_paused = None;
                 self.refocus_composer(ctx);
             }
             Action::SendRecording => {
@@ -5409,6 +5493,40 @@ impl App {
                 });
                 self.toast(format!("Disparo iniciado para {count} destinatarios"));
             }
+            Action::ToggleCrmSidecar => {
+                self.show_crm_sidecar = !self.show_crm_sidecar;
+            }
+            Action::SaveCrmColumn(col) => {
+                self.backend.send(Command::SaveCrmColumn(col));
+            }
+            Action::DeleteCrmColumn(id) => {
+                self.backend.send(Command::DeleteCrmColumn(id));
+            }
+            Action::SaveCrmDeal(deal) => {
+                self.crm_deals.insert(deal.chat_id.clone(), deal.clone());
+                self.backend.send(Command::SaveCrmDeal(deal));
+            }
+            Action::SaveCrmFollowup(f) => {
+                self.backend.send(Command::SaveCrmFollowup(f));
+            }
+            Action::DeleteCrmFollowup(id) => {
+                self.backend.send(Command::DeleteCrmFollowup(id));
+            }
+            Action::CompleteCrmFollowup(id) => {
+                self.backend.send(Command::CompleteCrmFollowup(id));
+            }
+            Action::SnoozeCrmFollowup { id, until } => {
+                self.backend.send(Command::SnoozeCrmFollowup { id, until });
+            }
+            Action::ExportCrmBackup(path) => {
+                self.backend.send(Command::ExportCrmBackup(path));
+            }
+            Action::ImportCrmBackup(path) => {
+                self.backend.send(Command::ImportCrmBackup(path));
+            }
+            Action::RefreshCrmData => {
+                self.backend.send(Command::ListCrmData);
+            }
             // Reading a chat must not pull its row out from under the pointer.
             // Only the filtered list sends this: search results and
             // notifications open chats without keeping them.
@@ -5959,6 +6077,39 @@ impl App {
         self.hold_media();
         self.follow_receipts();
         self.sync_badge();
+        self.check_crm_followups();
+    }
+
+    fn check_crm_followups(&mut self) {
+        let now = crate::util::now();
+        for followup in &self.crm_followups {
+            if !followup.done
+                && followup.remind_at <= now
+                && !self.crm_notified_followups.contains(&followup.id)
+            {
+                self.crm_notified_followups.insert(followup.id.clone());
+                let contact_title = self
+                    .chat(&followup.chat_id)
+                    .map(|c| self.chat_title(c))
+                    .unwrap_or_else(|| followup.chat_id.clone());
+                let message = format!("Follow-up com {}: {}", contact_title, followup.title);
+                self.toast(message.clone());
+                let waker = self.waker.clone();
+                self.notifications.show(
+                    "⏰ Lembrete de Follow-up".to_owned(),
+                    message,
+                    None,
+                    crate::settings::NotificationSound::Default,
+                    crate::notify::NotificationTarget {
+                        account: self.account().id.clone(),
+                        chat: followup.chat_id.clone(),
+                        message: String::new(),
+                    },
+                    std::sync::Arc::clone(&self.notification_opens),
+                    move || waker.wake(),
+                );
+            }
+        }
     }
 
     /// Collects a finished password check, and locks once ZapFast has gone
@@ -6320,18 +6471,54 @@ impl App {
             .map(|message| message.id.clone())
     }
 
-    /// Stops and sends a recording unless it is under one second. With no
-    /// recorder running, sends the open chat's refused voice message again;
-    /// it quotes whatever the reply banner shows now, so a reply the worker
-    /// refused for its missing original is only sent unquoted after the
-    /// user cancels the reply.
+    /// Stops and sends a recording unless it is under half a second. Combines
+    /// any paused voice samples with active recorder samples, or sends paused voice.
+    /// With no recorder running, sends the open chat's refused voice message again.
     fn send_recording(&mut self) {
-        let Some(recorder) = self.recording.take() else {
-            if let Some(chat) = self.open_chat.clone()
-                && self
-                    .unsent_voice
-                    .as_ref()
-                    .is_some_and(|(unsent, _)| *unsent == chat)
+        let current_chat = self.open_chat.clone();
+        let mut final_samples = Vec::new();
+
+        if let Some(chat) = &current_chat {
+            if let Some((paused_chat, paused_samples)) = self.recording_paused.take() {
+                if paused_chat == *chat {
+                    final_samples.extend(paused_samples);
+                }
+            }
+        }
+
+        if let Some(recorder) = self.recording.take() {
+            match recorder.finish() {
+                Ok(samples) => final_samples.extend(samples),
+                Err(error) => {
+                    self.toast_error(format!("Could not record: {error}"));
+                    return;
+                }
+            }
+        }
+
+        if let Some(chat) = current_chat {
+            let preview_id = format!("preview_paused_{chat}");
+            self.player.stop();
+
+            if !final_samples.is_empty() {
+                if final_samples.len() < crate::voice::RATE as usize / 2 {
+                    self.toast_error("Áudio muito curto para enviar");
+                    return;
+                }
+                let quoting = self.reply_to.take();
+                self.backend.send(Command::SendVoice {
+                    chat,
+                    samples: final_samples,
+                    quoting,
+                });
+                self.follow_sent_chat();
+                return;
+            }
+
+            if self
+                .unsent_voice
+                .as_ref()
+                .is_some_and(|(unsent, _)| *unsent == chat)
                 && let Some((_, samples)) = self.unsent_voice.take()
             {
                 let quoting = self.reply_to.take();
@@ -6342,23 +6529,6 @@ impl App {
                 });
                 self.follow_outgoing();
             }
-            return;
-        };
-        let Some(chat) = self.open_chat.clone() else {
-            return;
-        };
-        match recorder.finish() {
-            Ok(samples) if samples.len() < crate::voice::RATE as usize / 2 => {}
-            Ok(samples) => {
-                let quoting = self.reply_to.take();
-                self.backend.send(Command::SendVoice {
-                    chat,
-                    samples,
-                    quoting,
-                });
-                self.follow_sent_chat();
-            }
-            Err(error) => self.toast_error(format!("Could not record: {error}")),
         }
     }
 

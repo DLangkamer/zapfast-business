@@ -45,6 +45,16 @@ pub fn show(app: &mut App, ui: &mut egui::Ui) {
     if theme::macos_chrome(ui.ctx()) {
         super::banner(app, ui);
     }
+    if app.show_crm_sidecar {
+        egui::SidePanel::right("crm_sidecar_panel")
+            .exact_width(290.0)
+            .resizable(false)
+            .show_separator_line(true)
+            .frame(egui::Frame::none().fill(app.palette.panel))
+            .show_inside(ui, |ui| {
+                super::crm_sidecar::show(app, ui, &chat);
+            });
+    }
     composer(app, ui, &chat);
     messages(app, ui, &chat);
     // Over the messages, which scroll under the header.
@@ -222,6 +232,17 @@ fn header(app: &mut App, ui: &mut egui::Ui, chat: &Chat) -> Rect {
                     crate::i18n::gettext(app.locale, "Leave group")
                 };
                 ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
+                    let sidecar_btn = theme::icon_button(
+                        ui,
+                        Icon::PanelLeft,
+                        18.0,
+                        if app.show_crm_sidecar { palette.accent } else { palette.secondary },
+                        palette.text,
+                        "Painel CRM do Contato",
+                    );
+                    if sidecar_btn.clicked() {
+                        app.actions.push(Action::ToggleCrmSidecar);
+                    }
                     let scheduled_in_chat = app
                         .scheduled_messages
                         .iter()
@@ -1026,6 +1047,16 @@ fn composer(app: &mut App, ui: &mut egui::Ui, chat: &Chat) {
             if app.recording.is_some() {
                 widgets::raised(ui, &palette, composer_pill(&palette), |ui| {
                     recording_strip(app, ui)
+                });
+                return;
+            }
+            if app
+                .recording_paused
+                .as_ref()
+                .is_some_and(|(c, _)| *c == chat.id)
+            {
+                widgets::raised(ui, &palette, composer_pill(&palette), |ui| {
+                    paused_recording_strip(app, ui, &chat.id)
                 });
                 return;
             }
@@ -7052,6 +7083,13 @@ fn recording_strip(app: &mut App, ui: &mut egui::Ui) {
         Some(recorder) => (recorder.elapsed(), recorder.levels()),
         None => return,
     };
+    let paused_duration = app
+        .recording_paused
+        .as_ref()
+        .map(|(_, s)| std::time::Duration::from_secs_f64(s.len() as f64 / f64::from(crate::voice::RATE)))
+        .unwrap_or(std::time::Duration::ZERO);
+    let total_elapsed = paused_duration + elapsed;
+
     // As tall as the one-line composer it replaces, so the field keeps its
     // height while recording.
     let line_height = ui
@@ -7064,7 +7102,7 @@ fn recording_strip(app: &mut App, ui: &mut egui::Ui) {
         .max(COMPOSER_CONTROL);
     let button = row_height;
     // As in WhatsApp: discard at the start, the light and the time, the
-    // waveform across the rest, and send at the end.
+    // waveform across the rest, and pause, schedule, send at the end.
     ui.allocate_ui_with_layout(
         vec2(ui.available_width().max(0.0), row_height),
         egui::Layout::left_to_right(egui::Align::Center),
@@ -7084,18 +7122,19 @@ fn recording_strip(app: &mut App, ui: &mut egui::Ui) {
                 app.actions.push(Action::CancelRecording);
             }
             let (dot, _) = ui.allocate_exact_size(Vec2::splat(12.0), Sense::hover());
-            let pulse = 0.55 + 0.45 * (elapsed.as_secs_f32() * 3.0).sin().abs();
+            let pulse = 0.55 + 0.45 * (total_elapsed.as_secs_f32() * 3.0).sin().abs();
             ui.painter()
                 .circle_filled(dot.center(), 5.0, palette.danger.gamma_multiply(pulse));
             theme::text(
                 ui,
-                crate::util::duration(elapsed.as_secs() as u32),
+                crate::util::duration(total_elapsed.as_secs() as u32),
                 theme::tabular(fastframe_fonts::Weight::Medium, 14.0),
                 palette.text,
             );
-            // Recent audio levels, newest on the right against send.
+            // Recent audio levels, newest on the right against trailing buttons.
             let spacing = ui.spacing().item_spacing.x;
-            let wave_width = (ui.available_width() - button - spacing).max(0.0);
+            let trailing_width = 3.0 * button + 3.0 * spacing;
+            let wave_width = (ui.available_width() - trailing_width).max(0.0);
             let (rect, _) = ui.allocate_exact_size(vec2(wave_width, 28.0), Sense::hover());
             ui.ctx()
                 .data_mut(|data| data.insert_temp(recording_wave_id(), rect));
@@ -7111,6 +7150,21 @@ fn recording_strip(app: &mut App, ui: &mut egui::Ui) {
                     palette.accent,
                 );
             }
+            // 1. Pause button
+            if theme::circle_button(
+                ui,
+                Icon::Pause,
+                button,
+                palette.surface,
+                palette.surface_hover,
+                palette.secondary,
+                crate::i18n::gettext(app.locale, "Pause recording").as_ref(),
+            )
+            .clicked()
+            {
+                app.actions.push(Action::PauseRecording);
+            }
+            // 2. Schedule recording
             if theme::circle_button(
                 ui,
                 Icon::Calendar,
@@ -7118,12 +7172,13 @@ fn recording_strip(app: &mut App, ui: &mut egui::Ui) {
                 palette.surface,
                 palette.surface_hover,
                 palette.secondary,
-                "Schedule recording",
+                crate::i18n::gettext(app.locale, "Schedule recording").as_ref(),
             )
             .clicked()
             {
                 app.actions.push(Action::PrepareScheduledVoice);
             }
+            // 3. Direct Send
             if theme::circle_button(
                 ui,
                 Icon::Send,
@@ -7131,7 +7186,181 @@ fn recording_strip(app: &mut App, ui: &mut egui::Ui) {
                 palette.accent,
                 palette.accent_hover,
                 palette.on_accent,
-                "Send",
+                crate::i18n::gettext(app.locale, "Send").as_ref(),
+            )
+            .clicked()
+            {
+                app.actions.push(Action::SendRecording);
+            }
+        },
+    );
+}
+
+/// Paused voice-recording controls, playback preview, resume, schedule, and send.
+fn paused_recording_strip(app: &mut App, ui: &mut egui::Ui, chat_id: &ChatId) {
+    let palette = app.palette;
+    let samples_len = app
+        .recording_paused
+        .as_ref()
+        .map(|(_, s)| s.len())
+        .unwrap_or(0);
+    let total_secs = (samples_len as f64 / f64::from(crate::voice::RATE))
+        .round()
+        .max(1.0) as u32;
+
+    let preview_id = format!("preview_paused_{chat_id}");
+    let player_status = app.player.status(&preview_id);
+    let is_playing = player_status.state == crate::audio::State::Playing;
+
+    let line_height = ui
+        .painter()
+        .layout_no_wrap("x".to_owned(), theme::regular(BODY_SIZE), palette.text)
+        .size()
+        .y;
+    let row_height = (line_height + COMPOSER_PADDING)
+        .round()
+        .max(COMPOSER_CONTROL);
+    let button = row_height;
+
+    ui.allocate_ui_with_layout(
+        vec2(ui.available_width().max(0.0), row_height),
+        egui::Layout::left_to_right(egui::Align::Center),
+        |ui| {
+            ui.spacing_mut().item_spacing.x = 10.0;
+            // 1. Discard button
+            if theme::circle_button(
+                ui,
+                Icon::Trash,
+                button,
+                palette.surface,
+                palette.surface_hover,
+                palette.danger,
+                crate::i18n::gettext(app.locale, "Discard voice message").as_ref(),
+            )
+            .clicked()
+            {
+                app.actions.push(Action::CancelRecording);
+            }
+
+            // 2. Play / Pause preview button
+            let (play_fill, play_hover, play_icon) = if is_playing {
+                (palette.accent, palette.accent_hover, palette.on_accent)
+            } else {
+                (palette.surface, palette.surface_hover, palette.secondary)
+            };
+            let play_label = if is_playing {
+                crate::i18n::gettext(app.locale, "Pause")
+            } else {
+                crate::i18n::gettext(app.locale, "Play recorded audio")
+            };
+            if theme::circle_button(
+                ui,
+                if is_playing { Icon::Pause } else { Icon::Play },
+                button,
+                play_fill,
+                play_hover,
+                play_icon,
+                play_label.as_ref(),
+            )
+            .clicked()
+            {
+                let samples = app
+                    .recording_paused
+                    .as_ref()
+                    .map(|(_, s)| s.clone())
+                    .unwrap_or_default();
+                app.actions.push(Action::PlayVoiceSamples {
+                    id: preview_id.clone(),
+                    samples,
+                });
+            }
+
+            // 3. Duration display
+            let duration_text = if is_playing {
+                format!(
+                    "{} / {}",
+                    crate::util::duration(player_status.position.as_secs() as u32),
+                    crate::util::duration(total_secs)
+                )
+            } else {
+                crate::util::duration(total_secs)
+            };
+            theme::text(
+                ui,
+                &duration_text,
+                theme::tabular(fastframe_fonts::Weight::Medium, 14.0),
+                palette.text,
+            );
+
+            // 4. Waveform representation
+            let spacing = ui.spacing().item_spacing.x;
+            let trailing_width = 3.0 * button + 3.0 * spacing;
+            let wave_width = (ui.available_width() - trailing_width).max(0.0);
+            let (rect, _) = ui.allocate_exact_size(vec2(wave_width, 28.0), Sense::hover());
+
+            let pitch = 3.0;
+            let count = (rect.width() / pitch).floor() as usize;
+            let fraction = if is_playing && total_secs > 0 {
+                (player_status.position.as_secs_f32() / total_secs as f32).clamp(0.0, 1.0)
+            } else {
+                0.0
+            };
+            let played_count = (count as f32 * fraction) as usize;
+
+            for index in 0..count {
+                let x = rect.left() + index as f32 * pitch + 1.0;
+                let bar_h = 4.0 + ((index as f32 * 0.45).sin().abs() * 18.0);
+                let color = if index <= played_count && is_playing {
+                    palette.accent
+                } else {
+                    palette.dim
+                };
+                ui.painter().rect_filled(
+                    Rect::from_center_size(egui::pos2(x, rect.center().y), vec2(2.0, bar_h)),
+                    1.0,
+                    color,
+                );
+            }
+
+            // 5. Continue recording
+            if theme::circle_button(
+                ui,
+                Icon::Mic,
+                button,
+                palette.surface,
+                palette.surface_hover,
+                palette.secondary,
+                crate::i18n::gettext(app.locale, "Continue recording").as_ref(),
+            )
+            .clicked()
+            {
+                app.actions.push(Action::ResumeRecording);
+            }
+
+            // 6. Schedule recording
+            if theme::circle_button(
+                ui,
+                Icon::Calendar,
+                button,
+                palette.surface,
+                palette.surface_hover,
+                palette.secondary,
+                crate::i18n::gettext(app.locale, "Schedule recording").as_ref(),
+            )
+            .clicked()
+            {
+                app.actions.push(Action::PrepareScheduledVoice);
+            }
+
+            // 7. Direct Send
+            if theme::circle_button(
+                ui,
+                Icon::Send,
+                button,
+                palette.accent,
+                palette.accent_hover,
+                palette.on_accent,
+                crate::i18n::gettext(app.locale, "Send").as_ref(),
             )
             .clicked()
             {
