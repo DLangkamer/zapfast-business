@@ -80,6 +80,11 @@ pub fn show(app: &mut App, ui: &mut egui::Ui) {
         SidebarDisplayMode::CollapsedIconsOnly => chats::compact_show(app, ui),
     }
     let search_overlay = pane::show(app, ui);
+    if app.show_crm_sidecar && app.page == Page::Chats {
+        if let Some(chat) = app.current_chat().cloned() {
+            crm_sidecar::show_panel(app, ui, &chat);
+        }
+    }
     egui::CentralPanel::default()
         .frame(central_frame(app))
         .show(ui, |ui| match app.page {

@@ -45,17 +45,6 @@ pub fn show(app: &mut App, ui: &mut egui::Ui) {
     if theme::macos_chrome(ui.ctx()) {
         super::banner(app, ui);
     }
-    if app.show_crm_sidecar {
-        egui::Panel::right("crm_sidecar_panel")
-            .resizable(false)
-            .default_size(290.0)
-            .size_range(290.0..=290.0)
-            .show_separator_line(true)
-            .frame(Frame::new().fill(app.palette.panel).inner_margin(Margin::ZERO))
-            .show(ui, |ui| {
-                super::crm_sidecar::show(app, ui, &chat);
-            });
-    }
     composer(app, ui, &chat);
     messages(app, ui, &chat);
     // Over the messages, which scroll under the header.
