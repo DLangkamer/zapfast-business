@@ -3289,10 +3289,7 @@ impl Worker {
             };
             match protocol.r#type {
                 Some(Type::REVOKE) => {
-                    if let Ok(true) =
-                        self.archive
-                            .set_content(&chat, &target, &Content::Revoked, false)
-                    {
+                    if let Ok(true) = self.archive.mark_revoked(&chat, &target) {
                         self.emit_message(&chat, &target);
                         self.emit_chat(&chat);
                     }
@@ -3387,6 +3384,7 @@ impl Worker {
             mentions,
             forwarded: forwarded_of(base),
             thumbnail: thumbnail_of(base),
+            revoked: false,
         };
         let is_poll = matches!(row.content, Content::Poll { .. });
         self.remember_poll(&row, message, &info.source.sender.to_non_ad_string(), None);
@@ -3823,6 +3821,7 @@ impl Worker {
             mentions: Vec::new(),
             forwarded: false,
             thumbnail: None,
+            revoked: false,
         };
         let id = row.id.clone();
         let chat = row.chat.clone();
@@ -4296,6 +4295,7 @@ impl Worker {
                     mentions,
                     forwarded: message.forwarded,
                     thumbnail: message.thumbnail,
+                    revoked: false,
                 };
                 let mut poll_history_received = false;
                 let raw =
@@ -4352,7 +4352,7 @@ impl Worker {
             for revoked in chat.revoked {
                 let _ = self
                     .archive
-                    .set_content(&id, &revoked, &Content::Revoked, false);
+                    .mark_revoked(&id, &revoked);
             }
             if (metadata || existing.is_none())
                 && let Some(snapshot_unread) = chat.unread
@@ -6483,6 +6483,7 @@ impl Worker {
             mentions,
             forwarded: false,
             thumbnail: None,
+            revoked: false,
         };
         self.store_message(row, Some(message.encode_to_vec()), None);
         tokio::spawn(send_outgoing(
@@ -7525,7 +7526,7 @@ impl Worker {
         };
         if let Ok(true) = self
             .archive
-            .set_content(&chat, &id, &Content::Revoked, false)
+            .mark_revoked(&chat, &id)
         {
             self.emit_message(&chat, &id);
             self.emit_chat(&chat);
@@ -8030,6 +8031,7 @@ fn forwarded_row(
     source.mentions = mentions;
     source.forwarded = true;
     source.thumbnail = thumbnail;
+    source.revoked = false;
     source
 }
 
@@ -9193,6 +9195,7 @@ pub(super) async fn file_outbound(
             .collect(),
         forwarded: false,
         thumbnail: prepared.thumbnail,
+        revoked: false,
     };
     Ok((row, prepared.message.encode_to_vec()))
 }
@@ -9564,6 +9567,7 @@ mod tests {
             mentions: Vec::new(),
             forwarded: false,
             thumbnail: None,
+            revoked: false,
         }
     }
 
@@ -12144,6 +12148,7 @@ mod receipt_tests {
             mentions: Vec::new(),
             forwarded: false,
             thumbnail: None,
+            revoked: false,
         }
     }
 

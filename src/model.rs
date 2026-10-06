@@ -422,6 +422,9 @@ pub struct Message {
     /// JPEG preview sent with an attachment or link.
     #[serde(default)]
     pub thumbnail: Option<Vec<u8>>,
+    /// Whether the message was deleted (revoked) by the sender.
+    #[serde(default)]
+    pub revoked: bool,
 }
 
 /// Raw WhatsApp mention token and its canonical id.
@@ -442,7 +445,16 @@ pub struct LinkPreview {
 impl Message {
     /// One-line summary used in chat rows and quotes.
     pub fn summary(&self) -> String {
-        self.content.summary()
+        if self.revoked && !matches!(self.content, Content::Revoked) {
+            format!("🚫 [Apagada] {}", self.content.summary())
+        } else {
+            self.content.summary()
+        }
+    }
+
+    /// Whether this message was revoked/deleted by its sender.
+    pub fn is_revoked(&self) -> bool {
+        self.revoked || matches!(self.content, Content::Revoked)
     }
 
     /// The line of this message that contains `query`, for a search result's
@@ -1245,6 +1257,8 @@ pub enum Dialog {
     JoinGroup,
     /// Confirms setting aside an archive whose key is gone.
     ConfirmStartOver,
+    /// Connects to a remote ZapFast Docker / LAN Server.
+    ConnectServer,
     /// The stickers of a pack shared in a chat, with a button to add it.
     StickerPack,
     /// Crops a picture into a sticker.

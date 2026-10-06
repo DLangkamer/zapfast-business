@@ -44,6 +44,12 @@ pub mod video;
 pub mod voice;
 pub mod wallpaper;
 
+/// Remote server connectivity and auto-discovery.
+pub mod remote;
+
+/// Docker / headless server engine, web dashboard, and API.
+pub mod server;
+
 /// Identity of this independent installation.
 pub mod identity;
 

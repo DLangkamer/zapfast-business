@@ -84,6 +84,7 @@ CREATE TABLE IF NOT EXISTS messages (
     reactions TEXT NOT NULL DEFAULT '[]',
     edited INTEGER NOT NULL DEFAULT 0,
     raw BLOB,
+    revoked INTEGER NOT NULL DEFAULT 0,
     PRIMARY KEY (chat, id)
 );
 CREATE INDEX IF NOT EXISTS messages_by_time ON messages (chat, timestamp);
@@ -135,7 +136,7 @@ const CHAT_COLUMNS: &str =
                     c.pinned_at, c.ephemeral_expiration, c.locked, c.group_subject_known,
                     c.notification_sound, c.marked_unread,
                     (SELECT f.position FROM favorites f WHERE f.chat = c.id), c.left,
-                    c.info_locked, c.group_admin";
+                    c.info_locked, c.group_admin, m.revoked";
 
 /// Adds columns introduced after the initial schema when missing.
 const MIGRATIONS: &[(&str, &str, &str)] = &[
@@ -146,6 +147,7 @@ const MIGRATIONS: &[(&str, &str, &str)] = &[
     ("messages", "forwarded", "INTEGER NOT NULL DEFAULT 0"),
     ("messages", "delivered_at", "INTEGER"),
     ("messages", "read_at", "INTEGER"),
+    ("messages", "revoked", "INTEGER NOT NULL DEFAULT 0"),
     ("chats", "read_through", "INTEGER"),
     ("chats", "pending_read", "INTEGER"),
     ("chats", "ephemeral_expiration", "INTEGER"),
@@ -178,16 +180,22 @@ const CHAT_JOIN: &str = "FROM chats c
 
 fn chat_from_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<Chat> {
     let content: Option<String> = row.get(10)?;
+    let revoked: bool = row.get::<_, Option<bool>>(25)?.unwrap_or(false);
     let last = match content {
         Some(content) => {
             let content: Content = serde_json::from_str(&content).unwrap_or(Content::Unsupported {
                 what: "unreadable".into(),
             });
+            let summary = if revoked && !matches!(content, Content::Revoked) {
+                format!("🚫 [Apagada] {}", content.summary())
+            } else {
+                content.summary()
+            };
             Some(LastMessage {
                 from_me: row.get(8)?,
                 sender: row.get::<_, Option<String>>(12)?.unwrap_or_default(),
                 sender_name: row.get(9)?,
-                summary: content.summary(),
+                summary,
                 full: content.full_summary(),
                 status: status_from_rank(row.get(11)?),
             })
@@ -230,7 +238,7 @@ fn chat_from_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<Chat> {
 }
 
 /// The columns [`searched_message`] reads, in its order.
-const SEARCH_COLUMNS: &str = "chat, id, sender, sender_name, from_me, timestamp, content, status, quoted, reactions, edited, thumbnail, mentions, forwarded, delivered_at, read_at";
+const SEARCH_COLUMNS: &str = "chat, id, sender, sender_name, from_me, timestamp, content, status, quoted, reactions, edited, thumbnail, mentions, forwarded, delivered_at, read_at, revoked";
 
 /// The lowercased text a search matches: text, captions, file names, poll
 /// questions, contact names and places, one per line.
@@ -285,6 +293,7 @@ fn searched_message(row: &rusqlite::Row<'_>) -> rusqlite::Result<Message> {
         mentions: serde_json::from_str(&mentions).unwrap_or_default(),
         forwarded: row.get(13)?,
         thumbnail: row.get(11)?,
+        revoked: row.get::<_, Option<bool>>(16)?.unwrap_or(false),
     })
 }
 
@@ -932,13 +941,17 @@ impl Archive {
     /// write instead of a read followed by a write.
     pub fn insert_message(&self, message: &Message, raw: Option<&[u8]>) -> Result<()> {
         self.connection.execute(
-            "INSERT INTO messages (chat, id, sender, sender_name, from_me, timestamp, content, status, quoted, reactions, edited, raw, thumbnail, mentions, forwarded, delivered_at, read_at)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17)
+            "INSERT INTO messages (chat, id, sender, sender_name, from_me, timestamp, content, status, quoted, reactions, edited, raw, thumbnail, mentions, forwarded, delivered_at, read_at, revoked)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18)
              ON CONFLICT(chat, id) DO UPDATE SET
                 sender_name = COALESCE(excluded.sender_name, sender_name),
-                content = excluded.content,
+                content = CASE
+                    WHEN excluded.content = '\"Revoked\"' AND messages.content <> '\"Revoked\"'
+                    THEN messages.content
+                    ELSE excluded.content
+                END,
                 status = CASE
-                    WHEN messages.status > excluded.status AND excluded.status <> ?18
+                    WHEN messages.status > excluded.status AND excluded.status <> ?19
                     THEN messages.status
                     ELSE excluded.status
                 END,
@@ -953,7 +966,12 @@ impl Archive {
                 mentions = excluded.mentions,
                 forwarded = excluded.forwarded,
                 delivered_at = COALESCE(delivered_at, excluded.delivered_at),
-                read_at = COALESCE(read_at, excluded.read_at)",
+                read_at = COALESCE(read_at, excluded.read_at),
+                revoked = CASE
+                    WHEN excluded.revoked = 1 OR excluded.content = '\"Revoked\"' OR messages.revoked = 1
+                    THEN 1
+                    ELSE 0
+                END",
             params![
                 message.chat,
                 message.id,
@@ -975,6 +993,7 @@ impl Archive {
                 message.forwarded,
                 message.delivered_at,
                 message.read_at,
+                message.revoked,
                 // An explicit failure still writes over a further state.
                 status_rank(Delivery::Failed),
             ],
@@ -995,7 +1014,7 @@ impl Archive {
         limit: usize,
     ) -> Result<Vec<Message>> {
         let mut statement = self.connection.prepare(
-            "SELECT id, sender, sender_name, from_me, timestamp, content, status, quoted, reactions, edited, thumbnail, mentions, forwarded, delivered_at, read_at
+            "SELECT id, sender, sender_name, from_me, timestamp, content, status, quoted, reactions, edited, thumbnail, mentions, forwarded, delivered_at, read_at, revoked
              FROM messages
              WHERE chat = ?1 AND (timestamp < ?2 OR (timestamp = ?2 AND rowid <
                  (SELECT rowid FROM messages WHERE chat = ?1 AND id = ?3)))
@@ -1028,6 +1047,7 @@ impl Archive {
                     mentions: serde_json::from_str(&mentions).unwrap_or_default(),
                     forwarded: row.get(12)?,
                     thumbnail: row.get(10)?,
+                    revoked: row.get::<_, Option<bool>>(15)?.unwrap_or(false),
                 })
             })?;
         let mut messages: Vec<Message> = rows.collect::<Result<_>>()?;
@@ -1100,7 +1120,7 @@ impl Archive {
         limit: usize,
     ) -> Result<Vec<Message>> {
         let mut statement = self.connection.prepare(
-            "SELECT id, sender, sender_name, from_me, timestamp, content, status, quoted, reactions, edited, thumbnail, mentions, forwarded, delivered_at, read_at
+            "SELECT id, sender, sender_name, from_me, timestamp, content, status, quoted, reactions, edited, thumbnail, mentions, forwarded, delivered_at, read_at, revoked
              FROM messages
              WHERE chat = ?1 AND timestamp >= ?2 AND (timestamp < ?3 OR (timestamp = ?3 AND rowid <
                  (SELECT rowid FROM messages WHERE chat = ?1 AND id = ?4)))
@@ -1133,6 +1153,7 @@ impl Archive {
                     mentions: serde_json::from_str(&mentions).unwrap_or_default(),
                     forwarded: row.get(12)?,
                     thumbnail: row.get(10)?,
+                    revoked: row.get::<_, Option<bool>>(15)?.unwrap_or(false),
                 })
             },
         )?;
@@ -1468,7 +1489,7 @@ impl Archive {
 
     pub fn message(&self, chat: &str, id: &str) -> Result<Option<Message>> {
         let mut statement = self.connection.prepare(
-            "SELECT sender, sender_name, from_me, timestamp, content, status, quoted, reactions, edited, thumbnail, mentions, forwarded, delivered_at, read_at
+            "SELECT sender, sender_name, from_me, timestamp, content, status, quoted, reactions, edited, thumbnail, mentions, forwarded, delivered_at, read_at, revoked
              FROM messages WHERE chat = ?1 AND id = ?2",
         )?;
         statement
@@ -1496,6 +1517,7 @@ impl Archive {
                     mentions: serde_json::from_str(&mentions).unwrap_or_default(),
                     forwarded: row.get(11)?,
                     thumbnail: row.get(9)?,
+                    revoked: row.get::<_, Option<bool>>(14)?.unwrap_or(false),
                 })
             })
             .optional()
@@ -1587,6 +1609,25 @@ impl Archive {
         Ok(ids)
     }
 
+    /// Marks a message as revoked without erasing its original content or media attachments.
+    pub fn mark_revoked(&self, chat: &str, id: &str) -> Result<bool> {
+        let changed = self.connection.execute(
+            "UPDATE messages SET revoked = 1 WHERE chat = ?1 AND id = ?2",
+            params![chat, id],
+        )?;
+        if changed > 0 {
+            Ok(true)
+        } else {
+            // Message wasn't stored yet, so insert a placeholder with Content::Revoked and revoked = 1
+            self.connection.execute(
+                "INSERT OR IGNORE INTO messages (chat, id, sender, sender_name, from_me, timestamp, content, status, revoked)
+                 VALUES (?1, ?2, ?1, NULL, 0, unixepoch(), ?3, 0, 1)",
+                params![chat, id, serde_json::to_string(&Content::Revoked).unwrap_or_default()],
+            )?;
+            Ok(true)
+        }
+    }
+
     pub fn set_content(
         &self,
         chat: &str,
@@ -1594,6 +1635,9 @@ impl Archive {
         content: &Content,
         edited: bool,
     ) -> Result<bool> {
+        if matches!(content, Content::Revoked) {
+            return self.mark_revoked(chat, id);
+        }
         let changed = self.connection.execute(
             "UPDATE messages SET content = ?3, edited = ?4 WHERE chat = ?1 AND id = ?2",
             params![
@@ -1778,6 +1822,7 @@ pub(crate) mod tests {
             mentions: Vec::new(),
             forwarded: false,
             thumbnail: None,
+            revoked: false,
         }
     }
 
@@ -3294,6 +3339,7 @@ mod sticker_tests {
             mentions: Vec::new(),
             forwarded: false,
             thumbnail: None,
+            revoked: false,
         }
     }
 
@@ -3470,6 +3516,7 @@ mod media_path_tests {
             mentions: Vec::new(),
             forwarded: false,
             thumbnail: None,
+            revoked: false,
         }
     }
 

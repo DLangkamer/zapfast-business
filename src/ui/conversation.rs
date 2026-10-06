@@ -3368,6 +3368,9 @@ fn bubble_frame(
             // are measured, at their start: an own bubble lays out from the
             // right, and its width is known only then.
             let forwarded = message.forwarded.then(|| forwarded_label(ui, &palette));
+            if message.revoked && !matches!(message.content, Content::Revoked) {
+                revoked_banner(ui, &palette, view.locale);
+            }
             // Cards share the bubble's settled width: at least CARD_WIDTH and
             // no more than the cap. Text spans that width and stays left-aligned.
             // Bubbles without cards use the natural text width.
@@ -3748,6 +3751,30 @@ fn mirrored_row(
     });
 }
 
+/// Banner indicating that a message was deleted by the sender, but preserved locally.
+fn revoked_banner(ui: &mut egui::Ui, palette: &Palette, locale: &str) {
+    let bg = palette.danger.gamma_multiply(0.12);
+    let fg = palette.danger;
+    let label = if locale.starts_with("pt") {
+        "Esta mensagem foi apagada"
+    } else {
+        "This message was deleted"
+    };
+    Frame::new()
+        .fill(bg)
+        .corner_radius(CornerRadius::same(5))
+        .inner_margin(Margin::symmetric(7, 3))
+        .stroke(Stroke::new(1.0, fg.gamma_multiply(0.35)))
+        .show(ui, |ui| {
+            ui.horizontal(|ui| {
+                ui.spacing_mut().item_spacing.x = 5.0;
+                theme::icon(ui, Icon::Ban, 12.0, fg);
+                theme::text(ui, label, theme::medium(11.5), fg);
+            });
+        });
+    ui.add_space(2.0);
+}
+
 /// Size of the forwarded label's arrow.
 const FORWARDED_ICON: f32 = 14.0;
 /// Gap between the forwarded label's arrow and its word.
@@ -3842,7 +3869,12 @@ fn footer_width(ui: &egui::Ui, message: &Message) -> f32 {
     } else {
         0.0
     };
-    time + edited + not_sent + if message.from_me { 19.0 } else { 0.0 }
+    let revoked = if message.revoked && !matches!(message.content, Content::Revoked) {
+        16.0
+    } else {
+        0.0
+    };
+    time + edited + not_sent + revoked + if message.from_me { 19.0 } else { 0.0 }
 }
 
 /// Whether the message's time and ticks sit over its picture rather than
@@ -3867,8 +3899,13 @@ fn footer_over_picture(ui: &mut egui::Ui, palette: &Palette, message: &Message, 
             .layout_no_wrap(NOT_SENT.to_owned(), theme::medium(11.0), Color32::WHITE)
     });
     let tick_width = if message.from_me { 19.0 } else { 0.0 };
+    let revoked_width = if message.revoked && !matches!(message.content, Content::Revoked) {
+        16.0
+    } else {
+        0.0
+    };
     let width =
-        time.size().x + failed.as_ref().map_or(0.0, |galley| galley.size().x + 6.0) + tick_width;
+        time.size().x + failed.as_ref().map_or(0.0, |galley| galley.size().x + 6.0) + revoked_width + tick_width;
     let row = Rect::from_min_max(
         pos2(
             picture.right() - OVER_PICTURE_INSET.x - width,
@@ -3893,6 +3930,11 @@ fn footer_over_picture(ui: &mut egui::Ui, palette: &Palette, message: &Message, 
         time,
         Color32::WHITE,
     );
+    if message.revoked && !matches!(message.content, Content::Revoked) {
+        x -= 16.0;
+        let icon_rect = Rect::from_center_size(pos2(x + 8.0, row.center().y), Vec2::splat(12.0));
+        theme::paint_icon(ui, Icon::Ban, icon_rect, 12.0, Color32::from_rgb(248, 113, 113));
+    }
     if let Some(failed) = failed {
         x -= failed.size().x + 6.0;
         let label = Rect::from_min_size(
@@ -3945,9 +3987,15 @@ fn footer(ui: &mut egui::Ui, palette: &Palette, message: &Message, slot: Option<
             .layout_no_wrap(NOT_SENT.to_owned(), theme::medium(11.0), palette.text)
     });
     let tick_width = if message.from_me { 19.0 } else { 0.0 };
+    let revoked_width = if message.revoked && !matches!(message.content, Content::Revoked) {
+        16.0
+    } else {
+        0.0
+    };
     let width = time.size().x
         + edited.as_ref().map_or(0.0, |galley| galley.size().x + 4.0)
         + failed.as_ref().map_or(0.0, |galley| galley.size().x + 6.0)
+        + revoked_width
         + tick_width;
     let rect = match slot {
         Some(slot) => slot,
@@ -3982,6 +4030,11 @@ fn footer(ui: &mut egui::Ui, palette: &Palette, message: &Message, slot: Option<
             edited,
             palette.dim,
         );
+    }
+    if message.revoked && !matches!(message.content, Content::Revoked) {
+        x -= 16.0;
+        let icon_rect = Rect::from_center_size(pos2(x + 8.0, rect.center().y), Vec2::splat(12.0));
+        theme::paint_icon(ui, Icon::Ban, icon_rect, 12.0, palette.danger);
     }
     if let Some(failed) = failed {
         x -= failed.size().x + 6.0;
@@ -4235,6 +4288,7 @@ fn context_menu(ui: &mut egui::Ui, view: &View<'_>, message: &Message, actions: 
         && matches!(message.content, Content::Text { .. })
         && age <= crate::app::EDIT_WINDOW.as_secs() as i64;
     let can_revoke = message.from_me
+        && !message.revoked
         && !matches!(message.content, Content::Revoked)
         && age <= crate::app::REVOKE_WINDOW.as_secs() as i64;
     if can_edit && widgets::menu_item(ui, &palette, Some(Icon::Pencil), "Edit") {
@@ -5179,6 +5233,7 @@ fn carousel_row(message: &Message, index: usize, card: &crate::model::Interactiv
         mentions: message.mentions.clone(),
         forwarded: false,
         thumbnail: None,
+        revoked: false,
     }
 }
 
@@ -7717,6 +7772,7 @@ mod tests {
             mentions: Vec::new(),
             forwarded: false,
             thumbnail: None,
+            revoked: false,
         };
         let mut widths = Vec::new();
         let mut output = ctx.run_ui(egui::RawInput::default(), |ui| {
@@ -7829,6 +7885,7 @@ mod reaction_tests {
             mentions: Vec::new(),
             forwarded: false,
             thumbnail: None,
+            revoked: false,
         }
     }
 

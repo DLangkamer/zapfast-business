@@ -636,6 +636,8 @@ pub fn hue(seed: &str) -> f32 {
 const MARK: &[u8] = include_bytes!("../packaging/icons/zapfast.svg");
 /// The same mark without its rim and shading, which blur below this size.
 const SMALL_MARK: &[u8] = include_bytes!("../packaging/icons/zapfast-small.svg");
+/// Monochrome speech bubble with the Business B cut out for menu-bar trays.
+const TRAY_MARK: &[u8] = include_bytes!("../packaging/icons/zapfast-tray.svg");
 const SMALL_BELOW: usize = 40;
 
 /// Rasterizes the logo to straight-alpha RGBA.
@@ -692,14 +694,8 @@ fn plain_disc(size: usize) -> Vec<u8> {
 /// Converts the logo to a monochrome macOS menu-bar template: the disc,
 /// with the bubble cut out of it.
 pub fn tray_template_rgba(size: usize) -> Vec<u8> {
-    // The flat mark at every size: a template has no room for shading.
-    let mut rgba = render_mark(SMALL_MARK, size).unwrap_or_else(|| plain_disc(size));
-    // The disc's green against the ink's says how much of a pixel is disc.
-    const INK: f32 = 14.0;
-    const DISC: f32 = 168.0;
+    let mut rgba = render_mark(TRAY_MARK, size).unwrap_or_else(|| plain_disc(size));
     for pixel in rgba.as_chunks_mut::<4>().0 {
-        let disc = ((f32::from(pixel[1]) - INK) / (DISC - INK)).clamp(0.0, 1.0);
-        pixel[3] = (f32::from(pixel[3]) * disc).round() as u8;
         pixel[0] = 0;
         pixel[1] = 0;
         pixel[2] = 0;

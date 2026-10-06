@@ -528,6 +528,11 @@ pub struct App {
     pub sidebar_visible: bool,
     /// Name typed in the label manager.
     pub label_name: String,
+    pub server_url_input: String,
+    pub server_username_input: String,
+    pub server_password_input: String,
+    pub server_discovered: Vec<crate::remote::DiscoveredServer>,
+    pub server_status_msg: Option<String>,
     /// Colour the manager will use for the next label.
     pub label_color: String,
     /// Label being renamed, with the name being typed.
@@ -1092,6 +1097,11 @@ impl App {
             new_contact_to_phone: true,
             sidebar_visible: true,
             label_name: String::new(),
+            server_url_input: String::new(),
+            server_username_input: String::new(),
+            server_password_input: String::new(),
+            server_discovered: Vec::new(),
+            server_status_msg: None,
             label_color: crate::archive::DEFAULT_COLOR.to_owned(),
             label_editing: None,
             label_filter: None,
@@ -2397,6 +2407,7 @@ impl App {
     /// Whether an outgoing message can still be revoked for everyone.
     pub fn can_revoke(&self, message: &Message) -> bool {
         message.from_me
+            && !message.revoked
             && !matches!(message.content, Content::Revoked)
             && crate::util::now() - message.timestamp <= REVOKE_WINDOW.as_secs() as i64
     }
@@ -4691,7 +4702,11 @@ impl App {
                     .get_mut(&chat)
                     .and_then(|conversation| conversation.message_mut(&id))
                 {
-                    message.content = Content::Revoked;
+                    if self.is_demo() {
+                        message.content = Content::Revoked;
+                    } else {
+                        message.revoked = true;
+                    }
                 }
                 self.backend.send(Command::Revoke { chat, id });
             }
@@ -9691,6 +9706,7 @@ mod tests {
             mentions: Vec::new(),
             forwarded: false,
             thumbnail: None,
+            revoked: false,
         }
     }
 
@@ -11916,6 +11932,7 @@ mod name_tests {
             }],
             forwarded: false,
             thumbnail: None,
+            revoked: false,
         };
         assert_eq!(app.message_text(&message), "ciao @Carmine");
 
@@ -12026,6 +12043,7 @@ mod app_lock_tests {
             mentions: Vec::new(),
             forwarded: false,
             thumbnail: None,
+            revoked: false,
         }
     }
 

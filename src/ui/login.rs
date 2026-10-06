@@ -138,6 +138,10 @@ fn body(app: &mut App, ui: &mut egui::Ui) {
         }
     }
     super::accounts::login_choices(app, ui);
+    ui.add_space(8.0);
+    if theme::pill_button(ui, &palette, "🌐 Conectar a Servidor ZapFast (Docker / LAN)…", false).clicked() {
+        app.actions.push(Action::ShowDialog(crate::model::Dialog::ConnectServer));
+    }
     ui.add_space(18.0);
     theme::paragraph(
         ui,

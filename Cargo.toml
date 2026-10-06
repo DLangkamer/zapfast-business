@@ -1,6 +1,6 @@
 [package]
 name = "zapfast"
-version = "0.19.5"
+version = "0.19.6"
 edition = "2024"
 rust-version = "1.98"
 license = "MIT"
@@ -17,6 +17,10 @@ path = "src/lib.rs"
 [[bin]]
 name = "zapfast-business"
 path = "src/main.rs"
+
+[[bin]]
+name = "zapfast-server"
+path = "src/bin/server.rs"
 
 [dependencies]
 anyhow = "1"
@@ -58,9 +62,9 @@ image = { version = "0.25", default-features = false, features = ["jpeg", "png",
 # compatibility retains the legacy created_at column.
 whatsapp-rust = { git = "https://github.com/oxidezap/whatsapp-rust", rev = "f7468ae2920a2b0aedbd0848cf121de56a07f93c", default-features = false, features = ["sqlite-storage", "tokio-transport", "tokio-runtime", "ureq-client", "tokio-native"] }
 tokio = { version = "1", features = ["rt-multi-thread", "sync", "time", "macros", "fs", "net", "io-util"] }
-# Opens the WhatsApp WebSocket through a proxy. Both crates are already
-# included through the Tokio transport at these versions.
-tokio-websockets = { version = "0.13.3", default-features = false, features = ["client"] }
+# WebSocket client & server
+tokio-websockets = { version = "0.13.3", default-features = false, features = ["client", "server"] }
+httparse = "1"
 http = "1"
 # Encodes HTTP proxy credentials. Already included through several crates.
 base64 = "0.22"

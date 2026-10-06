@@ -1,0 +1,12 @@
+[package]
+name = "zapfast-business-branding-export"
+version = "0.1.0"
+edition = "2024"
+publish = false
+
+[[bin]]
+name = "export-branding"
+path = "../examples/export_branding.rs"
+
+[dependencies]
+resvg = { version = "0.45", default-features = false }

@@ -39,6 +39,7 @@ pub fn show(app: &mut App, ctx: &egui::Context) {
                 }
                 Dialog::ConfirmClearChat(_) => 380.0,
                 Dialog::ConfirmDeleteMessage { .. } => 380.0,
+                Dialog::ConnectServer => 480.0,
                 Dialog::StickerPack => 420.0,
                 Dialog::StickerMaker => 400.0,
                 Dialog::Forward { .. } => 420.0,
@@ -99,6 +100,7 @@ pub fn show(app: &mut App, ctx: &egui::Context) {
                 Dialog::Forward { chat, messages } => forward(app, ui, &chat, &messages),
                 Dialog::JoinGroup => join_group(app, ui),
                 Dialog::ConfirmStartOver => confirm_start_over(app, ui),
+                Dialog::ConnectServer => super::server_login::show(app, ui),
                 Dialog::StickerPack => sticker_pack(app, ui),
                 Dialog::StickerMaker => sticker_maker(app, ui),
                 Dialog::MessageInfo { chat, message } => {

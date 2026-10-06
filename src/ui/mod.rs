@@ -20,6 +20,7 @@ pub mod picker;
 pub mod polls;
 pub mod quick_replies;
 pub mod settings;
+pub mod server_login;
 pub mod update;
 pub mod video_preview;
 pub mod widgets;
@@ -658,6 +659,7 @@ mod idle_tests {
             mentions: Vec::new(),
             forwarded: false,
             thumbnail: None,
+            revoked: false,
         });
         conversation.complete = true;
         app.conversations.insert(chat.id.clone(), conversation);
@@ -716,6 +718,7 @@ mod idle_tests {
                 mentions: Vec::new(),
                 forwarded: false,
                 thumbnail: None,
+                revoked: false,
             });
         }
         conversation.complete = true;

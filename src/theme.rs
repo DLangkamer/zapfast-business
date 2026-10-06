@@ -809,20 +809,13 @@ pub fn mark(ui: &egui::Ui, center: egui::Pos2, diameter: f32) {
     ui.painter().image(texture.id(), rect, uv, Color32::WHITE);
 }
 
-/// Draws the logo's shape in two flat colours, for the empty conversation's
-/// faint watermark.
+/// Draws the Business mark in two flat colours for faint watermarks.
 pub fn logo(ui: &egui::Ui, center: egui::Pos2, diameter: f32, disc: Color32, glyph: Color32) {
     ui.painter().circle_filled(center, diameter / 2.0, disc);
-    // Match `packaging/icons/zapfast-small.svg`: the bubble sits a little
-    // right of and above the centre, where its tail balances it.
-    let icon_size = diameter * 0.674;
-    let icon_rect = egui::Rect::from_center_size(
-        center + Vec2::new(diameter * 0.009, -diameter * 0.009),
-        Vec2::splat(icon_size),
-    );
-    Icon::MessageCircle
-        .image(glyph, icon_size)
-        .paint_at(ui, icon_rect);
+    let font = semibold(diameter * 0.58);
+    let galley = ui.painter().layout_no_wrap("B".to_owned(), font, glyph);
+    ui.painter()
+        .galley(center - galley.size() / 2.0, galley, glyph);
 }
 
 /// A pill-shaped text button: filled for the primary action, outlined otherwise.
