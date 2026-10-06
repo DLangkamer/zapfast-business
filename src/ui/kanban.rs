@@ -223,7 +223,7 @@ fn render_deal_card(app: &mut App, ui: &mut egui::Ui, palette: &Palette, deal: &
         .corner_radius(CornerRadius::same(6))
         .inner_margin(Margin::same(8));
 
-    let res = frame.show(ui, |ui| {
+    frame.show(ui, |ui| {
         ui.vertical(|ui| {
             // Card top: Contact name & Avatar
             ui.horizontal(|ui| {

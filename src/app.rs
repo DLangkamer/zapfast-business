@@ -6080,33 +6080,35 @@ impl App {
 
     fn check_crm_followups(&mut self) {
         let now = crate::util::now();
-        for followup in &self.crm_followups {
-            if !followup.done
-                && followup.remind_at <= now
-                && !self.crm_notified_followups.contains(&followup.id)
-            {
-                self.crm_notified_followups.insert(followup.id.clone());
-                let contact_title = self
-                    .chat(&followup.chat_id)
-                    .map(|c| self.chat_title(c))
-                    .unwrap_or_else(|| followup.chat_id.clone());
-                let message = format!("Follow-up com {}: {}", contact_title, followup.title);
-                self.toast(message.clone());
-                let waker = self.waker.clone();
-                self.notifications.show(
-                    "⏰ Lembrete de Follow-up".to_owned(),
-                    message,
-                    None,
-                    crate::settings::NotificationSound::default(),
-                    crate::notify::NotificationTarget {
-                        account: self.account().id.clone(),
-                        chat: followup.chat_id.clone(),
-                        message: String::new(),
-                    },
-                    std::sync::Arc::clone(&self.notification_opens),
-                    move || waker.wake(),
-                );
-            }
+        let due: Vec<crate::model::CrmFollowup> = self
+            .crm_followups
+            .iter()
+            .filter(|f| !f.done && f.remind_at <= now && !self.crm_notified_followups.contains(&f.id))
+            .cloned()
+            .collect();
+
+        for followup in due {
+            self.crm_notified_followups.insert(followup.id.clone());
+            let contact_title = self
+                .chat(&followup.chat_id)
+                .map(|c| self.chat_title(c))
+                .unwrap_or_else(|| followup.chat_id.clone());
+            let message = format!("Follow-up com {}: {}", contact_title, followup.title);
+            self.toast(message.clone());
+            let waker = self.waker.clone();
+            self.notifications.show(
+                "⏰ Lembrete de Follow-up".to_owned(),
+                message,
+                None,
+                crate::settings::NotificationSound::default(),
+                crate::notify::NotificationTarget {
+                    account: self.account().id.clone(),
+                    chat: followup.chat_id.clone(),
+                    message: String::new(),
+                },
+                std::sync::Arc::clone(&self.notification_opens),
+                move || waker.wake(),
+            );
         }
     }
 
