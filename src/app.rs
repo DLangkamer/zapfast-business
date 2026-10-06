@@ -4311,7 +4311,6 @@ impl App {
                         }
                     }
                 }
-                let preview_id = format!("preview_paused_{chat}");
                 self.player.stop();
                 if final_samples.len() >= crate::voice::RATE as usize / 2 {
                     self.scheduled_voice = Some((chat.clone(), final_samples, self.reply_to.take()));
@@ -4831,8 +4830,7 @@ impl App {
             }
             Action::CancelRecording => {
                 self.recording = None;
-                if let Some(chat) = self.open_chat.as_ref() {
-                    let preview_id = format!("preview_paused_{chat}");
+                if self.open_chat.is_some() {
                     self.player.stop();
                 }
                 self.recording_paused = None;
@@ -6099,7 +6097,7 @@ impl App {
                     "⏰ Lembrete de Follow-up".to_owned(),
                     message,
                     None,
-                    crate::settings::NotificationSound::Default,
+                    crate::settings::NotificationSound::default(),
                     crate::notify::NotificationTarget {
                         account: self.account().id.clone(),
                         chat: followup.chat_id.clone(),
@@ -6497,7 +6495,6 @@ impl App {
         }
 
         if let Some(chat) = current_chat {
-            let preview_id = format!("preview_paused_{chat}");
             self.player.stop();
 
             if !final_samples.is_empty() {

@@ -1,7 +1,7 @@
 //! Commercial Metrics and Conversion Dashboard: pipeline KPIs, stage conversion
 //! bars, average ticket size, and follow-up efficiency.
 
-use egui::{vec2, Align, Color32, Layout, Margin, Rounding, Vec2};
+use egui::{vec2, Align, Color32, CornerRadius, Frame, Layout, Margin, Vec2};
 
 use crate::app::App;
 use crate::theme::{self, Icon, Palette};
@@ -77,9 +77,9 @@ pub fn show(app: &mut App, ui: &mut egui::Ui) {
                         0.0
                     };
 
-                    egui::Frame::none()
+                    Frame::new()
                         .fill(palette.bubble_in)
-                        .rounding(Rounding::same(6.0))
+                        .corner_radius(CornerRadius::same(6))
                         .inner_margin(Margin::same(10))
                         .show(ui, |ui| {
                             ui.vertical(|ui| {
@@ -116,9 +116,9 @@ pub fn show(app: &mut App, ui: &mut egui::Ui) {
 }
 
 fn render_kpi_card(ui: &mut egui::Ui, palette: &Palette, label: &str, value: &str, accent: Color32) {
-    egui::Frame::none()
+    Frame::new()
         .fill(palette.bubble_in)
-        .rounding(Rounding::same(8.0))
+        .corner_radius(CornerRadius::same(8))
         .inner_margin(Margin::same(10))
         .show(ui, |ui| {
             ui.set_width(120.0);

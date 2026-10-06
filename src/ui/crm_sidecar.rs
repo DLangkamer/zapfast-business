@@ -1,7 +1,7 @@
 //! Client sidecar panel (Mini-CRM): encrypted internal notes, pipeline stage selector,
 //! deal value (R$), tags, and follow-up reminders attached to the active chat.
 
-use egui::{vec2, Align, Color32, Layout, Margin, Rounding, Stroke, Vec2};
+use egui::{vec2, Align, Color32, CornerRadius, Frame, Layout, Margin, Stroke, Vec2};
 
 use crate::app::App;
 use crate::model::{Action, Chat, CrmDeal, CrmFollowup};
@@ -26,7 +26,7 @@ pub fn show(app: &mut App, ui: &mut egui::Ui, chat: &Chat) {
             updated_at: crate::util::now(),
         });
 
-    egui::Frame::none()
+    Frame::new()
         .fill(palette.panel)
         .inner_margin(Margin::same(12))
         .show(ui, |ui| {
@@ -84,10 +84,10 @@ fn render_stage_selector(app: &mut App, ui: &mut egui::Ui, palette: &Palette, de
                 (palette.surface, palette.surface_hover)
             };
 
-            let res = egui::Frame::none()
+            let res = Frame::new()
                 .fill(bg)
                 .stroke(Stroke::new(if is_selected { 1.5 } else { 1.0 }, border))
-                .rounding(Rounding::same(6.0))
+                .corner_radius(CornerRadius::same(6))
                 .inner_margin(Margin::symmetric(8, 6))
                 .show(ui, |ui| {
                     ui.horizontal(|ui| {
@@ -166,9 +166,9 @@ fn render_tags(app: &mut App, ui: &mut egui::Ui, palette: &Palette, deal: &CrmDe
             ui.horizontal_wrapped(|ui| {
                 ui.spacing_mut().item_spacing = vec2(4.0, 4.0);
                 for (idx, tag) in deal.tags.iter().enumerate() {
-                    egui::Frame::none()
+                    Frame::new()
                         .fill(palette.surface_hover)
-                        .rounding(Rounding::same(4.0))
+                        .corner_radius(CornerRadius::same(4))
                         .inner_margin(Margin::symmetric(6, 3))
                         .show(ui, |ui| {
                             ui.horizontal(|ui| {
@@ -270,9 +270,9 @@ fn render_followups(app: &mut App, ui: &mut egui::Ui, palette: &Palette, chat_id
                 (palette.surface_hover, palette.text)
             };
 
-            egui::Frame::none()
+            Frame::new()
                 .fill(bg)
-                .rounding(Rounding::same(6.0))
+                .corner_radius(CornerRadius::same(6))
                 .inner_margin(Margin::same(8))
                 .show(ui, |ui| {
                     ui.vertical(|ui| {

@@ -46,12 +46,13 @@ pub fn show(app: &mut App, ui: &mut egui::Ui) {
         super::banner(app, ui);
     }
     if app.show_crm_sidecar {
-        egui::SidePanel::right("crm_sidecar_panel")
-            .exact_width(290.0)
+        egui::Panel::right("crm_sidecar_panel")
             .resizable(false)
+            .default_size(290.0)
+            .size_range(290.0..=290.0)
             .show_separator_line(true)
-            .frame(egui::Frame::none().fill(app.palette.panel))
-            .show_inside(ui, |ui| {
+            .frame(Frame::new().fill(app.palette.panel).inner_margin(Margin::ZERO))
+            .show(ui, |ui| {
                 super::crm_sidecar::show(app, ui, &chat);
             });
     }

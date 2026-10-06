@@ -1,7 +1,7 @@
 //! Visual Sales Kanban Board: customizable pipeline columns, deal cards,
 //! stage transitions, search filter, and JSON backup export/import.
 
-use egui::{vec2, Align, Layout, Margin, Rounding, Stroke, Vec2};
+use egui::{vec2, Align, CornerRadius, Frame, Layout, Margin, Stroke, Vec2};
 
 use crate::app::App;
 use crate::model::{Action, CrmColumn, CrmDeal, Dialog};
@@ -147,9 +147,9 @@ fn render_column(
     let total_value_cents: i64 = deals_in_col.iter().map(|d| d.value_cents).sum();
     let count = deals_in_col.len();
 
-    egui::Frame::none()
+    Frame::new()
         .fill(palette.bubble_in)
-        .rounding(Rounding::same(8.0))
+        .corner_radius(CornerRadius::same(8))
         .inner_margin(Margin::same(10))
         .show(ui, |ui| {
             ui.set_width(260.0);
@@ -217,10 +217,10 @@ fn render_deal_card(app: &mut App, ui: &mut egui::Ui, palette: &Palette, deal: &
         .iter()
         .any(|f| f.chat_id == deal.chat_id && !f.done);
 
-    let frame = egui::Frame::none()
+    let frame = Frame::new()
         .fill(palette.surface)
         .stroke(Stroke::new(1.0, palette.surface_hover))
-        .rounding(Rounding::same(6.0))
+        .corner_radius(CornerRadius::same(6))
         .inner_margin(Margin::same(8));
 
     let res = frame.show(ui, |ui| {
@@ -250,9 +250,9 @@ fn render_deal_card(app: &mut App, ui: &mut egui::Ui, palette: &Palette, deal: &
                 ui.horizontal_wrapped(|ui| {
                     ui.spacing_mut().item_spacing = vec2(3.0, 3.0);
                     for tag in &deal.tags {
-                        egui::Frame::none()
+                        Frame::new()
                             .fill(palette.surface_hover)
-                            .rounding(Rounding::same(3.0))
+                            .corner_radius(CornerRadius::same(3))
                             .inner_margin(Margin::symmetric(4, 2))
                             .show(ui, |ui| {
                                 theme::text(ui, tag, theme::regular(10.5), palette.text);
