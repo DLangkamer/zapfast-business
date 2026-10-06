@@ -381,7 +381,11 @@ fn schedule_voice(app: &mut App, ui: &mut egui::Ui, chat: &str) {
     );
     ui.add_space(8.0);
 
-    if let Some((_, samples, _)) = &app.scheduled_voice {
+    let scheduled_samples = app
+        .scheduled_voice
+        .as_ref()
+        .map(|(_, samples, _)| samples.clone());
+    if let Some(samples) = scheduled_samples {
         let is_playing = app.player.status("preview_sched_voice").state == crate::audio::State::Playing;
         let dur = samples.len() as f32 / crate::voice::RATE as f32;
         let mins = (dur / 60.0) as u32;
@@ -675,7 +679,7 @@ fn scheduled_messages(app: &mut App, ui: &mut egui::Ui, initial_filter: Option<&
                                         }
                                         super::widgets::rich_text(
                                             ui,
-                                            format!("Áudio gravado ({mins}:{secs:02})"),
+                                            &format!("Áudio gravado ({mins}:{secs:02})"),
                                             theme::regular(12.5),
                                             palette.secondary,
                                         );

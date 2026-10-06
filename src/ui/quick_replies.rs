@@ -85,7 +85,11 @@ pub fn manager(app: &mut App, ui: &mut egui::Ui, palette: &Palette) {
 
     // Audio attachment section
     ui.label(theme::rich_text("Audio de voz (Enviado como se tivesse gravado na hora)", theme::bold(13.0), palette.text));
-    if let Some(voice_name) = &app.quick_reply_voice_name {
+    let attached_voice = app
+        .quick_reply_voice_name
+        .clone()
+        .map(|name| (name, app.quick_reply_voice.clone()));
+    if let Some((voice_name, voice_samples)) = attached_voice {
         Frame::new()
             .fill(palette.surface_active)
             .stroke(Stroke::new(1.0, palette.accent))
@@ -95,7 +99,7 @@ pub fn manager(app: &mut App, ui: &mut egui::Ui, palette: &Palette) {
                 ui.horizontal(|ui| {
                     theme::text(ui, "🎙", theme::bold(15.0), palette.accent);
                     ui.vertical(|ui| {
-                        theme::text(ui, voice_name, theme::semibold(13.0), palette.text);
+                        theme::text(ui, &voice_name, theme::semibold(13.0), palette.text);
                         theme::text(
                             ui,
                             "Chega ao cliente como nota de voz oficial (PTT) com waveform",
@@ -118,7 +122,7 @@ pub fn manager(app: &mut App, ui: &mut egui::Ui, palette: &Palette) {
                             app.quick_reply_voice_name = None;
                             app.quick_reply_voice_duration = None;
                         }
-                        if let Some(samples) = &app.quick_reply_voice {
+                        if let Some(samples) = voice_samples {
                             let is_playing = app.player.status("preview_qr_draft").state
                                 == crate::audio::State::Playing;
                             if theme::icon_button(
@@ -133,7 +137,7 @@ pub fn manager(app: &mut App, ui: &mut egui::Ui, palette: &Palette) {
                             {
                                 app.actions.push(Action::PlayVoiceSamples {
                                     id: "preview_qr_draft".to_owned(),
-                                    samples: samples.clone(),
+                                    samples,
                                 });
                             }
                         }
