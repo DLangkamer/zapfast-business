@@ -16,6 +16,7 @@ mod favorites;
 pub use favorites::Favorite;
 mod labels;
 pub use labels::{DEFAULT_COLOR, LABEL_LIMIT, NAME_LIMIT};
+mod broadcast_lists;
 mod polls;
 mod quick_replies;
 mod receipts;
@@ -355,6 +356,7 @@ impl Archive {
         connection.execute_batch(SCHEMA)?;
         connection.execute_batch(labels::SCHEMA)?;
         connection.execute_batch(quick_replies::SCHEMA)?;
+        connection.execute_batch(broadcast_lists::SCHEMA)?;
         connection.execute_batch(polls::SCHEMA)?;
         connection.execute_batch(drafts::SCHEMA)?;
         connection.execute_batch(scheduled::SCHEMA)?;

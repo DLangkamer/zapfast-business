@@ -1,4 +1,4 @@
-//! Durable scheduled text and voice messages stored in the encrypted archive.
+﻿//! Durable scheduled text and voice messages stored in the encrypted archive.
 
 use super::{Archive, Result, params};
 
@@ -19,6 +19,7 @@ CREATE INDEX IF NOT EXISTS scheduled_messages_due ON scheduled_messages(send_at,
 pub enum ScheduledKind {
     Text,
     Voice,
+    Files,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -64,6 +65,11 @@ impl Archive {
         )?;
         let rows = statement.query_map([now], |row| {
             let mentions: String = row.get(3)?;
+            let kind = match row.get::<_, String>(6)?.as_str() {
+                "voice" => ScheduledKind::Voice,
+                "files" => ScheduledKind::Files,
+                _ => ScheduledKind::Text,
+            };
             Ok(ScheduledMessage {
                 id: row.get(0)?,
                 chat: row.get(1)?,
@@ -71,11 +77,7 @@ impl Archive {
                 mentions: serde_json::from_str(&mentions).unwrap_or_default(),
                 quoting: row.get(4)?,
                 send_at: row.get(5)?,
-                kind: if row.get::<_, String>(6)? == "voice" {
-                    ScheduledKind::Voice
-                } else {
-                    ScheduledKind::Text
-                },
+                kind,
                 voice: row.get::<_, Option<Vec<u8>>>(7)?.map(bytes_to_samples),
             })
         })?;
@@ -89,6 +91,11 @@ impl Archive {
         )?;
         let rows = statement.query_map([], |row| {
             let mentions: String = row.get(3)?;
+            let kind = match row.get::<_, String>(6)?.as_str() {
+                "voice" => ScheduledKind::Voice,
+                "files" => ScheduledKind::Files,
+                _ => ScheduledKind::Text,
+            };
             Ok(ScheduledMessage {
                 id: row.get(0)?,
                 chat: row.get(1)?,
@@ -96,11 +103,7 @@ impl Archive {
                 mentions: serde_json::from_str(&mentions).unwrap_or_default(),
                 quoting: row.get(4)?,
                 send_at: row.get(5)?,
-                kind: if row.get::<_, String>(6)? == "voice" {
-                    ScheduledKind::Voice
-                } else {
-                    ScheduledKind::Text
-                },
+                kind,
                 voice: row.get::<_, Option<Vec<u8>>>(7)?.map(bytes_to_samples),
             })
         })?;
@@ -122,6 +125,23 @@ impl Archive {
             "INSERT INTO scheduled_messages (chat, text, mentions, quoting, send_at, created_at, kind, voice)
              VALUES (?1, '', '[]', ?2, ?3, ?4, 'voice', ?5)",
             params![chat, quoting, send_at, crate::util::now(), bytes],
+        )?;
+        Ok(self.connection.last_insert_rowid())
+    }
+
+    pub fn schedule_files(
+        &self,
+        chat: &str,
+        paths: &[std::path::PathBuf],
+        caption: Option<&str>,
+        quoting: Option<&str>,
+        send_at: i64,
+    ) -> Result<i64> {
+        let payload = serde_json::to_string(&(paths, caption)).unwrap_or_else(|_| "[]".into());
+        self.connection.execute(
+            "INSERT INTO scheduled_messages (chat, text, mentions, quoting, send_at, created_at, kind, voice)
+             VALUES (?1, ?2, '[]', ?3, ?4, ?5, 'files', NULL)",
+            params![chat, payload, quoting, send_at, crate::util::now()],
         )?;
         Ok(self.connection.last_insert_rowid())
     }

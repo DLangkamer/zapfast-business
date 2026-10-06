@@ -91,6 +91,32 @@ pub struct QuickReply {
     pub count: i32,
 }
 
+/// A WhatsApp Business broadcast list for bulk dispatch.
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct BroadcastList {
+    pub id: String,
+    pub name: String,
+    pub chats: Vec<ChatId>,
+    pub created_at: i64,
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub enum BulkDispatchInitial {
+    Numbers,
+    BroadcastList(String),
+    Chats(Vec<ChatId>),
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub enum BulkDispatchContent {
+    Text(String),
+    Voice(Vec<f32>),
+    Files {
+        paths: Vec<std::path::PathBuf>,
+        caption: Option<String>,
+    },
+}
+
 /// Chat-list filter chosen from the chips under the search field.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub enum ChatFilter {
@@ -1159,6 +1185,7 @@ pub enum Dialog {
     ScheduleMessage(ChatId),
     ScheduledMessages(Option<ChatId>),
     ScheduleVoice(ChatId),
+    BulkDispatch(Option<BulkDispatchInitial>),
     PollResults {
         chat: ChatId,
         message: String,
@@ -1660,6 +1687,14 @@ pub enum Action {
         keywords: Vec<String>,
     },
     DeleteQuickReply(String),
+    SaveBroadcastList(BroadcastList),
+    DeleteBroadcastList(String),
+    ExecuteBulkDispatch {
+        targets: Vec<ChatId>,
+        content: BulkDispatchContent,
+        interval_seconds: u32,
+        send_at: Option<i64>,
+    },
     /// Shows or leaves the archived chats.
     ShowArchived(bool),
     /// Mutes (`true`) or unmutes every followed channel.

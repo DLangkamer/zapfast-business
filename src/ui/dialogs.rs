@@ -50,7 +50,10 @@ pub fn show(app: &mut App, ctx: &egui::Context) {
                 | Dialog::MessageInfo { .. } => {
                     420.0_f32.min((ui.ctx().content_rect().width() - 64.0).max(180.0))
                 }
-                Dialog::Labels | Dialog::QuickReplies | Dialog::ScheduledMessages(_) => 520.0,
+                Dialog::Labels
+                | Dialog::QuickReplies
+                | Dialog::ScheduledMessages(_)
+                | Dialog::BulkDispatch(_) => 520.0,
             });
             ui.spacing_mut().item_spacing.y = 8.0;
             match dialog {
@@ -58,6 +61,9 @@ pub fn show(app: &mut App, ctx: &egui::Context) {
                 Dialog::ScheduleMessage(chat) => schedule_message(app, ui, &chat),
                 Dialog::ScheduleVoice(chat) => schedule_voice(app, ui, &chat),
                 Dialog::ScheduledMessages(filter) => scheduled_messages(app, ui, filter.as_deref()),
+                Dialog::BulkDispatch(initial) => {
+                    super::bulk_dispatch::bulk_dispatch_dialog(app, ui, initial.as_ref());
+                }
                 Dialog::PollResults { chat, message } => {
                     super::polls::results(app, ui, &chat, &message)
                 }
@@ -101,7 +107,7 @@ pub fn show(app: &mut App, ctx: &egui::Context) {
     }
 }
 
-fn date_time_picker(
+pub(crate) fn date_time_picker(
     ui: &mut egui::Ui,
     locale: Locale,
     palette: &theme::Palette,
@@ -544,11 +550,10 @@ fn scheduled_messages(app: &mut App, ui: &mut egui::Ui, initial_filter: Option<&
                                 palette.text,
                             );
                             ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-                                let badge_text = if item.kind == crate::archive::ScheduledKind::Text
-                                {
-                                    "Text"
-                                } else {
-                                    "Voice"
+                                let badge_text = match item.kind {
+                                    crate::archive::ScheduledKind::Text => "Text",
+                                    crate::archive::ScheduledKind::Voice => "Voice",
+                                    crate::archive::ScheduledKind::Files => "Media",
                                 };
                                 super::widgets::rich_text(
                                     ui,
@@ -585,7 +590,7 @@ fn scheduled_messages(app: &mut App, ui: &mut egui::Ui, initial_filter: Option<&
 
                             ui.horizontal(|ui| {
                                 let can_save = new_send_at.is_some()
-                                    && (item.kind == crate::archive::ScheduledKind::Voice
+                                    && (item.kind != crate::archive::ScheduledKind::Text
                                         || !text.trim().is_empty());
                                 if ui
                                     .add_enabled(can_save, egui::Button::new("Save changes"))

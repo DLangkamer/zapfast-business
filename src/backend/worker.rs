@@ -1165,6 +1165,7 @@ impl Worker {
                 self.emit(Event::Chats(chats));
                 self.emit_labels();
                 self.emit_quick_replies();
+                self.emit_broadcast_lists();
                 self.emit(Event::Drafts(self.archive.drafts().unwrap_or_default()));
             }
             Err(error) => log::warn!("could not list chats: {error}"),
@@ -1184,6 +1185,66 @@ impl Worker {
             Ok(replies) => self.emit(Event::QuickReplies(replies)),
             Err(error) => log::warn!("could not list quick replies: {error}"),
         }
+    }
+
+    fn emit_broadcast_lists(&self) {
+        match self.archive.broadcast_lists() {
+            Ok(lists) => self.emit(Event::BroadcastLists(lists)),
+            Err(error) => log::warn!("could not list broadcast lists: {error}"),
+        }
+    }
+
+    fn execute_bulk_dispatch(
+        &mut self,
+        targets: Vec<ChatId>,
+        content: crate::model::BulkDispatchContent,
+        interval_seconds: u32,
+        send_at: Option<i64>,
+    ) {
+        let count = targets.len();
+        let start_time = send_at.unwrap_or_else(crate::util::now);
+        let interval = interval_seconds as i64;
+
+        for (i, target) in targets.into_iter().enumerate() {
+            let target_time = start_time + (i as i64 * interval);
+            match &content {
+                crate::model::BulkDispatchContent::Text(text) => {
+                    if i == 0 && send_at.is_none() {
+                        self.send_text(target, text.clone(), None, Vec::new());
+                    } else {
+                        let _ = self
+                            .archive
+                            .schedule_text(&target, text, &[], None, target_time);
+                    }
+                }
+                crate::model::BulkDispatchContent::Voice(samples) => {
+                    if i == 0 && send_at.is_none() {
+                        self.send_voice(target, samples.clone(), None);
+                    } else {
+                        let _ = self
+                            .archive
+                            .schedule_voice(&target, samples, None, target_time);
+                    }
+                }
+                crate::model::BulkDispatchContent::Files { paths, caption } => {
+                    if i == 0 && send_at.is_none() {
+                        self.send_files(target, paths.clone(), caption.clone(), Vec::new(), None);
+                    } else {
+                        let _ = self.archive.schedule_files(
+                            &target,
+                            paths,
+                            caption.as_deref(),
+                            None,
+                            target_time,
+                        );
+                    }
+                }
+            }
+        }
+        self.emit_scheduled();
+        self.emit(Event::Info(format!(
+            "Disparo iniciado para {count} destinatarios"
+        )));
     }
 
     /// Creates a label. The app refuses a full set or a taken name first,
@@ -5723,6 +5784,25 @@ impl Worker {
                     });
                 }
             }
+            Command::SaveBroadcastList(list) => {
+                let _ = self.archive.upsert_broadcast_list(&list);
+                self.emit_broadcast_lists();
+            }
+            Command::DeleteBroadcastList(id) => {
+                let _ = self.archive.delete_broadcast_list(&id);
+                self.emit_broadcast_lists();
+            }
+            Command::ListBroadcastLists => {
+                self.emit_broadcast_lists();
+            }
+            Command::BulkDispatch {
+                targets,
+                content,
+                interval_seconds,
+                send_at,
+            } => {
+                self.execute_bulk_dispatch(targets, content, interval_seconds, send_at);
+            }
             Command::BusinessStateRecovered(success) => {
                 if success {
                     let _ = self.archive.set_meta("business_app_state_v1", "done");
@@ -6527,6 +6607,21 @@ impl Worker {
                 crate::archive::ScheduledKind::Voice => {
                     if let Some(samples) = message.voice {
                         self.send_voice(message.chat, samples, message.quoting);
+                    }
+                }
+                crate::archive::ScheduledKind::Files => {
+                    if let Ok((paths, caption)) = serde_json::from_str::<(
+                        Vec<std::path::PathBuf>,
+                        Option<String>,
+                    )>(&message.text)
+                    {
+                        self.send_files(
+                            message.chat,
+                            paths,
+                            caption,
+                            message.mentions,
+                            message.quoting,
+                        );
                     }
                 }
             }

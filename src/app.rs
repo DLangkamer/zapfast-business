@@ -13,9 +13,9 @@ use crate::backend::{Backend, Command, Event, LinkStatus, Refusal, Unsent, Waker
 use crate::i18n::Locale;
 use crate::image_preview::PreviewState;
 use crate::model::{
-    AccountId, Action, Chat, ChatFilter, ChatId, Contact, Content, Delivery, Dialog, Gif, GifError,
-    Label, Media, MediaState, Message, Page, PickerTab, QuickReply, Scroll, SidebarDisplayMode,
-    StickerPack, StickerShelf, Toast, ToastKind,
+    AccountId, Action, BroadcastList, Chat, ChatFilter, ChatId, Contact, Content, Delivery, Dialog,
+    Gif, GifError, Label, Media, MediaState, Message, Page, PickerTab, QuickReply, Scroll,
+    SidebarDisplayMode, StickerPack, StickerShelf, Toast, ToastKind,
 };
 use crate::paths::AppDirs;
 use crate::settings::{AccountRoster, NotificationSound, Settings, ThemeChoice};
@@ -532,6 +532,8 @@ pub struct App {
     pub label_editing: Option<(String, String)>,
     /// Label the chat list shows; `None` shows every chat.
     pub label_filter: Option<String>,
+    pub broadcast_lists: Vec<BroadcastList>,
+    pub bulk_state: crate::ui::bulk_dispatch::BulkDispatchState,
     pub quick_replies: Vec<QuickReply>,
     pub quick_reply_selected: usize,
     pub quick_reply_editing: Option<String>,
@@ -1081,6 +1083,8 @@ impl App {
             label_color: crate::archive::DEFAULT_COLOR.to_owned(),
             label_editing: None,
             label_filter: None,
+            broadcast_lists: Vec::new(),
+            bulk_state: Default::default(),
             quick_replies: Vec::new(),
             quick_reply_selected: 0,
             quick_reply_editing: None,
@@ -2433,6 +2437,9 @@ impl App {
                 self.quick_reply_selected = self
                     .quick_reply_selected
                     .min(self.quick_replies.len().saturating_sub(1));
+            }
+            Event::BroadcastLists(lists) => {
+                self.broadcast_lists = lists;
             }
             Event::ScheduledMessages(messages) => {
                 self.scheduled_messages = messages;
@@ -5307,6 +5314,27 @@ impl App {
             Action::DeleteQuickReply(id) => {
                 self.backend.send(Command::DeleteQuickReply(id));
                 self.quick_reply_editing = None;
+            }
+            Action::SaveBroadcastList(list) => {
+                self.backend.send(Command::SaveBroadcastList(list));
+            }
+            Action::DeleteBroadcastList(id) => {
+                self.backend.send(Command::DeleteBroadcastList(id));
+            }
+            Action::ExecuteBulkDispatch {
+                targets,
+                content,
+                interval_seconds,
+                send_at,
+            } => {
+                let count = targets.len();
+                self.backend.send(Command::BulkDispatch {
+                    targets,
+                    content,
+                    interval_seconds,
+                    send_at,
+                });
+                self.toast(format!("Disparo iniciado para {count} destinatarios"));
             }
             // Reading a chat must not pull its row out from under the pointer.
             // Only the filtered list sends this: search results and

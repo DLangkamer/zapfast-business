@@ -194,6 +194,19 @@ fn header(app: &mut App, ui: &mut egui::Ui) {
                         }
                         if theme::icon_button(
                             ui,
+                            Icon::Users,
+                            18.0,
+                            palette.secondary,
+                            palette.text,
+                            "Disparo em massa e listas de transmissao",
+                        )
+                        .clicked()
+                        {
+                            app.actions
+                                .push(Action::ShowDialog(crate::model::Dialog::BulkDispatch(None)));
+                        }
+                        if theme::icon_button(
+                            ui,
                             Icon::PanelLeft,
                             18.0,
                             palette.secondary,
@@ -304,6 +317,19 @@ fn macos_header(app: &mut App, ui: &mut egui::Ui) {
                     .clicked()
                     {
                         app.actions.push(Action::ShowDialog(Dialog::NewChat));
+                    }
+                    if theme::icon_button(
+                        ui,
+                        Icon::Users,
+                        18.0,
+                        palette.secondary,
+                        palette.text,
+                        "Disparo em massa e listas de transmissao",
+                    )
+                    .clicked()
+                    {
+                        app.actions
+                            .push(Action::ShowDialog(Dialog::BulkDispatch(None)));
                     }
                     if theme::icon_button(
                         ui,
@@ -1560,6 +1586,17 @@ fn compact_badge_center(avatar: Rect) -> egui::Pos2 {
 }
 
 fn context_menu(app: &mut App, ui: &mut egui::Ui, chat: &Chat, palette: &Palette) {
+    if widgets::menu_item(
+        ui,
+        palette,
+        Some(Icon::Users),
+        "Adicionar a lista de transmissao...",
+    ) {
+        app.actions
+            .push(Action::ShowDialog(Dialog::BulkDispatch(Some(
+                crate::model::BulkDispatchInitial::Chats(vec![chat.id.clone()]),
+            ))));
+    }
     if chat.looks_unread()
         && widgets::menu_item(ui, palette, Some(Icon::CheckCheck), "Mark as read")
     {

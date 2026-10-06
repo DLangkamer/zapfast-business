@@ -341,6 +341,15 @@ pub enum Command {
         keywords: Vec<String>,
     },
     DeleteQuickReply(String),
+    SaveBroadcastList(crate::model::BroadcastList),
+    DeleteBroadcastList(String),
+    ListBroadcastLists,
+    BulkDispatch {
+        targets: Vec<ChatId>,
+        content: crate::model::BulkDispatchContent,
+        interval_seconds: u32,
+        send_at: Option<i64>,
+    },
     /// Marks the one-time Business app-state snapshot complete.
     BusinessStateRecovered(bool),
     /// Normalizes, encodes, and sends mono 48 kHz push-to-talk audio.
@@ -784,6 +793,7 @@ pub enum Event {
     Labels(Vec<crate::model::Label>),
     /// WhatsApp Business canned responses cached for slash completion.
     QuickReplies(Vec<crate::model::QuickReply>),
+    BroadcastLists(Vec<crate::model::BroadcastList>),
     ScheduledMessages(Vec<crate::archive::ScheduledMessage>),
     /// Unsent text stored for each chat, sent once at startup.
     Drafts(Vec<(ChatId, String)>),
