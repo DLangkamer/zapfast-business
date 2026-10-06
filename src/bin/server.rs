@@ -22,7 +22,7 @@ struct Cli {
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("info")).init();
+    let _ = fastframe_log::Logging::new("zapfast-server", env!("CARGO_PKG_VERSION")).init();
 
     let cli = Cli::parse();
     log::info!("Starting ZapFast Server on port {}", cli.port);
