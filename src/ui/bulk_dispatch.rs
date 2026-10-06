@@ -440,8 +440,45 @@ fn content_type_selector(app: &mut App, ui: &mut egui::Ui, palette: &Palette) {
 fn content_input_section(app: &mut App, ui: &mut egui::Ui, palette: &Palette) {
     match app.bulk_state.content_type {
         BulkContentType::Text => {
+            ui.horizontal_wrapped(|ui| {
+                ui.label(
+                    RichText::new("Variaveis dinamicas:")
+                        .font(theme::regular(11.5))
+                        .color(palette.secondary),
+                );
+                let vars = [
+                    ("{{primeiro_nome}}", "Primeiro nome"),
+                    ("{{saudacao}}", "Saudacao"),
+                    ("{{nome}}", "Nome completo"),
+                    ("{{data}}", "Data"),
+                    ("{{hora}}", "Hora"),
+                ];
+                for (tag, tip) in vars {
+                    if ui
+                        .add(
+                            egui::Button::new(
+                                RichText::new(tag)
+                                    .font(theme::mono(11.0))
+                                    .color(palette.accent),
+                            )
+                            .fill(palette.surface_active)
+                            .stroke(Stroke::new(1.0, palette.outline))
+                            .corner_radius(4.0),
+                        )
+                        .on_hover_text(format!("Personalizar com {tip} de cada destinatario"))
+                        .clicked()
+                    {
+                        if !app.bulk_state.message_text.is_empty()
+                            && !app.bulk_state.message_text.ends_with(' ')
+                        {
+                            app.bulk_state.message_text.push(' ');
+                        }
+                        app.bulk_state.message_text.push_str(tag);
+                    }
+                }
+            });
             let edit = egui::TextEdit::multiline(&mut app.bulk_state.message_text)
-                .hint_text("Digite a mensagem a ser enviada...")
+                .hint_text("Digite a mensagem a ser enviada (suporta {{primeiro_nome}}, {{saudacao}}...)")
                 .desired_rows(3)
                 .desired_width(ui.available_width())
                 .font(theme::regular(13.5));
@@ -558,8 +595,43 @@ fn content_input_section(app: &mut App, ui: &mut egui::Ui, palette: &Palette) {
                     });
                 }
                 ui.add_space(4.0);
+                ui.horizontal_wrapped(|ui| {
+                    ui.label(
+                        RichText::new("Variaveis na legenda:")
+                            .font(theme::regular(11.5))
+                            .color(palette.secondary),
+                    );
+                    let vars = [
+                        ("{{primeiro_nome}}", "Primeiro nome"),
+                        ("{{saudacao}}", "Saudacao"),
+                        ("{{nome}}", "Nome completo"),
+                    ];
+                    for (tag, tip) in vars {
+                        if ui
+                            .add(
+                                egui::Button::new(
+                                    RichText::new(tag)
+                                        .font(theme::mono(11.0))
+                                        .color(palette.accent),
+                                )
+                                .fill(palette.surface_active)
+                                .stroke(Stroke::new(1.0, palette.outline))
+                                .corner_radius(4.0),
+                            )
+                            .on_hover_text(format!("Personalizar legenda com {tip}"))
+                            .clicked()
+                        {
+                            if !app.bulk_state.media_caption.is_empty()
+                                && !app.bulk_state.media_caption.ends_with(' ')
+                            {
+                                app.bulk_state.media_caption.push(' ');
+                            }
+                            app.bulk_state.media_caption.push_str(tag);
+                        }
+                    }
+                });
                 let caption_edit = egui::TextEdit::singleline(&mut app.bulk_state.media_caption)
-                    .hint_text("Legenda da midia (opcional)...")
+                    .hint_text("Legenda da midia (opcional, suporta {{primeiro_nome}})...")
                     .desired_width(ui.available_width());
                 ui.add(caption_edit);
             });

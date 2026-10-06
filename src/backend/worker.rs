@@ -1194,6 +1194,27 @@ impl Worker {
         }
     }
 
+    fn resolve_template_for_target(&self, template: &str, target: &str) -> String {
+        let name = self
+            .contact_name(target)
+            .or_else(|| self.name_for(target))
+            .or_else(|| {
+                self.archive
+                    .contact(target)
+                    .ok()
+                    .flatten()
+                    .and_then(|c| c.full_name)
+            });
+        let phone = crate::model::phone_of(target);
+        let first_name = name.as_deref().map(crate::variables::extract_first_name);
+        let ctx = crate::variables::ContactContext::new(
+            name.as_deref(),
+            first_name,
+            phone,
+        );
+        crate::variables::resolve_template(template, &ctx)
+    }
+
     fn execute_bulk_dispatch(
         &mut self,
         targets: Vec<ChatId>,
@@ -1209,12 +1230,13 @@ impl Worker {
             let target_time = start_time + (i as i64 * interval);
             match &content {
                 crate::model::BulkDispatchContent::Text(text) => {
+                    let resolved = self.resolve_template_for_target(text, &target);
                     if i == 0 && send_at.is_none() {
-                        self.send_text(target, text.clone(), None, Vec::new());
+                        self.send_text(target, resolved, None, Vec::new());
                     } else {
                         let _ = self
                             .archive
-                            .schedule_text(&target, text, &[], None, target_time);
+                            .schedule_text(&target, &resolved, &[], None, target_time);
                     }
                 }
                 crate::model::BulkDispatchContent::Voice(samples) => {
@@ -1227,8 +1249,11 @@ impl Worker {
                     }
                 }
                 crate::model::BulkDispatchContent::Files { paths, caption } => {
+                    let caption = caption
+                        .as_deref()
+                        .map(|c| self.resolve_template_for_target(c, &target));
                     if i == 0 && send_at.is_none() {
-                        self.send_files(target, paths.clone(), caption.clone(), Vec::new(), None);
+                        self.send_files(target, paths.clone(), caption, Vec::new(), None);
                     } else {
                         let _ = self.archive.schedule_files(
                             &target,

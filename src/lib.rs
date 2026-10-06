@@ -39,9 +39,11 @@ pub mod transport;
 pub mod ui;
 pub mod updates;
 pub mod util;
+pub mod variables;
 pub mod video;
 pub mod voice;
 pub mod wallpaper;
 
 /// Identity of this independent installation.
 pub mod identity;
+

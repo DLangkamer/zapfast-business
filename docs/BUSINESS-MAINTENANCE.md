@@ -175,6 +175,17 @@ O módulo de Disparo em Massa e Listas de Transmissão fica em `src/ui/bulk_disp
   com estimativa dinâmica de tempo total. No modo agendado, o escalonamento é registrado no
   banco de dados com timestamps espaçados (`due_at = schedule_at + i * interval_seconds`).
 
+O módulo de Respostas Rápidas com Áudio PTT e Variáveis Dinâmicas fica em `src/ui/quick_replies.rs`,
+`src/archive/quick_replies.rs` e `src/variables.rs`:
+- **Áudio PTT em Respostas Rápidas**: mensagens rápidas (`/`) suportam arquivos de áudio
+  decodificados nativamente em mono 48 kHz com waveform Opus/OGG. São despachados pelo
+  protocolo como Push-to-Talk autêntico (`ptt: true`, microfone verde, sem selo de encaminhamento).
+- **Variáveis Dinâmicas (`src/variables.rs`)**: suporte completo a tags dinâmicas como
+  `{{primeiro_nome}}`, `{{saudacao}}` (Bom dia/tarde/noite automático), `{{nome}}`, `{{data}}`,
+  `{{hora}}` e `{{telefone}}`. Funcionam no menu de respostas rápidas (`/`), no composer da conversa
+  e individualmente para cada destinatário durante disparos em massa.
+
+
 Nunca use conversas reais como fixture. Testes devem usar bancos temporários,
 chats e áudios sintéticos. Não leia nem copie conteúdo do perfil instalado.
 

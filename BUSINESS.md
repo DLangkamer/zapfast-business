@@ -118,6 +118,19 @@ from the `+` menu, or via right-click on chats ("Add to broadcast list..."):
   rate limits, with total delivery time estimates. Dispatches can be started
   immediately or scheduled for a specific date and time.
 
+### Quick replies with PTT voice notes and dynamic variables
+
+Manage canned responses synced with WhatsApp Business with rich native features:
+- **Recorded PTT voice notes in quick replies**: Store audio notes attached to quick replies
+  (`/shortcut`). When invoked, they are dispatched as live voice notes (`ptt: true`, green mic,
+  64-bar waveforms) indistinguishable from live recordings.
+- **Dynamic variables**: Use `{{primeiro_nome}}`, `{{saudacao}}` (automatic morning/afternoon/evening
+  greeting), `{{nome}}`, `{{data}}`, `{{hora}}`, and `{{telefone}}` in canned responses, composer,
+  and mass dispatches. Each recipient automatically receives their personalized content.
+- **Audio + text combination**: Send a PTT audio note and its accompanying personalized text message
+  in a single action.
+
+
 Stable releases are published at `DLangkamer/zapfast-business`. Version 0.17.2
 is the trusted bootstrap: it embeds the Business public key and accepts only a
 manifest signed by the corresponding GitHub Actions secret. The updater's slug,

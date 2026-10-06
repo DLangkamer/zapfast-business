@@ -1939,6 +1939,28 @@ impl App {
         }
     }
 
+    /// Resolves dynamic template variables (e.g. {{primeiro_nome}}, {{saudacao}}, {{nome}}) for a chat.
+    pub fn resolve_template(&self, template: &str, chat: Option<&Chat>) -> String {
+        let (full_name, phone) = if let Some(chat) = chat {
+            let title = self.chat_title(chat);
+            let phone = crate::model::phone_of(&chat.id).map(str::to_owned);
+            (Some(title), phone)
+        } else {
+            (None, None)
+        };
+        let first_name = if let (Some(chat), Some(ref name)) = (chat, &full_name) {
+            Some(self.short_name(&chat.id, name).to_owned())
+        } else {
+            None
+        };
+        let ctx = crate::variables::ContactContext::new(
+            full_name.as_deref(),
+            first_name.as_deref(),
+            phone.as_deref(),
+        );
+        crate::variables::resolve_template(template, &ctx)
+    }
+
     /// Whether a contact search for `needle`, already a search key, should
     /// offer the chat with ourselves: by our name, our number, "You" or
     /// "Message yourself", in English or the interface language.
@@ -3713,6 +3735,8 @@ impl App {
         if text.is_empty() {
             return;
         }
+        let chat_ref = self.chat(&chat).cloned();
+        let text = self.resolve_template(&text, chat_ref.as_ref());
         let (text, mentions) = self.encode_composer_mentions(&chat, text);
         self.emoji_start = None;
         self.mention_start = None;
@@ -3751,6 +3775,8 @@ impl App {
         if text.is_empty() || send_at <= crate::util::now() {
             return;
         }
+        let chat_ref = self.chat(&chat).cloned();
+        let text = self.resolve_template(&text, chat_ref.as_ref());
         let (text, mentions) = self.encode_composer_mentions(&chat, text);
         self.emoji_start = None;
         self.mention_start = None;
@@ -5296,27 +5322,38 @@ impl App {
                 self.label_editing = None;
             }
             Action::InsertQuickReply(message) => {
-                self.composer = message;
+                let chat_ref = self.active_chat().and_then(|id| self.chat(&id)).cloned();
+                self.composer = self.resolve_template(&message, chat_ref.as_ref());
                 self.quick_reply_selected = 0;
                 self.focus_composer = true;
             }
             Action::ApplyQuickReply(reply) => {
                 self.quick_reply_selected = 0;
+                let chat_ref = self.active_chat().and_then(|id| self.chat(&id)).cloned();
                 if let Some(samples) = reply.voice {
                     if let Some(chat) = self.active_chat() {
                         let quoting = self.replying_to.clone();
                         self.backend.send(Command::SendVoice {
-                            chat,
+                            chat: chat.clone(),
                             samples,
                             quoting,
                         });
                         self.replying_to = None;
+                        if !reply.message.trim().is_empty() {
+                            let resolved = self.resolve_template(&reply.message, chat_ref.as_ref());
+                            self.backend.send(Command::SendText {
+                                chat,
+                                text: resolved,
+                                quoting: None,
+                                mentions: Vec::new(),
+                            });
+                        }
                         self.composer.clear();
                     } else {
                         self.toast_error("Abra uma conversa para enviar o audio rapido.");
                     }
                 } else {
-                    self.composer = reply.message;
+                    self.composer = self.resolve_template(&reply.message, chat_ref.as_ref());
                     self.focus_composer = true;
                 }
             }

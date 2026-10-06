@@ -37,11 +37,45 @@ pub fn manager(app: &mut App, ui: &mut egui::Ui, palette: &Palette) {
     });
     ui.add(TextEdit::singleline(&mut app.quick_reply_shortcut).hint_text("ex: apresentacao ou preco"));
 
-    ui.label(theme::rich_text("Mensagem de texto (opcional se houver audio)", theme::medium(13.0), palette.text));
+    ui.horizontal(|ui| {
+        ui.label(theme::rich_text("Mensagem de texto (opcional se houver audio)", theme::medium(13.0), palette.text));
+    });
+    ui.horizontal_wrapped(|ui| {
+        theme::text(ui, "Variaveis:", theme::regular(11.5), palette.secondary);
+        let vars = [
+            ("{{primeiro_nome}}", "Primeiro nome"),
+            ("{{saudacao}}", "Saudacao (Bom dia/tarde/noite)"),
+            ("{{nome}}", "Nome completo"),
+            ("{{data}}", "Data atual"),
+            ("{{hora}}", "Hora atual"),
+            ("{{telefone}}", "Telefone"),
+        ];
+        for (tag, tip) in vars {
+            if ui
+                .add(
+                    egui::Button::new(
+                        egui::RichText::new(tag)
+                            .font(theme::mono(11.0))
+                            .color(palette.primary),
+                    )
+                    .fill(palette.surface_active)
+                    .stroke(Stroke::new(1.0, palette.outline))
+                    .corner_radius(4.0),
+                )
+                .on_hover_text(format!("Inserir {tip}"))
+                .clicked()
+            {
+                if !app.quick_reply_message.is_empty() && !app.quick_reply_message.ends_with(' ') {
+                    app.quick_reply_message.push(' ');
+                }
+                app.quick_reply_message.push_str(tag);
+            }
+        }
+    });
     ui.add(
         TextEdit::multiline(&mut app.quick_reply_message)
             .desired_rows(2)
-            .hint_text("Ex: Ola! Segue abaixo a nossa apresentacao detalhada."),
+            .hint_text("Ex: Ola {{primeiro_nome}}, {{saudacao}}! Segue a apresentacao que mencionei."),
     );
 
     ui.label(theme::rich_text("Palavras-chave (separadas por virgula)", theme::medium(13.0), palette.text));
@@ -231,7 +265,12 @@ pub fn manager(app: &mut App, ui: &mut egui::Ui, palette: &Palette) {
                             }
                         });
                         if !reply.message.is_empty() {
-                            theme::text(ui, &reply.message, theme::regular(12.5), palette.secondary);
+                            let preview = if let Some(chat) = active_chat.as_ref().and_then(|id| app.chat(id)) {
+                                app.resolve_template(&reply.message, Some(chat))
+                            } else {
+                                reply.message.clone()
+                            };
+                            theme::text(ui, &preview, theme::regular(12.5), palette.secondary);
                         }
                         if !reply.keywords.is_empty() {
                             theme::text(
@@ -282,16 +321,23 @@ pub fn manager(app: &mut App, ui: &mut egui::Ui, palette: &Palette) {
                                 .as_ref()
                                 .map(|v| v.len() as f32 / crate::voice::RATE as f32);
                         }
-                        if reply.voice.is_some() && active_chat.is_some() {
+                        if active_chat.is_some() {
+                            let (btn_label, is_primary) = if reply.voice.is_some() && !reply.message.trim().is_empty() {
+                                ("Enviar audio + texto", true)
+                            } else if reply.voice.is_some() {
+                                ("Enviar audio agora", true)
+                            } else {
+                                ("Inserir na conversa", false)
+                            };
                             if ui
                                 .add(
                                     egui::Button::new(
-                                        egui::RichText::new("Enviar agora")
+                                        egui::RichText::new(btn_label)
                                             .font(theme::medium(12.0))
-                                            .color(palette.primary),
+                                            .color(if is_primary { palette.primary } else { palette.text }),
                                     )
                                     .fill(palette.surface_active)
-                                    .stroke(Stroke::new(1.0, palette.primary))
+                                    .stroke(Stroke::new(1.0, if is_primary { palette.primary } else { palette.outline }))
                                     .corner_radius(4.0),
                                 )
                                 .clicked()

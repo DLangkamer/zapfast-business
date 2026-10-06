@@ -744,23 +744,29 @@ fn quick_reply_suggestions(app: &mut App, ui: &mut egui::Ui, field: egui::Id) {
         .corner_radius(CornerRadius::same(theme::RADIUS + 2))
         .inner_margin(Margin::same(4))
         .show(ui, |ui| {
+            let chat_ref = app.active_chat().and_then(|id| app.chat(&id)).cloned();
             for (index, reply) in candidates.iter().enumerate() {
+                let resolved_msg = if reply.message.is_empty() {
+                    String::new()
+                } else {
+                    app.resolve_template(&reply.message, chat_ref.as_ref()).replace('\n', " ")
+                };
                 let label = if let Some(voice) = &reply.voice {
                     let dur = voice.len() as f32 / crate::voice::RATE as f32;
                     let mins = (dur / 60.0) as u32;
                     let secs = (dur % 60.0) as u32;
                     let dur_str = format!("{mins}:{secs:02}");
-                    if reply.message.trim().is_empty() {
+                    if resolved_msg.trim().is_empty() {
                         format!("🎙 /{}  [Áudio PTT {dur_str}]", reply.shortcut)
                     } else {
                         format!(
                             "🎙 /{}  [Áudio PTT {dur_str}] {}",
                             reply.shortcut,
-                            reply.message.replace('\n', " ")
+                            resolved_msg
                         )
                     }
                 } else {
-                    format!("/{}  {}", reply.shortcut, reply.message.replace('\n', " "))
+                    format!("/{}  {}", reply.shortcut, resolved_msg)
                 };
                 let response = ui.selectable_label(index == app.quick_reply_selected, label);
                 if response.clicked() {
