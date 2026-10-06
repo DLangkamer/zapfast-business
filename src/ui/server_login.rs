@@ -3,7 +3,6 @@
 //! Allows scanning the local network for ZapFast Docker servers, entering credentials,
 //! and connecting the desktop app.
 
-use std::io::Read;
 use egui::Layout;
 use crate::app::App;
 use crate::model::Action;
@@ -161,8 +160,7 @@ pub fn show(app: &mut App, ui: &mut egui::Ui) {
                             .send(body.as_bytes())
                         {
                             Ok(mut resp) => {
-                                let mut text = String::new();
-                                if let Ok(_) = resp.body_mut().read_to_string(&mut text) {
+                                if let Ok(text) = resp.body_mut().read_to_string() {
                                     if let Ok(val) = serde_json::from_str::<serde_json::Value>(&text) {
                                         if let Some(_tok) = val.get("token").and_then(|v| v.as_str()) {
                                             app.server_status_msg = Some("✔ Autenticado com sucesso no servidor!".to_string());
