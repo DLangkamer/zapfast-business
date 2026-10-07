@@ -5931,9 +5931,7 @@ impl Worker {
                 }
             }
             Command::PickExportCrmBackup => {
-                let events = self.events.clone();
-                let waker = self.waker.clone();
-                let archive = self.archive.clone();
+                let commands = self.commands.clone();
                 tokio::task::spawn_blocking(move || {
                     if let Some(path) = rfd::FileDialog::new()
                         .add_filter("JSON Backup", &["json"])
@@ -5941,70 +5939,19 @@ impl Worker {
                         .set_title("Salvar backup do CRM")
                         .save_file()
                     {
-                        match archive.export_crm_backup() {
-                            Ok(backup) => match serde_json::to_string_pretty(&backup) {
-                                Ok(json) => match std::fs::write(&path, json) {
-                                    Ok(_) => {
-                                        let _ = events.send(Event::Info(format!("Backup do CRM exportado: {}", path.display())));
-                                        waker.wake();
-                                    }
-                                    Err(e) => {
-                                        let _ = events.send(Event::Error(format!("Erro ao salvar backup: {e}")));
-                                        waker.wake();
-                                    }
-                                },
-                                Err(e) => {
-                                    let _ = events.send(Event::Error(format!("Erro ao gerar JSON: {e}")));
-                                    waker.wake();
-                                }
-                            },
-                            Err(e) => {
-                                let _ = events.send(Event::Error(format!("Erro ao exportar dados do CRM: {e}")));
-                                waker.wake();
-                            }
-                        }
+                        let _ = commands.send(Command::ExportCrmBackup(path));
                     }
                 });
             }
             Command::PickImportCrmBackup => {
-                let events = self.events.clone();
-                let waker = self.waker.clone();
-                let archive = self.archive.clone();
+                let commands = self.commands.clone();
                 tokio::task::spawn_blocking(move || {
                     if let Some(path) = rfd::FileDialog::new()
                         .add_filter("JSON Backup", &["json"])
                         .set_title("Selecionar arquivo de backup do CRM")
                         .pick_file()
                     {
-                        match std::fs::read_to_string(&path) {
-                            Ok(json) => match serde_json::from_str::<crate::model::CrmBackup>(&json) {
-                                Ok(backup) => match archive.import_crm_backup(&backup) {
-                                    Ok(_) => {
-                                        if let (Ok(columns), Ok(deals), Ok(followups)) = (
-                                            archive.crm_columns(),
-                                            archive.crm_deals(),
-                                            archive.crm_followups(),
-                                        ) {
-                                            let _ = events.send(Event::CrmData { columns, deals, followups });
-                                        }
-                                        let _ = events.send(Event::Info("Backup do CRM importado com sucesso!".into()));
-                                        waker.wake();
-                                    }
-                                    Err(e) => {
-                                        let _ = events.send(Event::Error(format!("Erro ao importar dados no banco: {e}")));
-                                        waker.wake();
-                                    }
-                                },
-                                Err(e) => {
-                                    let _ = events.send(Event::Error(format!("Arquivo de backup inválido: {e}")));
-                                    waker.wake();
-                                }
-                            },
-                            Err(e) => {
-                                let _ = events.send(Event::Error(format!("Erro ao ler arquivo de backup: {e}")));
-                                waker.wake();
-                            }
-                        }
+                        let _ = commands.send(Command::ImportCrmBackup(path));
                     }
                 });
             }
