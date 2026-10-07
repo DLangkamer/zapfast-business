@@ -5862,31 +5862,45 @@ impl Worker {
                 self.emit_crm_data();
             }
             Command::SaveCrmColumn(col) => {
-                let _ = self.archive.upsert_crm_column(&col);
+                if let Err(e) = self.archive.upsert_crm_column(&col) {
+                    self.emit(Event::Error(format!("Erro ao salvar etapa: {e}")));
+                }
                 self.emit_crm_data();
             }
             Command::DeleteCrmColumn(id) => {
-                let _ = self.archive.delete_crm_column(&id);
+                if let Err(e) = self.archive.delete_crm_column(&id) {
+                    self.emit(Event::Error(format!("Erro ao excluir etapa: {e}")));
+                }
                 self.emit_crm_data();
             }
             Command::SaveCrmDeal(deal) => {
-                let _ = self.archive.upsert_crm_deal(&deal);
+                if let Err(e) = self.archive.upsert_crm_deal(&deal) {
+                    self.emit(Event::Error(format!("Erro ao salvar negócio: {e}")));
+                }
                 self.emit_crm_data();
             }
             Command::SaveCrmFollowup(f) => {
-                let _ = self.archive.upsert_crm_followup(&f);
+                if let Err(e) = self.archive.upsert_crm_followup(&f) {
+                    self.emit(Event::Error(format!("Erro ao salvar lembrete: {e}")));
+                }
                 self.emit_crm_data();
             }
             Command::DeleteCrmFollowup(id) => {
-                let _ = self.archive.delete_crm_followup(&id);
+                if let Err(e) = self.archive.delete_crm_followup(&id) {
+                    self.emit(Event::Error(format!("Erro ao excluir lembrete: {e}")));
+                }
                 self.emit_crm_data();
             }
             Command::CompleteCrmFollowup(id) => {
-                let _ = self.archive.complete_crm_followup(&id);
+                if let Err(e) = self.archive.complete_crm_followup(&id) {
+                    self.emit(Event::Error(format!("Erro ao concluir lembrete: {e}")));
+                }
                 self.emit_crm_data();
             }
             Command::SnoozeCrmFollowup { id, until } => {
-                let _ = self.archive.snooze_crm_followup(&id, until);
+                if let Err(e) = self.archive.snooze_crm_followup(&id, until) {
+                    self.emit(Event::Error(format!("Erro ao adiar lembrete: {e}")));
+                }
                 self.emit_crm_data();
             }
             Command::ExportCrmBackup(path) => {
@@ -5915,6 +5929,84 @@ impl Worker {
                     },
                     Err(e) => self.emit(Event::Error(format!("Erro ao ler arquivo de backup: {e}"))),
                 }
+            }
+            Command::PickExportCrmBackup => {
+                let events = self.events.clone();
+                let waker = self.waker.clone();
+                let archive = self.archive.clone();
+                tokio::task::spawn_blocking(move || {
+                    if let Some(path) = rfd::FileDialog::new()
+                        .add_filter("JSON Backup", &["json"])
+                        .set_file_name("zapfast-crm-backup.json")
+                        .set_title("Salvar backup do CRM")
+                        .save_file()
+                    {
+                        match archive.export_crm_backup() {
+                            Ok(backup) => match serde_json::to_string_pretty(&backup) {
+                                Ok(json) => match std::fs::write(&path, json) {
+                                    Ok(_) => {
+                                        let _ = events.send(Event::Info(format!("Backup do CRM exportado: {}", path.display())));
+                                        waker.wake();
+                                    }
+                                    Err(e) => {
+                                        let _ = events.send(Event::Error(format!("Erro ao salvar backup: {e}")));
+                                        waker.wake();
+                                    }
+                                },
+                                Err(e) => {
+                                    let _ = events.send(Event::Error(format!("Erro ao gerar JSON: {e}")));
+                                    waker.wake();
+                                }
+                            },
+                            Err(e) => {
+                                let _ = events.send(Event::Error(format!("Erro ao exportar dados do CRM: {e}")));
+                                waker.wake();
+                            }
+                        }
+                    }
+                });
+            }
+            Command::PickImportCrmBackup => {
+                let events = self.events.clone();
+                let waker = self.waker.clone();
+                let archive = self.archive.clone();
+                tokio::task::spawn_blocking(move || {
+                    if let Some(path) = rfd::FileDialog::new()
+                        .add_filter("JSON Backup", &["json"])
+                        .set_title("Selecionar arquivo de backup do CRM")
+                        .pick_file()
+                    {
+                        match std::fs::read_to_string(&path) {
+                            Ok(json) => match serde_json::from_str::<crate::model::CrmBackup>(&json) {
+                                Ok(backup) => match archive.import_crm_backup(&backup) {
+                                    Ok(_) => {
+                                        if let (Ok(columns), Ok(deals), Ok(followups)) = (
+                                            archive.crm_columns(),
+                                            archive.crm_deals(),
+                                            archive.crm_followups(),
+                                        ) {
+                                            let _ = events.send(Event::CrmData { columns, deals, followups });
+                                        }
+                                        let _ = events.send(Event::Info("Backup do CRM importado com sucesso!".into()));
+                                        waker.wake();
+                                    }
+                                    Err(e) => {
+                                        let _ = events.send(Event::Error(format!("Erro ao importar dados no banco: {e}")));
+                                        waker.wake();
+                                    }
+                                },
+                                Err(e) => {
+                                    let _ = events.send(Event::Error(format!("Arquivo de backup inválido: {e}")));
+                                    waker.wake();
+                                }
+                            },
+                            Err(e) => {
+                                let _ = events.send(Event::Error(format!("Erro ao ler arquivo de backup: {e}")));
+                                waker.wake();
+                            }
+                        }
+                    }
+                });
             }
             Command::BulkDispatch {
                 targets,

@@ -13,8 +13,8 @@ pub fn show(app: &mut App, ui: &mut egui::Ui) {
     ui.vertical(|ui| {
         // Header
         ui.horizontal(|ui| {
-            theme::icon(ui, Icon::CircleAlert, 20.0, palette.accent);
-            theme::text(ui, "Dashboard de Métricas e Conversão Comercial", theme::bold(17.0), palette.text);
+            theme::icon(ui, Icon::ListChecks, 20.0, palette.accent);
+            theme::text(ui, "Dashboard de Métricas Comerciais", theme::bold(17.0), palette.text);
 
             ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
                 if theme::icon_button(ui, Icon::X, 18.0, palette.secondary, palette.text, "Fechar").clicked() {
@@ -27,47 +27,58 @@ pub fn show(app: &mut App, ui: &mut egui::Ui) {
         ui.separator();
         ui.add_space(10.0);
 
-        // Calculate KPIs
-        let total_deals = app.crm_deals.len();
-        let total_value: i64 = app.crm_deals.values().map(|d| d.value_cents).sum();
+        // Filter valid deals that belong to currently active pipeline stages
+        let valid_deals: Vec<&crate::model::CrmDeal> = app
+            .crm_deals
+            .values()
+            .filter(|d| app.crm_columns.iter().any(|c| c.id == d.column_id))
+            .collect();
+
+        let total_deals = valid_deals.len();
+        let total_value: i64 = valid_deals.iter().map(|d| d.value_cents).sum();
         let avg_ticket = if total_deals > 0 {
             total_value / total_deals as i64
         } else {
             0
         };
 
-        // Closed deals (last column or "close" id)
-        let closed_col_id = app.crm_columns.iter().find(|c| c.id == "close").map(|c| c.id.as_str()).unwrap_or("");
-        let closed_deals: Vec<_> = app.crm_deals.values().filter(|d| d.column_id == closed_col_id).collect();
+        // Closed deals: check "close" ID, titles with "fechamento" / "ganho", or fallback to the last funnel stage
+        let closed_col = app.crm_columns.iter()
+            .find(|c| c.id == "close" || c.title.to_lowercase().contains("fechamento") || c.title.to_lowercase().contains("ganho"))
+            .or_else(|| app.crm_columns.last());
+        let closed_col_id = closed_col.map(|c| c.id.as_str()).unwrap_or("");
+        let closed_col_title = closed_col.map(|c| c.title.as_str()).unwrap_or("Fechamento");
+
+        let closed_deals: Vec<_> = valid_deals.iter().filter(|d| d.column_id == closed_col_id).collect();
         let closed_value: i64 = closed_deals.iter().map(|d| d.value_cents).sum();
 
         let now = crate::util::now();
         let pending_followups = app.crm_followups.iter().filter(|f| !f.done).count();
         let overdue_followups = app.crm_followups.iter().filter(|f| !f.done && f.remind_at <= now).count();
 
-        // 1. KPI Cards Row
-        ui.horizontal(|ui| {
-            ui.spacing_mut().item_spacing.x = 10.0;
+        // 1. KPI Cards Row (wrapping for smaller screens)
+        ui.horizontal_wrapped(|ui| {
+            ui.spacing_mut().item_spacing = vec2(8.0, 8.0);
             render_kpi_card(ui, &palette, "Pipeline Total", &format_currency(total_value), palette.accent);
-            render_kpi_card(ui, &palette, "Fechamentos Ganhos", &format_currency(closed_value), palette.accent);
+            render_kpi_card(ui, &palette, &format!("Ganhos ({closed_col_title})"), &format_currency(closed_value), palette.accent);
             render_kpi_card(ui, &palette, "Ticket Médio", &format_currency(avg_ticket), palette.accent);
-            render_kpi_card(ui, &palette, "Negócios no Funil", &format!("{total_deals}"), palette.text);
+            render_kpi_card(ui, &palette, "Negócios Ativos", &format!("{total_deals}"), palette.text);
             render_kpi_card(ui, &palette, "Lembretes Pendentes", &format!("{pending_followups} ({overdue_followups} atrasados)"), if overdue_followups > 0 { palette.danger } else { palette.secondary });
         });
 
         ui.add_space(16.0);
-        theme::text(ui, "Taxa de Conversão por Etapa do Funil", theme::semibold(14.0), palette.text);
+        theme::text(ui, "Distribuição e Volume por Etapa do Funil", theme::semibold(14.0), palette.text);
         ui.add_space(6.0);
 
         // 2. Stage breakdown bars
         egui::ScrollArea::vertical()
-            .max_height(260.0)
+            .max_height(280.0)
             .show(ui, |ui| {
                 ui.spacing_mut().item_spacing.y = 8.0;
 
                 let columns = app.crm_columns.clone();
                 for (idx, col) in columns.iter().enumerate() {
-                    let in_col: Vec<_> = app.crm_deals.values().filter(|d| d.column_id == col.id).collect();
+                    let in_col: Vec<_> = valid_deals.iter().filter(|d| d.column_id == col.id).collect();
                     let count = in_col.len();
                     let col_value: i64 = in_col.iter().map(|d| d.value_cents).sum();
 
@@ -119,13 +130,13 @@ fn render_kpi_card(ui: &mut egui::Ui, palette: &Palette, label: &str, value: &st
     Frame::new()
         .fill(palette.bubble_in)
         .corner_radius(CornerRadius::same(8))
-        .inner_margin(Margin::same(10))
+        .inner_margin(Margin::symmetric(10, 8))
         .show(ui, |ui| {
-            ui.set_width(120.0);
+            ui.set_min_width(115.0);
             ui.vertical(|ui| {
                 theme::text(ui, label, theme::regular(11.0), palette.dim);
                 ui.add_space(2.0);
-                theme::text(ui, value, theme::bold(14.0), accent);
+                theme::text(ui, value, theme::bold(13.5), accent);
             });
         });
 }

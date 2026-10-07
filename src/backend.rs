@@ -358,6 +358,8 @@ pub enum Command {
     },
     ExportCrmBackup(PathBuf),
     ImportCrmBackup(PathBuf),
+    PickExportCrmBackup,
+    PickImportCrmBackup,
     BulkDispatch {
         targets: Vec<ChatId>,
         content: crate::model::BulkDispatchContent,

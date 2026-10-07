@@ -55,7 +55,9 @@ pub fn show(app: &mut App, ctx: &egui::Context) {
                 | Dialog::QuickReplies
                 | Dialog::ScheduledMessages(_)
                 | Dialog::BulkDispatch(_) => 520.0,
-                Dialog::CrmMetrics => 680.0,
+                Dialog::CrmMetrics => {
+                    680.0_f32.min((ui.ctx().content_rect().width() - 48.0).max(320.0))
+                }
                 Dialog::Kanban => (ui.ctx().content_rect().width() - 32.0).clamp(320.0, 1400.0),
             });
             ui.spacing_mut().item_spacing.y = 8.0;

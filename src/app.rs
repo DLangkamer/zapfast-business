@@ -5515,7 +5515,16 @@ impl App {
                 self.backend.send(Command::SaveCrmColumn(col));
             }
             Action::DeleteCrmColumn(id) => {
+                let fallback = self.crm_columns.iter().find(|c| c.id != id).map(|c| c.id.clone());
                 self.crm_columns.retain(|c| c.id != id);
+                if let Some(target) = fallback {
+                    for deal in self.crm_deals.values_mut() {
+                        if deal.column_id == id {
+                            deal.column_id = target.clone();
+                            deal.updated_at = crate::util::now();
+                        }
+                    }
+                }
                 self.backend.send(Command::DeleteCrmColumn(id));
             }
             Action::SaveCrmDeal(deal) => {
@@ -5539,6 +5548,12 @@ impl App {
             }
             Action::ImportCrmBackup(path) => {
                 self.backend.send(Command::ImportCrmBackup(path));
+            }
+            Action::PickExportCrmBackup => {
+                self.backend.send(Command::PickExportCrmBackup);
+            }
+            Action::PickImportCrmBackup => {
+                self.backend.send(Command::PickImportCrmBackup);
             }
             Action::RefreshCrmData => {
                 self.backend.send(Command::ListCrmData);

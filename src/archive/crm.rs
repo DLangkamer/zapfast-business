@@ -107,10 +107,34 @@ impl Archive {
     }
 
     pub fn delete_crm_column(&self, id: &str) -> Result<bool> {
-        Ok(self.connection.execute(
-            "DELETE FROM crm_columns WHERE id = ?1",
-            params![id],
-        )? > 0)
+        let columns = self.crm_columns()?;
+        let fallback_id = columns.iter().find(|c| c.id != id).map(|c| c.id.clone());
+
+        self.connection.execute("BEGIN IMMEDIATE", [])?;
+        let result = (|| -> Result<bool> {
+            if let Some(target) = fallback_id {
+                self.connection.execute(
+                    "UPDATE crm_deals SET column_id = ?1 WHERE column_id = ?2",
+                    params![target, id],
+                )?;
+            }
+            let rows = self.connection.execute(
+                "DELETE FROM crm_columns WHERE id = ?1",
+                params![id],
+            )?;
+            Ok(rows > 0)
+        })();
+
+        match result {
+            Ok(deleted) => {
+                self.connection.execute("COMMIT", [])?;
+                Ok(deleted)
+            }
+            Err(err) => {
+                let _ = self.connection.execute("ROLLBACK", []);
+                Err(err)
+            }
+        }
     }
 
     pub fn crm_deals(&self) -> Result<Vec<CrmDeal>> {
@@ -264,15 +288,29 @@ impl Archive {
 
     /// Imports and restores CRM backup data into this account's database.
     pub fn import_crm_backup(&self, backup: &CrmBackup) -> Result<()> {
-        for col in &backup.columns {
-            self.upsert_crm_column(col)?;
+        self.connection.execute("BEGIN IMMEDIATE", [])?;
+        let result = (|| -> Result<()> {
+            for col in &backup.columns {
+                self.upsert_crm_column(col)?;
+            }
+            for deal in &backup.deals {
+                self.upsert_crm_deal(deal)?;
+            }
+            for followup in &backup.followups {
+                self.upsert_crm_followup(followup)?;
+            }
+            Ok(())
+        })();
+
+        match result {
+            Ok(()) => {
+                self.connection.execute("COMMIT", [])?;
+                Ok(())
+            }
+            Err(err) => {
+                let _ = self.connection.execute("ROLLBACK", []);
+                Err(err)
+            }
         }
-        for deal in &backup.deals {
-            self.upsert_crm_deal(deal)?;
-        }
-        for followup in &backup.followups {
-            self.upsert_crm_followup(followup)?;
-        }
-        Ok(())
     }
 }

@@ -6,10 +6,11 @@ use egui::{vec2, Align, CornerRadius, Frame, Layout, Margin, Stroke, Vec2};
 use crate::app::App;
 use crate::model::{Action, CrmColumn, CrmDeal, Dialog};
 use crate::theme::{self, Icon, Palette};
-use super::crm_sidecar::{format_currency, parse_hex_color};
+use super::crm_sidecar::{format_currency, parse_currency_cents, parse_hex_color};
 
 pub const ADD_DEAL_OPEN_ID: &str = "kanban_add_deal_open";
 pub const ADD_STAGE_OPEN_ID: &str = "kanban_add_stage_open";
+pub const DELETE_STAGE_CONFIRM_ID: &str = "kanban_delete_stage_confirm";
 pub const FILTER_CONTACT_ID: &str = "add_deal_filter_contact";
 pub const SELECTED_CHAT_ID: &str = "add_deal_selected_chat";
 pub const SELECTED_COL_ID: &str = "add_deal_selected_col";
@@ -98,78 +99,150 @@ fn render_top_bar(app: &mut App, ui: &mut egui::Ui, palette: &Palette) {
     let add_deal_open = ui.ctx().data(|d| d.get_temp::<bool>(add_deal_id)).unwrap_or(false);
     let add_stage_open = ui.ctx().data(|d| d.get_temp::<bool>(add_stage_id)).unwrap_or(false);
 
-    ui.horizontal(|ui| {
-        theme::icon(ui, Icon::ListChecks, 22.0, palette.accent);
-        theme::text(ui, "Funil de Vendas Comercial", theme::bold(18.0), palette.text);
+    let compact = ui.available_width() < 840.0;
+    if compact {
+        ui.horizontal(|ui| {
+            theme::icon(ui, Icon::ListChecks, 20.0, palette.accent);
+            theme::text(ui, "Funil de Vendas", theme::bold(17.0), palette.text);
 
-        // KPI Badge
-        Frame::new()
-            .fill(palette.surface_hover)
-            .corner_radius(CornerRadius::same(6))
-            .inner_margin(Margin::symmetric(8, 4))
-            .show(ui, |ui| {
-                let kpi_text = format!("{} negócios • {}", total_deals, format_currency(total_value));
-                theme::text(ui, &kpi_text, theme::medium(12.0), palette.accent);
-            });
-
-        ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-            // Close dialog
-            if theme::icon_button(ui, Icon::X, 18.0, palette.dim, palette.text, "Fechar").clicked() {
-                app.dialog = None;
-            }
-
-            // Metrics button
-            if ui.button("📊 Métricas").clicked() {
-                app.actions.push(Action::ShowDialog(Dialog::CrmMetrics));
-            }
-
-            // Backup Dropdown / Buttons
-            egui::ComboBox::from_id_salt("kanban_backup_menu")
-                .selected_text("💾 Backup / Opções")
-                .width(135.0)
-                .show_ui(ui, |ui| {
-                    if ui.selectable_label(false, "🔄 Restaurar 5 Etapas Padrão").clicked() {
-                        for col in default_columns() {
-                            app.actions.push(Action::SaveCrmColumn(col));
-                        }
-                    }
-                    ui.separator();
-                    if ui.selectable_label(false, "📤 Exportar Backup JSON").clicked() {
-                        if let Some(path) = rfd::FileDialog::new()
-                            .add_filter("JSON Backup", &["json"])
-                            .set_file_name("zapfast-crm-backup.json")
-                            .set_title("Salvar backup do CRM")
-                            .save_file()
-                        {
-                            app.actions.push(Action::ExportCrmBackup(path));
-                        }
-                    }
-                    if ui.selectable_label(false, "📥 Importar Backup JSON").clicked() {
-                        if let Some(path) = rfd::FileDialog::new()
-                            .add_filter("JSON Backup", &["json"])
-                            .set_title("Selecionar arquivo de backup do CRM")
-                            .pick_file()
-                        {
-                            app.actions.push(Action::ImportCrmBackup(path));
-                        }
-                    }
+            Frame::new()
+                .fill(palette.surface_hover)
+                .corner_radius(CornerRadius::same(6))
+                .inner_margin(Margin::symmetric(6, 3))
+                .show(ui, |ui| {
+                    let kpi_text = format!("{} negócios • {}", total_deals, format_currency(total_value));
+                    theme::text(ui, &kpi_text, theme::medium(11.0), palette.accent);
                 });
 
+            ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
+                if theme::icon_button(ui, Icon::X, 18.0, palette.dim, palette.text, "Fechar").clicked() {
+                    app.dialog = None;
+                }
+            });
+        });
+
+        ui.horizontal(|ui| {
+            // + Novo Negócio button (Primary Accent)
+            let btn_deal = egui::Button::new(if add_deal_open { "✕ Fechar Cadastro" } else { "+ Novo Negócio" })
+                .fill(if add_deal_open { palette.surface_hover } else { palette.accent });
+            if ui.add(btn_deal).clicked() {
+                ui.ctx().data_mut(|d| d.insert_temp(add_deal_id, !add_deal_open));
+            }
+
             // + Nova Etapa button
-            let btn_stage = egui::Button::new(if add_stage_open { "✕ Cancelar Etapa" } else { "+ Nova Etapa" })
+            let btn_stage = egui::Button::new(if add_stage_open { "✕ Fechar Etapa" } else { "+ Nova Etapa" })
                 .fill(if add_stage_open { palette.surface_hover } else { palette.surface });
             if ui.add(btn_stage).clicked() {
                 ui.ctx().data_mut(|d| d.insert_temp(add_stage_id, !add_stage_open));
             }
 
-            // + Novo Negócio button (Primary Accent)
-            let btn_deal = egui::Button::new(if add_deal_open { "✕ Cancelar" } else { "+ Novo Negócio" })
-                .fill(if add_deal_open { palette.surface_hover } else { palette.accent });
-            if ui.add(btn_deal).clicked() {
-                ui.ctx().data_mut(|d| d.insert_temp(add_deal_id, !add_deal_open));
+            // Backup Dropdown / Buttons
+            egui::ComboBox::from_id_salt("kanban_backup_menu")
+                .selected_text("💾 Backup")
+                .width(110.0)
+                .show_ui(ui, |ui| {
+                    if ui.selectable_label(false, "📤 Exportar Backup JSON").clicked() {
+                        app.actions.push(Action::PickExportCrmBackup);
+                    }
+                    if ui.selectable_label(false, "📥 Importar Backup JSON").clicked() {
+                        app.actions.push(Action::PickImportCrmBackup);
+                    }
+                    ui.separator();
+                    if ui.selectable_label(false, "🔄 Restaurar 5 Etapas Padrão").clicked() {
+                        if app.crm_columns.is_empty() {
+                            for col in default_columns() {
+                                app.actions.push(Action::SaveCrmColumn(col));
+                            }
+                        } else {
+                            let mut next_ord = app.crm_columns.iter().map(|c| c.order).max().unwrap_or(0);
+                            for mut col in default_columns() {
+                                if !app.crm_columns.iter().any(|c| c.id == col.id) {
+                                    next_ord += 1;
+                                    col.order = next_ord;
+                                    app.actions.push(Action::SaveCrmColumn(col));
+                                }
+                            }
+                        }
+                    }
+                });
+
+            // Metrics button
+            if ui.button("📊 Métricas").clicked() {
+                app.actions.push(Action::ShowDialog(Dialog::CrmMetrics));
             }
         });
-    });
+    } else {
+        ui.horizontal(|ui| {
+            theme::icon(ui, Icon::ListChecks, 22.0, palette.accent);
+            theme::text(ui, "Funil de Vendas Comercial", theme::bold(18.0), palette.text);
+
+            // KPI Badge
+            Frame::new()
+                .fill(palette.surface_hover)
+                .corner_radius(CornerRadius::same(6))
+                .inner_margin(Margin::symmetric(8, 4))
+                .show(ui, |ui| {
+                    let kpi_text = format!("{} negócios • {}", total_deals, format_currency(total_value));
+                    theme::text(ui, &kpi_text, theme::medium(12.0), palette.accent);
+                });
+
+            ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
+                // Close dialog
+                if theme::icon_button(ui, Icon::X, 18.0, palette.dim, palette.text, "Fechar").clicked() {
+                    app.dialog = None;
+                }
+
+                // Metrics button
+                if ui.button("📊 Métricas").clicked() {
+                    app.actions.push(Action::ShowDialog(Dialog::CrmMetrics));
+                }
+
+                // Backup Dropdown / Buttons
+                egui::ComboBox::from_id_salt("kanban_backup_menu")
+                    .selected_text("💾 Backup / Opções")
+                    .width(135.0)
+                    .show_ui(ui, |ui| {
+                        if ui.selectable_label(false, "📤 Exportar Backup JSON").clicked() {
+                            app.actions.push(Action::PickExportCrmBackup);
+                        }
+                        if ui.selectable_label(false, "📥 Importar Backup JSON").clicked() {
+                            app.actions.push(Action::PickImportCrmBackup);
+                        }
+                        ui.separator();
+                        if ui.selectable_label(false, "🔄 Restaurar 5 Etapas Padrão").clicked() {
+                            if app.crm_columns.is_empty() {
+                                for col in default_columns() {
+                                    app.actions.push(Action::SaveCrmColumn(col));
+                                }
+                            } else {
+                                let mut next_ord = app.crm_columns.iter().map(|c| c.order).max().unwrap_or(0);
+                                for mut col in default_columns() {
+                                    if !app.crm_columns.iter().any(|c| c.id == col.id) {
+                                        next_ord += 1;
+                                        col.order = next_ord;
+                                        app.actions.push(Action::SaveCrmColumn(col));
+                                    }
+                                }
+                            }
+                        }
+                    });
+
+                // + Nova Etapa button
+                let btn_stage = egui::Button::new(if add_stage_open { "✕ Fechar Etapa" } else { "+ Nova Etapa" })
+                    .fill(if add_stage_open { palette.surface_hover } else { palette.surface });
+                if ui.add(btn_stage).clicked() {
+                    ui.ctx().data_mut(|d| d.insert_temp(add_stage_id, !add_stage_open));
+                }
+
+                // + Novo Negócio button (Primary Accent)
+                let btn_deal = egui::Button::new(if add_deal_open { "✕ Fechar Cadastro" } else { "+ Novo Negócio" })
+                    .fill(if add_deal_open { palette.surface_hover } else { palette.accent });
+                if ui.add(btn_deal).clicked() {
+                    ui.ctx().data_mut(|d| d.insert_temp(add_deal_id, !add_deal_open));
+                }
+            });
+        });
+    }
 }
 
 fn render_search_bar(app: &mut App, ui: &mut egui::Ui, palette: &Palette) {
@@ -265,6 +338,17 @@ fn render_popovers(app: &mut App, ui: &mut egui::Ui, palette: &Palette) {
                                         let title = app.chat_title(chat);
                                         if ui.selectable_label(selected_chat == chat.id, &title).clicked() {
                                             selected_chat = chat.id.clone();
+                                            if let Some(existing) = app.crm_deals.get(&selected_chat) {
+                                                selected_col = existing.column_id.clone();
+                                                if existing.value_cents > 0 {
+                                                    let reais = existing.value_cents / 100;
+                                                    let cents = (existing.value_cents % 100).abs();
+                                                    val_str = format!("{reais},{cents:02}");
+                                                } else {
+                                                    val_str.clear();
+                                                }
+                                                tag_str = existing.tags.join(", ");
+                                            }
                                         }
                                     }
                                 });
@@ -311,18 +395,26 @@ fn render_popovers(app: &mut App, ui: &mut egui::Ui, palette: &Palette) {
                             ui.add_space(8.0);
                             let can_save = !selected_chat.is_empty() && !selected_col.is_empty();
                             if ui.add_enabled(can_save, egui::Button::new("✓ Adicionar ao Funil").fill(palette.accent)).clicked() {
-                                let sanitized = val_str.replace(',', ".").replace(' ', "");
-                                let cents = (sanitized.parse::<f64>().unwrap_or(0.0) * 100.0).round().max(0.0) as i64;
-                                let tags: Vec<String> = tag_str.split(',')
+                                let existing = app.crm_deals.get(&selected_chat);
+                                let cents = parse_currency_cents(&val_str).unwrap_or_else(|| {
+                                    existing.map(|d| d.value_cents).unwrap_or(0)
+                                });
+                                let mut tags: Vec<String> = tag_str.split(',')
                                     .map(|s| s.trim().to_owned())
                                     .filter(|s| !s.is_empty())
                                     .collect();
+                                if tags.is_empty() {
+                                    if let Some(prev) = existing {
+                                        tags = prev.tags.clone();
+                                    }
+                                }
+                                let notes = existing.map(|d| d.notes.clone()).unwrap_or_default();
 
                                 let deal = CrmDeal {
                                     chat_id: selected_chat.clone(),
                                     column_id: selected_col.clone(),
                                     value_cents: cents,
-                                    notes: String::new(),
+                                    notes,
                                     tags,
                                     updated_at: crate::util::now(),
                                 };
@@ -393,11 +485,12 @@ fn render_popovers(app: &mut App, ui: &mut egui::Ui, palette: &Palette) {
                     }
 
                     if ui.button("✓ Criar Etapa").clicked() && !name.trim().is_empty() {
+                        let next_order = app.crm_columns.iter().map(|c| c.order).max().unwrap_or(0) + 1;
                         let col = CrmColumn {
-                            id: format!("col_{}", crate::util::now()),
+                            id: format!("col_{}_{:08x}", crate::util::now(), rand::random::<u32>()),
                             title: name.trim().to_owned(),
                             color: color_hex.clone(),
-                            order: app.crm_columns.len() as i32,
+                            order: next_order,
                         };
                         app.actions.push(Action::SaveCrmColumn(col));
                         name.clear();
@@ -411,6 +504,50 @@ fn render_popovers(app: &mut App, ui: &mut egui::Ui, palette: &Palette) {
                 });
             });
         ui.add_space(8.0);
+    }
+
+    // 3. Popover: Confirmar Exclusão de Etapa
+    let delete_stage_confirm_id = egui::Id::new(DELETE_STAGE_CONFIRM_ID);
+    let delete_col_id: Option<String> = ui.ctx().data(|d| d.get_temp(delete_stage_confirm_id)).flatten();
+    if let Some(col_id) = delete_col_id {
+        if let Some(target_col) = app.crm_columns.iter().find(|c| c.id == col_id).cloned() {
+            let deals_count = app.crm_deals.values().filter(|d| d.column_id == col_id).count();
+            let fallback_title = app.crm_columns.iter().find(|c| c.id != col_id).map(|c| c.title.as_str()).unwrap_or("outra etapa");
+
+            Frame::new()
+                .fill(palette.surface)
+                .stroke(Stroke::new(1.0, palette.danger))
+                .corner_radius(CornerRadius::same(8))
+                .inner_margin(Margin::same(12))
+                .show(ui, |ui| {
+                    ui.vertical(|ui| {
+                        ui.horizontal(|ui| {
+                            theme::icon(ui, Icon::CircleAlert, 18.0, palette.danger);
+                            theme::text(ui, format!("Excluir etapa '{}'?", target_col.title), theme::bold(14.0), palette.text);
+                        });
+                        ui.add_space(4.0);
+                        theme::text(
+                            ui,
+                            format!("Esta etapa possui {} negócio(s). Ao excluir, eles serão transferidos automaticamente para a etapa '{}'.", deals_count, fallback_title),
+                            theme::regular(12.0),
+                            palette.dim,
+                        );
+                        ui.add_space(8.0);
+                        ui.horizontal(|ui| {
+                            if ui.button("Cancelar").clicked() {
+                                ui.ctx().data_mut(|d| d.insert_temp(delete_stage_confirm_id, None::<String>));
+                            }
+                            if ui.button(egui::RichText::new("✓ Confirmar Exclusão").color(palette.danger)).clicked() {
+                                app.actions.push(Action::DeleteCrmColumn(col_id.clone()));
+                                ui.ctx().data_mut(|d| d.insert_temp(delete_stage_confirm_id, None::<String>));
+                            }
+                        });
+                    });
+                });
+            ui.add_space(8.0);
+        } else {
+            ui.ctx().data_mut(|d| d.insert_temp(delete_stage_confirm_id, None::<String>));
+        }
     }
 }
 
@@ -528,7 +665,15 @@ fn render_column(
                 let (dot_rect, _) = ui.allocate_exact_size(Vec2::splat(12.0), egui::Sense::hover());
                 ui.painter().circle_filled(dot_rect.center(), 5.0, dot_color);
 
-                theme::text(ui, &col.title, theme::bold(14.0), palette.text);
+                let max_title_w = (ui.available_width() - 65.0).max(60.0);
+                ui.allocate_ui_with_layout(
+                    vec2(max_title_w, 20.0),
+                    Layout::left_to_right(Align::Center),
+                    |ui| {
+                        theme::text(ui, &col.title, theme::bold(14.0), palette.text)
+                            .on_hover_text(&col.title);
+                    },
+                );
 
                 // Badge count
                 Frame::new()
@@ -543,7 +688,10 @@ fn render_column(
                     // Delete column option (if more than 1 column exists)
                     if app.crm_columns.len() > 1 {
                         if theme::icon_button(ui, Icon::Trash, 12.0, palette.dim, palette.danger, "Excluir etapa").clicked() {
-                            app.actions.push(Action::DeleteCrmColumn(col.id.clone()));
+                            let delete_stage_confirm_id = egui::Id::new(DELETE_STAGE_CONFIRM_ID);
+                            ui.ctx().data_mut(|d| {
+                                d.insert_temp(delete_stage_confirm_id, Some(col.id.clone()));
+                            });
                         }
                     }
 
@@ -626,11 +774,11 @@ fn render_deal_card(app: &mut App, ui: &mut egui::Ui, palette: &Palette, deal: &
         .inner_margin(Margin::same(10))
         .show(ui, |ui| {
             ui.vertical(|ui| {
-                // Card Header: Contact avatar icon + Title
+                // Card Header: Contact avatar + Title
                 ui.horizontal(|ui| {
                     let (r, _) = ui.allocate_exact_size(Vec2::splat(22.0), egui::Sense::hover());
-                    ui.painter().circle_filled(r.center(), 11.0, palette.surface_hover);
-                    theme::paint_icon(ui, Icon::User, r, 12.0, palette.accent);
+                    let picture = app.avatar(&deal.chat_id);
+                    super::widgets::paint_avatar(ui, palette, r, &title, &deal.chat_id, picture.as_deref());
 
                     ui.add_space(2.0);
                     theme::text(ui, &title, theme::bold(13.0), palette.text);
@@ -668,11 +816,11 @@ fn render_deal_card(app: &mut App, ui: &mut egui::Ui, palette: &Palette, deal: &
                     });
                 }
 
-                // Notes snippet
+                // Notes snippet (UTF-8 character boundary safe)
                 if !deal.notes.trim().is_empty() {
                     ui.add_space(4.0);
-                    let snippet = if deal.notes.len() > 60 {
-                        format!("{}...", &deal.notes[..60])
+                    let snippet = if deal.notes.chars().count() > 60 {
+                        format!("{}...", deal.notes.chars().take(60).collect::<String>())
                     } else {
                         deal.notes.clone()
                     };

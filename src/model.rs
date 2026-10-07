@@ -1775,6 +1775,8 @@ pub enum Action {
     SnoozeCrmFollowup { id: String, until: i64 },
     ExportCrmBackup(std::path::PathBuf),
     ImportCrmBackup(std::path::PathBuf),
+    PickExportCrmBackup,
+    PickImportCrmBackup,
     RefreshCrmData,
     /// Shows or leaves the archived chats.
     ShowArchived(bool),

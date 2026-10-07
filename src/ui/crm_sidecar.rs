@@ -25,7 +25,6 @@ pub fn show(app: &mut App, ui: &mut egui::Ui, chat: &Chat) -> Option<Rect> {
     let max = (region.width() - CONVERSATION_MIN).clamp(MIN_WIDTH, MAX_WIDTH);
     let wanted = 320.0_f32.clamp(MIN_WIDTH, max);
     let id = egui::Id::new("crm_sidecar_panel");
-    ui.ctx().data_mut(|data| data.remove::<egui::PanelState>(id));
 
     let response = egui::Panel::right(id)
         .resizable(true)
@@ -143,11 +142,10 @@ fn render_header(app: &mut App, ui: &mut egui::Ui, palette: &Palette, chat: &Cha
     };
 
     ui.horizontal(|ui| {
-        // Contact icon / avatar badge
+        // Contact photo / avatar
         let (rect, _) = ui.allocate_exact_size(Vec2::splat(32.0), egui::Sense::hover());
-        ui.painter().circle_filled(rect.center(), 16.0, palette.surface_hover);
-        let icon = if chat.is_group() { Icon::Users } else { Icon::User };
-        theme::paint_icon(ui, icon, rect, 18.0, palette.accent);
+        let picture = app.avatar(&chat.id);
+        super::widgets::paint_avatar(ui, palette, rect, &title, &chat.id, picture.as_deref());
 
         ui.add_space(4.0);
 
@@ -264,41 +262,67 @@ fn render_deal_value(app: &mut App, ui: &mut egui::Ui, palette: &Palette, deal: 
 
                 ui.add_space(6.0);
 
-                let value_input_id = egui::Id::new("sidecar_deal_value_input");
+                let value_input_id = egui::Id::new(("sidecar_deal_value_input", &deal.chat_id));
+                let value_err_id = egui::Id::new(("sidecar_deal_value_error", &deal.chat_id));
                 let mut val_str = ui.ctx().data(|d| d.get_temp::<String>(value_input_id)).unwrap_or_else(|| {
                     if deal.value_cents > 0 {
-                        format!("{:.2}", deal.value_cents as f64 / 100.0)
+                        let reais = deal.value_cents / 100;
+                        let cents = (deal.value_cents % 100).abs();
+                        format!("{reais},{cents:02}")
                     } else {
                         String::new()
                     }
                 });
+                let is_error = ui.ctx().data(|d| d.get_temp::<bool>(value_err_id)).unwrap_or(false);
 
                 ui.horizontal(|ui| {
                     theme::text(ui, "R$", theme::semibold(13.0), palette.dim);
+                    let stroke = if is_error {
+                        Stroke::new(1.0, palette.danger)
+                    } else {
+                        Stroke::new(1.0, palette.surface_hover)
+                    };
                     let response = ui.add(
                         egui::TextEdit::singleline(&mut val_str)
                             .hint_text("0,00")
-                            .desired_width(ui.available_width() - 65.0),
+                            .desired_width(ui.available_width() - 65.0)
+                            .margin(Margin::symmetric(6, 4)),
                     );
+                    if is_error {
+                        ui.painter().rect_stroke(response.rect, 4.0, stroke, egui::StrokeKind::Inside);
+                    }
 
                     let save_clicked = ui.button("Salvar").clicked();
                     let enter_pressed = response.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter));
 
                     if save_clicked || enter_pressed {
-                        let sanitized = val_str.replace(',', ".").replace(' ', "");
-                        let cents = if let Ok(num) = sanitized.parse::<f64>() {
-                            (num * 100.0).round().max(0.0) as i64
+                        if val_str.trim().is_empty() {
+                            ui.ctx().data_mut(|d| d.insert_temp(value_err_id, false));
+                            if deal.value_cents != 0 {
+                                let mut updated = deal.clone();
+                                updated.value_cents = 0;
+                                updated.updated_at = crate::util::now();
+                                app.actions.push(Action::SaveCrmDeal(updated));
+                            }
+                        } else if let Some(cents) = parse_currency_cents(&val_str) {
+                            ui.ctx().data_mut(|d| d.insert_temp(value_err_id, false));
+                            if cents != deal.value_cents {
+                                let mut updated = deal.clone();
+                                updated.value_cents = cents;
+                                updated.updated_at = crate::util::now();
+                                app.actions.push(Action::SaveCrmDeal(updated));
+                            }
                         } else {
-                            0
-                        };
-                        if cents != deal.value_cents {
-                            let mut updated = deal.clone();
-                            updated.value_cents = cents;
-                            updated.updated_at = crate::util::now();
-                            app.actions.push(Action::SaveCrmDeal(updated));
+                            ui.ctx().data_mut(|d| d.insert_temp(value_err_id, true));
                         }
                     }
                 });
+
+                if is_error {
+                    ui.add_space(2.0);
+                    theme::text(ui, "Valor inválido (ex: 1.500,00 ou 1500)", theme::regular(10.5), palette.danger);
+                }
+
                 ui.ctx().data_mut(|d| d.insert_temp(value_input_id, val_str));
             });
         });
@@ -341,7 +365,7 @@ fn render_tags(app: &mut App, ui: &mut egui::Ui, palette: &Palette, deal: &CrmDe
                 }
 
                 // Add tag row
-                let tag_input_id = egui::Id::new("sidecar_new_tag_input");
+                let tag_input_id = egui::Id::new(("sidecar_new_tag_input", &deal.chat_id));
                 let mut new_tag = ui.ctx().data(|d| d.get_temp::<String>(tag_input_id)).unwrap_or_default();
 
                 ui.horizontal(|ui| {
@@ -378,21 +402,33 @@ fn render_internal_notes(app: &mut App, ui: &mut egui::Ui, palette: &Palette, de
         .inner_margin(Margin::same(10))
         .show(ui, |ui| {
             ui.vertical(|ui| {
-                ui.horizontal(|ui| {
-                    theme::icon(ui, Icon::Lock, 13.0, palette.secondary);
-                    theme::text(ui, "Notas Internas (Criptografadas)", theme::semibold(12.5), palette.text);
-                    ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-                        theme::text(ui, "✓ Salvo", theme::regular(10.5), palette.dim);
-                    });
-                });
-
-                ui.add_space(4.0);
-
-                let notes_id = egui::Id::new("sidecar_internal_notes");
+                let notes_id = egui::Id::new(("sidecar_internal_notes", &deal.chat_id));
                 let mut notes_draft = ui
                     .ctx()
                     .data(|d| d.get_temp::<String>(notes_id))
                     .unwrap_or_else(|| deal.notes.clone());
+
+                let is_dirty = notes_draft != deal.notes;
+
+                ui.horizontal(|ui| {
+                    theme::icon(ui, Icon::Lock, 13.0, palette.secondary);
+                    theme::text(ui, "Notas Internas (Criptografadas)", theme::semibold(12.5), palette.text);
+                    ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
+                        if is_dirty {
+                            if ui.button("Salvar").clicked() {
+                                let mut updated = deal.clone();
+                                updated.notes = notes_draft.clone();
+                                updated.updated_at = crate::util::now();
+                                app.actions.push(Action::SaveCrmDeal(updated));
+                            }
+                            theme::text(ui, "● Rascunho alterado", theme::medium(10.5), palette.accent);
+                        } else {
+                            theme::text(ui, "✓ Salvo", theme::regular(10.5), palette.dim);
+                        }
+                    });
+                });
+
+                ui.add_space(4.0);
 
                 let res = ui.add(
                     egui::TextEdit::multiline(&mut notes_draft)
@@ -401,7 +437,8 @@ fn render_internal_notes(app: &mut App, ui: &mut egui::Ui, palette: &Palette, de
                         .hint_text("Adicione anotações particulares sobre este cliente, acordos, reuniões..."),
                 );
 
-                if res.lost_focus() && notes_draft != deal.notes {
+                let ctrl_enter = res.has_focus() && ui.input(|i| i.modifiers.command && i.key_pressed(egui::Key::Enter));
+                if (res.lost_focus() || ctrl_enter) && notes_draft != deal.notes {
                     let mut updated = deal.clone();
                     updated.notes = notes_draft.clone();
                     updated.updated_at = crate::util::now();
@@ -451,83 +488,91 @@ fn render_followups(app: &mut App, ui: &mut egui::Ui, palette: &Palette, chat_id
                         .corner_radius(CornerRadius::same(6))
                         .inner_margin(Margin::same(8))
                         .show(ui, |ui| {
-                            ui.vertical(|ui| {
-                                ui.horizontal(|ui| {
-                                    let icon = if f.done {
-                                        Icon::CircleCheck
-                                    } else if is_past {
-                                        Icon::CircleAlert
-                                    } else {
-                                        Icon::Clock
-                                    };
-                                    theme::icon(ui, icon, 13.0, text_col);
-                                    theme::text(ui, &f.title, theme::medium(12.0), text_col);
-                                });
+                        ui.vertical(|ui| {
+                            ui.horizontal_wrapped(|ui| {
+                                let icon = if f.done {
+                                    Icon::CircleCheck
+                                } else if is_past {
+                                    Icon::CircleAlert
+                                } else {
+                                    Icon::Clock
+                                };
+                                theme::icon(ui, icon, 13.0, text_col);
+                                ui.add(
+                                    egui::Label::new(
+                                        egui::RichText::new(&f.title)
+                                            .font(theme::medium(12.0))
+                                            .color(text_col),
+                                    )
+                                    .wrap(),
+                                );
+                            });
 
-                                ui.horizontal(|ui| {
-                                    let date_str = format_timestamp(f.remind_at);
-                                    theme::text(ui, &date_str, theme::regular(10.5), palette.dim);
+                            ui.horizontal(|ui| {
+                                let date_str = format_timestamp(f.remind_at);
+                                theme::text(ui, &date_str, theme::regular(10.5), palette.dim);
 
-                                    ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-                                        if theme::icon_button(ui, Icon::Trash, 12.0, palette.dim, palette.danger, "Excluir").clicked() {
-                                            app.actions.push(Action::DeleteCrmFollowup(f.id.clone()));
+                                ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
+                                    ui.spacing_mut().item_spacing.x = 4.0;
+                                    if theme::icon_button(ui, Icon::Trash, 12.0, palette.dim, palette.danger, "Excluir").clicked() {
+                                        app.actions.push(Action::DeleteCrmFollowup(f.id.clone()));
+                                    }
+
+                                    if !f.done {
+                                        if theme::icon_button(ui, Icon::Check, 12.0, palette.accent, palette.accent, "Concluir").clicked() {
+                                            app.actions.push(Action::CompleteCrmFollowup(f.id.clone()));
                                         }
-
-                                        if !f.done {
-                                            if theme::icon_button(ui, Icon::Check, 12.0, palette.accent, palette.accent, "Concluir").clicked() {
-                                                app.actions.push(Action::CompleteCrmFollowup(f.id.clone()));
-                                            }
-                                            if ui.small_button("+1d").on_hover_text("Adiar 1 dia").clicked() {
-                                                let next_day = f.remind_at + 86400;
-                                                app.actions.push(Action::SnoozeCrmFollowup { id: f.id.clone(), until: next_day });
-                                            }
+                                        if ui.small_button("+1d").on_hover_text("Adiar 1 dia").clicked() {
+                                            let next_day = f.remind_at.max(now) + 86400;
+                                            app.actions.push(Action::SnoozeCrmFollowup { id: f.id.clone(), until: next_day });
                                         }
-                                    });
+                                    }
                                 });
                             });
                         });
-                    ui.add_space(4.0);
+                    });
+                ui.add_space(4.0);
+            }
+
+            // Add reminder section
+            ui.add_space(4.0);
+            let reminder_input_id = egui::Id::new(("sidecar_new_followup_title", chat_id));
+            let mut title = ui.ctx().data(|d| d.get_temp::<String>(reminder_input_id)).unwrap_or_default();
+
+            ui.add(
+                egui::TextEdit::singleline(&mut title)
+                    .hint_text("Lembrete (ex: Ligar para fechar)")
+                    .desired_width(ui.available_width()),
+            );
+
+            ui.add_space(4.0);
+
+            // 2x2 grid of quick schedule buttons
+            let half_w = (ui.available_width() - 6.0) / 2.0;
+            ui.horizontal(|ui| {
+                if ui.add_sized(vec2(half_w, 24.0), egui::Button::new("⏱ +1 hora")).clicked() {
+                    create_followup(app, chat_id, &title, now + 3600);
+                    title.clear();
                 }
-
-                // Add reminder section
-                ui.add_space(4.0);
-                let reminder_input_id = egui::Id::new("sidecar_new_followup_title");
-                let mut title = ui.ctx().data(|d| d.get_temp::<String>(reminder_input_id)).unwrap_or_default();
-
-                ui.add(
-                    egui::TextEdit::singleline(&mut title)
-                        .hint_text("Lembrete (ex: Ligar para fechar)")
-                        .desired_width(ui.available_width()),
-                );
-
-                ui.add_space(4.0);
-
-                // 2x2 grid of quick schedule buttons
-                let half_w = (ui.available_width() - 6.0) / 2.0;
-                ui.horizontal(|ui| {
-                    if ui.add_sized(vec2(half_w, 24.0), egui::Button::new("⏱ +1 hora")).clicked() {
-                        create_followup(app, chat_id, &title, now + 3600);
-                        title.clear();
-                    }
-                    if ui.add_sized(vec2(half_w, 24.0), egui::Button::new("🌅 Amanhã 09h")).clicked() {
-                        create_followup(app, chat_id, &title, tomorrow_nine_am(now));
-                        title.clear();
-                    }
-                });
-                ui.horizontal(|ui| {
-                    if ui.add_sized(vec2(half_w, 24.0), egui::Button::new("📅 +2 dias")).clicked() {
-                        create_followup(app, chat_id, &title, now + 172800);
-                        title.clear();
-                    }
-                    if ui.add_sized(vec2(half_w, 24.0), egui::Button::new("🗓 +1 semana")).clicked() {
-                        create_followup(app, chat_id, &title, now + 604800);
-                        title.clear();
-                    }
-                });
-
-                ui.ctx().data_mut(|d| d.insert_temp(reminder_input_id, title));
+                if ui.add_sized(vec2(half_w, 24.0), egui::Button::new("🌅 Amanhã 09h")).clicked() {
+                    create_followup(app, chat_id, &title, tomorrow_nine_am(now));
+                    title.clear();
+                }
             });
+            ui.horizontal(|ui| {
+                if ui.add_sized(vec2(half_w, 24.0), egui::Button::new("📅 +2 dias")).clicked() {
+                    create_followup(app, chat_id, &title, now + 172800);
+                    title.clear();
+                }
+                if ui.add_sized(vec2(half_w, 24.0), egui::Button::new("🗓 +1 semana")).clicked() {
+                    create_followup(app, chat_id, &title, now + 604800);
+                    title.clear();
+                }
+            });
+
+            ui.ctx().data_mut(|d| d.insert_temp(reminder_input_id, title));
         });
+    });
 }
 
 fn create_followup(app: &mut App, chat_id: &str, title: &str, when: i64) {
@@ -536,7 +581,7 @@ fn create_followup(app: &mut App, chat_id: &str, title: &str, when: i64) {
     } else {
         title.trim().to_owned()
     };
-    let new_id = format!("fu_{}_{}", crate::util::now(), rand_suffix());
+    let new_id = format!("fu_{}_{:08x}", crate::util::now(), rand::random::<u32>());
     let followup = CrmFollowup {
         id: new_id,
         chat_id: chat_id.to_owned(),
@@ -546,6 +591,69 @@ fn create_followup(app: &mut App, chat_id: &str, title: &str, when: i64) {
         created_at: crate::util::now(),
     };
     app.actions.push(Action::SaveCrmFollowup(followup));
+}
+
+/// Parses a monetary string in BRL (ex: "1.500,00", "1500,00") or standard format (ex: "1500.00")
+/// into integer cents. Returns None if invalid or negative.
+pub fn parse_currency_cents(input: &str) -> Option<i64> {
+    let trimmed = input.trim();
+    if trimmed.is_empty() {
+        return Some(0);
+    }
+    let mut cleaned = trimmed.replace("R$", "").replace("r$", "").trim().to_owned();
+    cleaned.retain(|c| c.is_ascii_digit() || c == ',' || c == '.');
+    if cleaned.is_empty() {
+        return None;
+    }
+
+    let has_comma = cleaned.contains(',');
+    let has_dot = cleaned.contains('.');
+    let (int_part, frac_part) = if has_comma && has_dot {
+        let comma_idx = cleaned.rfind(',').unwrap();
+        let dot_idx = cleaned.rfind('.').unwrap();
+        if comma_idx > dot_idx {
+            let int_str = cleaned[..comma_idx].replace('.', "");
+            let frac_str = &cleaned[comma_idx + 1..];
+            (int_str, frac_str.to_owned())
+        } else {
+            let int_str = cleaned[..dot_idx].replace(',', "");
+            let frac_str = &cleaned[dot_idx + 1..];
+            (int_str, frac_str.to_owned())
+        }
+    } else if has_comma {
+        let comma_idx = cleaned.rfind(',').unwrap();
+        let int_str = cleaned[..comma_idx].to_owned();
+        let frac_str = &cleaned[comma_idx + 1..];
+        (int_str, frac_str.to_owned())
+    } else if has_dot {
+        let dot_idx = cleaned.rfind('.').unwrap();
+        let after_dot = &cleaned[dot_idx + 1..];
+        if after_dot.len() <= 2 {
+            let int_str = cleaned[..dot_idx].to_owned();
+            (int_str, after_dot.to_owned())
+        } else {
+            let int_str = cleaned.replace('.', "");
+            (int_str, String::new())
+        }
+    } else {
+        (cleaned, String::new())
+    };
+
+    let int_val: i64 = if int_part.is_empty() { 0 } else { int_part.parse().ok()? };
+    let frac_cents: i64 = if frac_part.is_empty() {
+        0
+    } else if frac_part.len() == 1 {
+        let d: i64 = frac_part.parse().ok()?;
+        d * 10
+    } else {
+        let two_digits = &frac_part[..2];
+        two_digits.parse().ok()?
+    };
+
+    if int_val < 0 {
+        return None;
+    }
+    int_val.checked_mul(100)?.checked_add(frac_cents)
 }
 
 pub fn format_currency(cents: i64) -> String {
@@ -589,8 +697,4 @@ fn tomorrow_nine_am(now: i64) -> i64 {
         .ok()
         .and_then(|d| crate::util::to_unix_seconds(d, 9, 0))
         .unwrap_or(now + 86400)
-}
-
-fn rand_suffix() -> u32 {
-    (crate::util::now() % 10000) as u32
 }
