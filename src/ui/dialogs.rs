@@ -2498,6 +2498,10 @@ fn chat_info(app: &mut App, ui: &mut egui::Ui, id: &str) {
             .push(Action::ShowDialog(Dialog::ConfirmLeaveGroup(id.to_owned())));
     }
     ui.add_space(8.0);
+    if chat.is_group() {
+        render_group_description(app, ui, &palette, &chat, group_editable, saving);
+        ui.add_space(8.0);
+    }
     if chat.is_group() && !chat.participants.is_empty() {
         let members = app.participant_list(&chat);
         theme::text(
@@ -2687,6 +2691,153 @@ fn chat_info(app: &mut App, ui: &mut egui::Ui, id: &str) {
     }
     if let Some(actions) = fired {
         app.actions.extend(actions);
+    }
+}
+
+fn render_group_description(
+    app: &mut App,
+    ui: &mut egui::Ui,
+    palette: &theme::Palette,
+    chat: &crate::model::Chat,
+    group_editable: bool,
+    saving: bool,
+) {
+    let desc_editing_id = egui::Id::new(("group_desc_editing", &chat.id));
+    let desc_draft_id = egui::Id::new(("group_desc_draft", &chat.id));
+    let is_editing = ui.ctx().data(|d| d.get_temp::<bool>(desc_editing_id)).unwrap_or(false) && group_editable;
+
+    ui.horizontal(|ui| {
+        theme::text(
+            ui,
+            "Descrição",
+            theme::medium(12.5),
+            palette.secondary,
+        );
+        if !chat.can_edit_info() {
+            ui.add_space(4.0);
+            theme::text(
+                ui,
+                "(somente leitura)",
+                theme::regular(11.0),
+                palette.dim,
+            );
+        } else if saving {
+            ui.add_space(4.0);
+            theme::text(
+                ui,
+                "(salvando…)",
+                theme::regular(11.0),
+                palette.dim,
+            );
+        }
+    });
+
+    ui.add_space(4.0);
+
+    let current_desc = chat.description.as_deref().unwrap_or("").trim();
+
+    if is_editing {
+        let mut draft = ui
+            .ctx()
+            .data(|d| d.get_temp::<String>(desc_draft_id))
+            .unwrap_or_else(|| current_desc.to_owned());
+
+        Frame::new()
+            .fill(palette.surface)
+            .corner_radius(CornerRadius::same(theme::RADIUS))
+            .stroke(Stroke::new(1.0, palette.surface_hover))
+            .inner_margin(Margin::same(8))
+            .show(ui, |ui| {
+                ui.add(
+                    egui::TextEdit::multiline(&mut draft)
+                        .desired_rows(3)
+                        .desired_width(ui.available_width())
+                        .hint_text("Adicione uma descrição para o grupo…")
+                        .font(theme::regular(13.0))
+                        .text_color(palette.text),
+                );
+                ui.add_space(6.0);
+                ui.horizontal(|ui| {
+                    if ui.button("Cancelar").clicked() {
+                        ui.ctx().data_mut(|d| {
+                            d.insert_temp(desc_editing_id, false);
+                            d.remove::<String>(desc_draft_id);
+                        });
+                    }
+                    let save_btn = ui.button(egui::RichText::new("Salvar").color(palette.accent));
+                    if save_btn.clicked() {
+                        let trimmed = draft.trim().to_owned();
+                        app.actions.push(Action::SetGroupDescription {
+                            chat: chat.id.clone(),
+                            description: trimmed,
+                        });
+                        ui.ctx().data_mut(|d| {
+                            d.insert_temp(desc_editing_id, false);
+                            d.remove::<String>(desc_draft_id);
+                        });
+                    }
+                });
+            });
+        ui.ctx().data_mut(|d| d.insert_temp(desc_draft_id, draft));
+    } else {
+        Frame::new()
+            .fill(palette.surface)
+            .corner_radius(CornerRadius::same(theme::RADIUS))
+            .stroke(Stroke::new(1.0, palette.surface_hover))
+            .inner_margin(Margin::same(8))
+            .show(ui, |ui| {
+                ui.horizontal(|ui| {
+                    let btn_w = if group_editable { 28.0 } else { 0.0 };
+                    let text_w = (ui.available_width() - btn_w).max(40.0);
+
+                    if current_desc.is_empty() {
+                        ui.allocate_ui_with_layout(
+                            vec2(text_w, 18.0),
+                            Layout::left_to_right(Align::Center),
+                            |ui| {
+                                theme::text(
+                                    ui,
+                                    "Nenhuma descrição definida.",
+                                    theme::regular(12.5),
+                                    palette.dim,
+                                );
+                            },
+                        );
+                    } else {
+                        ui.allocate_ui_with_layout(
+                            vec2(text_w, 18.0),
+                            Layout::top_down(Align::Min),
+                            |ui| {
+                                super::widgets::selectable_rich_text(
+                                    ui,
+                                    current_desc,
+                                    theme::regular(13.0),
+                                    palette.text,
+                                );
+                            },
+                        );
+                    }
+
+                    if group_editable {
+                        ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
+                            let pencil = theme::icon_button(
+                                ui,
+                                Icon::Pencil,
+                                14.0,
+                                palette.secondary,
+                                palette.text,
+                                "Editar descrição",
+                            );
+                            if pencil.clicked() {
+                                ui.ctx().data_mut(|d| {
+                                    d.insert_temp(desc_editing_id, true);
+                                    d.insert_temp(desc_draft_id, current_desc.to_owned());
+                                });
+                            }
+                        });
+                    }
+                });
+            });
     }
 }
 

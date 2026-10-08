@@ -136,7 +136,7 @@ const CHAT_COLUMNS: &str =
                     c.pinned_at, c.ephemeral_expiration, c.locked, c.group_subject_known,
                     c.notification_sound, c.marked_unread,
                     (SELECT f.position FROM favorites f WHERE f.chat = c.id), c.left,
-                    c.info_locked, c.group_admin, m.revoked";
+                    c.info_locked, c.group_admin, m.revoked, c.description";
 
 /// Adds columns introduced after the initial schema when missing.
 const MIGRATIONS: &[(&str, &str, &str)] = &[
@@ -172,6 +172,7 @@ const MIGRATIONS: &[(&str, &str, &str)] = &[
     ("scheduled_messages", "kind", "TEXT NOT NULL DEFAULT 'text'"),
     ("scheduled_messages", "voice", "BLOB"),
     ("business_quick_replies", "voice", "BLOB"),
+    ("chats", "description", "TEXT"),
 ];
 const CHAT_JOIN: &str = "FROM chats c
              LEFT JOIN messages m ON m.chat = c.id AND m.rowid = (
@@ -234,6 +235,7 @@ fn chat_from_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<Chat> {
         left: row.get(22)?,
         info_locked: row.get(23)?,
         admin: row.get(24)?,
+        description: row.get::<_, Option<String>>(26)?,
     })
 }
 
@@ -459,6 +461,16 @@ impl Archive {
         self.connection.execute(
             "UPDATE chats SET info_locked = ?2, group_admin = ?3 WHERE id = ?1",
             params![id, info_locked, admin],
+        )?;
+        Ok(())
+    }
+
+    /// Updates the group's description.
+    pub fn set_group_description(&self, id: &str, description: Option<&str>) -> Result<()> {
+        let desc = description.filter(|d| !d.trim().is_empty());
+        self.connection.execute(
+            "UPDATE chats SET description = ?2 WHERE id = ?1",
+            params![id, desc],
         )?;
         Ok(())
     }

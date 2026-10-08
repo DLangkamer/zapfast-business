@@ -393,6 +393,8 @@ pub struct Settings {
     pub sidebar_width: f32,
     /// Width of the search pane beside the open chat.
     pub search_pane_width: f32,
+    /// Width of the CRM sidecar pane beside the open chat.
+    pub crm_sidecar_width: f32,
     /// Whether Enter sends. Off, Enter adds a line and Ctrl+Enter (Cmd+Enter
     /// on macOS) sends.
     pub enter_sends: bool,
@@ -490,6 +492,7 @@ impl Default for Settings {
             zoom: 1.0,
             sidebar_width: 320.0,
             search_pane_width: 380.0,
+            crm_sidecar_width: 340.0,
             enter_sends: true,
             send_read_receipts: true,
             mark_read_on_open: true,

@@ -349,6 +349,7 @@ pub enum Command {
     SaveCrmColumn(crate::model::CrmColumn),
     DeleteCrmColumn(String),
     SaveCrmDeal(crate::model::CrmDeal),
+    DeleteCrmDeal(crate::model::ChatId),
     SaveCrmFollowup(crate::model::CrmFollowup),
     DeleteCrmFollowup(String),
     CompleteCrmFollowup(String),
@@ -458,6 +459,11 @@ pub enum Command {
         chat: ChatId,
         name: String,
     },
+    /// Updates a group's description on WhatsApp.
+    SetGroupDescription {
+        chat: ChatId,
+        description: String,
+    },
     /// Asks for a picture and makes it the group's photo.
     PickGroupPicture(ChatId),
     /// Sets the group's photo to a JPEG, or removes it with `None`.
@@ -470,6 +476,11 @@ pub enum Command {
         chat: ChatId,
         edit: GroupEdit,
         result: Result<(), String>,
+    },
+    /// Internal: WhatsApp answered a change to a group's description.
+    GroupDescriptionEdited {
+        chat: ChatId,
+        result: Result<String, String>,
     },
     /// Internal: the server accepted a profile change.
     ProfileSaved {
@@ -705,6 +716,7 @@ pub enum Command {
     GroupInfo {
         chat: ChatId,
         name: Option<String>,
+        description: Option<String>,
         participants: Vec<String>,
         read_only: bool,
         ephemeral_expiration: Option<u32>,

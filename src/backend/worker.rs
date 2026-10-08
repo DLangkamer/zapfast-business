@@ -2334,6 +2334,7 @@ impl Worker {
                         chat,
                         // Empty subjects leave cached titles intact and retry.
                         name: Some(metadata.subject.clone().unwrap_or_default()),
+                        description: metadata.description.clone(),
                         participants,
                         read_only: metadata.is_announcement && !admin,
                         // GroupEphemeralSettings carries a trigger mode, not a
@@ -4941,6 +4942,9 @@ impl Worker {
                 });
             }
             Command::SetGroupName { chat, name } => self.set_group_name(chat, name),
+            Command::SetGroupDescription { chat, description } => {
+                self.set_group_description(chat, description)
+            }
             Command::PickGroupPicture(chat) => {
                 if !self.may_edit_group(&chat) {
                     return;
@@ -4973,6 +4977,9 @@ impl Worker {
             }
             Command::SetGroupPicture { chat, jpeg } => self.set_group_picture(chat, jpeg),
             Command::GroupEdited { chat, edit, result } => self.group_edited(chat, edit, result),
+            Command::GroupDescriptionEdited { chat, result } => {
+                self.group_description_edited(chat, result)
+            }
             Command::ProfileSaved {
                 name,
                 about,
@@ -5879,6 +5886,12 @@ impl Worker {
                 }
                 self.emit_crm_data();
             }
+            Command::DeleteCrmDeal(chat_id) => {
+                if let Err(e) = self.archive.delete_crm_deal(&chat_id) {
+                    self.emit(Event::Error(format!("Erro ao excluir negócio: {e}")));
+                }
+                self.emit_crm_data();
+            }
             Command::SaveCrmFollowup(f) => {
                 if let Err(e) = self.archive.upsert_crm_followup(&f) {
                     self.emit(Event::Error(format!("Erro ao salvar lembrete: {e}")));
@@ -6127,6 +6140,7 @@ impl Worker {
             Command::GroupInfo {
                 chat,
                 name,
+                description,
                 participants,
                 read_only,
                 ephemeral_expiration,
@@ -6150,6 +6164,7 @@ impl Worker {
                 let _ =
                     self.archive
                         .set_group_info(&chat, name.as_deref(), &participants, read_only);
+                let _ = self.archive.set_group_description(&chat, description.as_deref());
                 let _ = self.archive.set_group_rights(&chat, info_locked, admin);
                 // Metadata that lists us again means we are back in, so a
                 // remembered leave no longer holds. Only a snapshot asked for
@@ -6239,6 +6254,77 @@ impl Worker {
             });
             waker.wake();
         });
+    }
+
+    /// Changes a group's description on WhatsApp.
+    fn set_group_description(&mut self, chat: ChatId, description: String) {
+        if !self.may_edit_group(&chat) {
+            return;
+        }
+        let (Some(client), Some(jid)) = (self.client.clone(), Self::jid_of(&chat)) else {
+            self.emit(Event::Error(
+                "Conecte-se ao WhatsApp para alterar a descrição do grupo.".to_owned(),
+            ));
+            return;
+        };
+        self.emit(Event::GroupSaving {
+            chat: chat.clone(),
+            saving: true,
+        });
+        let commands = self.commands.clone();
+        let waker = self.waker.clone();
+        tokio::spawn(async move {
+            let desc_trimmed = description.trim().to_owned();
+            let desc_payload = if desc_trimmed.is_empty() {
+                None
+            } else {
+                whatsapp_rust::GroupDescription::new(&desc_trimmed).ok()
+            };
+            let result = client
+                .groups()
+                .set_description(jid, desc_payload, whatsapp_rust::PreviousDescription::Resolve)
+                .await
+                .map(|_| desc_trimmed)
+                .map_err(|error| error.to_string());
+            let _ = commands.send(Command::GroupDescriptionEdited {
+                chat,
+                result,
+            });
+            waker.wake();
+        });
+    }
+
+    fn group_description_edited(&mut self, chat: ChatId, result: Result<String, String>) {
+        self.emit(Event::GroupSaving {
+            chat: chat.clone(),
+            saving: false,
+        });
+        match result {
+            Ok(new_desc) => {
+                let opt_desc = if new_desc.is_empty() {
+                    None
+                } else {
+                    Some(new_desc.as_str())
+                };
+                let _ = self.archive.set_group_description(&chat, opt_desc);
+                self.emit_chat(&chat);
+                self.emit(Event::Info(
+                    "Descrição do grupo atualizada com sucesso!".to_owned(),
+                ));
+            }
+            Err(error) => {
+                let refused = group_edit_refused(&error);
+                log::warn!(
+                    "could not change group description ({})",
+                    if refused { "refused" } else { "failed" }
+                );
+                self.emit(Event::Error(if refused {
+                    GROUP_EDIT_REFUSED.to_owned()
+                } else {
+                    format!("Não foi possível alterar a descrição: {error}")
+                }));
+            }
+        }
     }
 
     /// Sets the group's photo to a prepared JPEG, or removes it.

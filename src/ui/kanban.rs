@@ -23,7 +23,7 @@ pub fn default_columns() -> Vec<CrmColumn> {
     vec![
         CrmColumn {
             id: "lead".to_owned(),
-            title: "Novos Contatos".to_owned(),
+            title: "Lead".to_owned(),
             color: "#3b82f6".to_owned(),
             order: 0,
         },
@@ -781,7 +781,26 @@ fn render_deal_card(app: &mut App, ui: &mut egui::Ui, palette: &Palette, deal: &
                     super::widgets::paint_avatar(ui, palette, r, &title, &deal.chat_id, picture.as_deref());
 
                     ui.add_space(2.0);
-                    theme::text(ui, &title, theme::bold(13.0), palette.text);
+                    let max_w = if has_active_followup {
+                        (ui.available_width() - 24.0).max(60.0)
+                    } else {
+                        ui.available_width().max(60.0)
+                    };
+                    ui.allocate_ui_with_layout(
+                        vec2(max_w, 20.0),
+                        Layout::left_to_right(Align::Center),
+                        |ui| {
+                            ui.add(
+                                egui::Label::new(
+                                    egui::RichText::new(&title)
+                                        .font(theme::bold(13.0))
+                                        .color(palette.text),
+                                )
+                                .truncate(),
+                            )
+                            .on_hover_text(&title);
+                        },
+                    );
 
                     if has_active_followup {
                         ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
@@ -832,38 +851,61 @@ fn render_deal_card(app: &mut App, ui: &mut egui::Ui, palette: &Palette, deal: &
                 ui.separator();
                 ui.add_space(4.0);
 
-                ui.horizontal(|ui| {
-                    // Chat button
-                    if ui.small_button("💬 Conversar").clicked() {
-                        app.actions.push(Action::OpenChat(deal.chat_id.clone()));
-                        app.dialog = None;
-                    }
+                let delete_confirm_id = egui::Id::new(("kanban_delete_deal_confirm", &deal.chat_id));
+                let is_deleting = ui.ctx().data(|d| d.get_temp::<bool>(delete_confirm_id)).unwrap_or(false);
 
-                    // Stage Transition ComboBox
-                    ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-                        let columns = if app.crm_columns.is_empty() { default_columns() } else { app.crm_columns.clone() };
-                        egui::ComboBox::from_id_salt(format!("move_col_{}", deal.chat_id))
-                            .selected_text("Mover etapa ▾")
-                            .width(110.0)
-                            .show_ui(ui, |ui| {
-                                for target_col in &columns {
-                                    if target_col.id != deal.column_id {
-                                        let dot_color = parse_hex_color(&target_col.color).unwrap_or(palette.accent);
-                                        ui.horizontal(|ui| {
-                                            let (r, _) = ui.allocate_exact_size(Vec2::splat(8.0), egui::Sense::hover());
-                                            ui.painter().circle_filled(r.center(), 4.0, dot_color);
-                                            if ui.selectable_label(false, &target_col.title).clicked() {
-                                                let mut updated = deal.clone();
-                                                updated.column_id = target_col.id.clone();
-                                                updated.updated_at = crate::util::now();
-                                                app.actions.push(Action::SaveCrmDeal(updated));
-                                            }
-                                        });
-                                    }
-                                }
-                            });
+                if is_deleting {
+                    ui.horizontal(|ui| {
+                        theme::text(ui, "Excluir negócio?", theme::semibold(11.5), palette.danger);
+                        ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
+                            if ui.small_button("Não").clicked() {
+                                ui.ctx().data_mut(|d| d.insert_temp(delete_confirm_id, false));
+                            }
+                            if ui.add(egui::Button::new(egui::RichText::new("Sim, excluir").color(palette.danger)).small()).clicked() {
+                                app.actions.push(Action::DeleteCrmDeal(deal.chat_id.clone()));
+                                ui.ctx().data_mut(|d| d.insert_temp(delete_confirm_id, false));
+                            }
+                        });
                     });
-                });
+                } else {
+                    ui.horizontal(|ui| {
+                        // Chat button
+                        if ui.small_button("💬 Conversar").clicked() {
+                            app.actions.push(Action::OpenChat(deal.chat_id.clone()));
+                            app.dialog = None;
+                        }
+
+                        // Trash button to delete deal
+                        if theme::icon_button(ui, Icon::Trash, 12.0, palette.dim, palette.danger, "Excluir negócio").clicked() {
+                            ui.ctx().data_mut(|d| d.insert_temp(delete_confirm_id, true));
+                        }
+
+                        // Stage Transition ComboBox
+                        ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
+                            let columns = if app.crm_columns.is_empty() { default_columns() } else { app.crm_columns.clone() };
+                            egui::ComboBox::from_id_salt(format!("move_col_{}", deal.chat_id))
+                                .selected_text("Mover etapa ▾")
+                                .width(105.0)
+                                .show_ui(ui, |ui| {
+                                    for target_col in &columns {
+                                        if target_col.id != deal.column_id {
+                                            let dot_color = parse_hex_color(&target_col.color).unwrap_or(palette.accent);
+                                            ui.horizontal(|ui| {
+                                                let (r, _) = ui.allocate_exact_size(Vec2::splat(8.0), egui::Sense::hover());
+                                                ui.painter().circle_filled(r.center(), 4.0, dot_color);
+                                                if ui.selectable_label(false, &target_col.title).clicked() {
+                                                    let mut updated = deal.clone();
+                                                    updated.column_id = target_col.id.clone();
+                                                    updated.updated_at = crate::util::now();
+                                                    app.actions.push(Action::SaveCrmDeal(updated));
+                                                }
+                                            });
+                                        }
+                                    }
+                                });
+                        });
+                    });
+                }
             });
         });
 }

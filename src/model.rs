@@ -259,6 +259,8 @@ pub struct Chat {
     pub labels: Vec<String>,
     /// This chat's own notification sound; `None` follows Settings.
     pub notification_sound: Option<crate::settings::NotificationSound>,
+    /// Group description text, if loaded.
+    pub description: Option<String>,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -301,6 +303,7 @@ impl Chat {
             ephemeral_expiration: None,
             labels: Vec::new(),
             notification_sound: None,
+            description: None,
         }
     }
 
@@ -1769,6 +1772,7 @@ pub enum Action {
     SaveCrmColumn(CrmColumn),
     DeleteCrmColumn(String),
     SaveCrmDeal(CrmDeal),
+    DeleteCrmDeal(ChatId),
     SaveCrmFollowup(CrmFollowup),
     DeleteCrmFollowup(String),
     CompleteCrmFollowup(String),
@@ -1871,6 +1875,11 @@ pub enum Action {
     SetGroupName {
         chat: ChatId,
         name: String,
+    },
+    /// Changes a group's description on WhatsApp.
+    SetGroupDescription {
+        chat: ChatId,
+        description: String,
     },
     /// Asks for a picture and makes it the group's photo.
     PickGroupPicture(ChatId),

@@ -52,13 +52,13 @@ impl Archive {
                 order: row.get(3)?,
             })
         })?;
-        let columns: Vec<CrmColumn> = rows.collect::<std::result::Result<Vec<_>, _>>()?;
+        let mut columns: Vec<CrmColumn> = rows.collect::<std::result::Result<Vec<_>, _>>()?;
 
         if columns.is_empty() {
             let defaults = vec![
                 CrmColumn {
                     id: "lead".to_owned(),
-                    title: "Novos Contatos".to_owned(),
+                    title: "Lead".to_owned(),
                     color: "#3b82f6".to_owned(),
                     order: 0,
                 },
@@ -91,6 +91,14 @@ impl Archive {
                 let _ = self.upsert_crm_column(col);
             }
             return Ok(defaults);
+        }
+
+        // Ensure legacy "Novos Contatos" stage title is normalized to "Lead"
+        for col in &mut columns {
+            if col.id == "lead" && col.title == "Novos Contatos" {
+                col.title = "Lead".to_owned();
+                let _ = self.upsert_crm_column(col);
+            }
         }
 
         Ok(columns)
@@ -205,6 +213,14 @@ impl Archive {
         Ok(())
     }
 
+    pub fn delete_crm_deal(&self, chat_id: &str) -> Result<bool> {
+        let rows = self.connection.execute(
+            "DELETE FROM crm_deals WHERE chat_id = ?1",
+            params![chat_id],
+        )?;
+        Ok(rows > 0)
+    }
+
     pub fn crm_followups(&self) -> Result<Vec<CrmFollowup>> {
         let mut statement = self.connection.prepare(
             "SELECT id, chat_id, title, remind_at, done, created_at
@@ -312,5 +328,89 @@ impl Archive {
                 Err(err)
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn crm_default_columns_use_lead_as_first_stage() {
+        let archive = Archive::in_memory().unwrap();
+        let cols = archive.crm_columns().unwrap();
+        assert!(!cols.is_empty());
+        assert_eq!(cols[0].id, "lead");
+        assert_eq!(cols[0].title, "Lead");
+    }
+
+    #[test]
+    fn crm_legacy_column_novos_contatos_is_normalized_to_lead() {
+        let archive = Archive::in_memory().unwrap();
+        // Insert legacy column with "Novos Contatos"
+        archive
+            .connection
+            .execute(
+                "UPDATE crm_columns SET title = 'Novos Contatos' WHERE id = 'lead'",
+                [],
+            )
+            .unwrap();
+        // crm_columns() auto-normalizes it
+        let cols = archive.crm_columns().unwrap();
+        assert_eq!(cols[0].title, "Lead");
+    }
+
+    #[test]
+    fn crm_deal_lifecycle_and_deletion() {
+        let archive = Archive::in_memory().unwrap();
+        let deal = CrmDeal {
+            chat_id: "551199999999@s.whatsapp.net".to_owned(),
+            column_id: "lead".to_owned(),
+            value_cents: 150000,
+            notes: "Cliente interessado em plano empresarial".to_owned(),
+            tags: vec!["VIP".to_owned(), "Empresarial".to_owned()],
+            updated_at: 1700000000,
+        };
+
+        archive.upsert_crm_deal(&deal).unwrap();
+        let deals = archive.crm_deals().unwrap();
+        assert_eq!(deals.len(), 1);
+        assert_eq!(deals[0].chat_id, "551199999999@s.whatsapp.net");
+        assert_eq!(deals[0].value_cents, 150000);
+        assert_eq!(deals[0].tags, vec!["VIP", "Empresarial"]);
+
+        // Delete deal
+        let deleted = archive.delete_crm_deal("551199999999@s.whatsapp.net").unwrap();
+        assert!(deleted);
+        let deals_after = archive.crm_deals().unwrap();
+        assert!(deals_after.is_empty());
+    }
+
+    #[test]
+    fn crm_followups_are_independent_of_deals() {
+        let archive = Archive::in_memory().unwrap();
+        let followup = CrmFollowup {
+            id: "fu_123".to_owned(),
+            chat_id: "contact_without_deal@s.whatsapp.net".to_owned(),
+            title: "Retornar ligação".to_owned(),
+            remind_at: 1700003600,
+            done: false,
+            created_at: 1700000000,
+        };
+
+        archive.upsert_crm_followup(&followup).unwrap();
+        // Deals remain empty!
+        assert!(archive.crm_deals().unwrap().is_empty());
+
+        let followups = archive.crm_followups().unwrap();
+        assert_eq!(followups.len(), 1);
+        assert_eq!(followups[0].title, "Retornar ligação");
+
+        archive.complete_crm_followup("fu_123").unwrap();
+        let updated = archive.crm_followups().unwrap();
+        assert!(updated[0].done);
+
+        archive.delete_crm_followup("fu_123").unwrap();
+        assert!(archive.crm_followups().unwrap().is_empty());
     }
 }

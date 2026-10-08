@@ -5531,6 +5531,11 @@ impl App {
                 self.crm_deals.insert(deal.chat_id.clone(), deal.clone());
                 self.backend.send(Command::SaveCrmDeal(deal));
             }
+            Action::DeleteCrmDeal(chat_id) => {
+                self.crm_deals.remove(&chat_id);
+                self.backend.send(Command::DeleteCrmDeal(chat_id));
+                self.toast("Negócio removido do funil".to_owned());
+            }
             Action::SaveCrmFollowup(f) => {
                 self.backend.send(Command::SaveCrmFollowup(f));
             }
@@ -5821,6 +5826,9 @@ impl App {
             Action::SetGroupName { chat, name } => {
                 self.group_name_edit = None;
                 self.backend.send(Command::SetGroupName { chat, name });
+            }
+            Action::SetGroupDescription { chat, description } => {
+                self.backend.send(Command::SetGroupDescription { chat, description });
             }
             Action::PickGroupPicture(chat) => self.backend.send(Command::PickGroupPicture(chat)),
             Action::RemoveGroupPicture(chat) => {
