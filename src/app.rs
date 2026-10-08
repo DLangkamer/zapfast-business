@@ -5236,6 +5236,11 @@ impl App {
                 self.backend.send(Command::SetFavorite(chat, favorite));
             }
             Action::ShowDialog(dialog) => {
+                if let Dialog::ChatInfo(ref chat) = dialog {
+                    if crate::model::ChatKind::from_id(chat) == crate::model::ChatKind::Group {
+                        self.backend.send(Command::FetchGroupInfo(chat.clone()));
+                    }
+                }
                 self.clear_chat_lock_entry();
                 if dialog == Dialog::NewChat {
                     self.new_chat_search.clear();

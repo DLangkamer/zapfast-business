@@ -7,29 +7,24 @@ use crate::app::App;
 use crate::model::{Action, Chat, CrmDeal, CrmFollowup, Dialog};
 use crate::theme::{self, Icon, Palette};
 
-pub const MIN_WIDTH: f32 = 280.0;
-pub const MAX_WIDTH: f32 = 520.0;
-/// The narrowest conversation a docked pane leaves beside it. Below this the
-/// pane lies over the conversation as an overlay instead of squeezing it.
-pub const CONVERSATION_MIN: f32 = 360.0;
+pub const MIN_WIDTH: f32 = 240.0;
+pub const MAX_WIDTH: f32 = 560.0;
 
-/// Docks the CRM sidecar when there is room, before the conversation is laid out.
-/// Otherwise returns the conversation's rect for [`show_overlay`], drawn
-/// after the conversation so it lies cleanly on top without being covered.
-pub fn show(app: &mut App, ui: &mut egui::Ui, chat: &Chat) -> Option<Rect> {
-    let region = ui.available_rect_before_wrap();
-    if region.width() < MIN_WIDTH + CONVERSATION_MIN {
-        return Some(region);
-    }
+/// Docks the CRM sidecar panel at the right edge of the chat.
+/// Allows the user to freely resize its width, adapts to any window size,
+/// persists the chosen width in settings, and never clips content.
+pub fn show(app: &mut App, ui: &mut egui::Ui, chat: &Chat) {
     let palette = app.palette;
-    let max = (region.width() - CONVERSATION_MIN).clamp(MIN_WIDTH, MAX_WIDTH);
-    let wanted = app.settings.crm_sidecar_width.clamp(MIN_WIDTH, max);
+    let avail = ui.available_width();
+    let min = MIN_WIDTH.min(avail * 0.5);
+    let max = (avail - 80.0).max(min).min(MAX_WIDTH);
+    let wanted = app.settings.crm_sidecar_width.clamp(min, max);
     let id = egui::Id::new("crm_sidecar_panel");
 
     let response = egui::Panel::right(id)
         .resizable(true)
         .default_size(wanted)
-        .size_range(MIN_WIDTH..=max)
+        .size_range(min..=max)
         .show_separator_line(false)
         .frame(Frame::new().fill(palette.panel).inner_margin(Margin::ZERO))
         .show(ui, |ui| {
@@ -43,49 +38,14 @@ pub fn show(app: &mut App, ui: &mut egui::Ui, chat: &Chat) -> Option<Rect> {
         app.actions.push(Action::SettingsChanged);
     }
 
-    ui.painter().vline(
-        rect.left(),
-        rect.y_range(),
-        Stroke::new(1.0, palette.outline),
+    ui.painter().rect_filled(
+        Rect::from_min_max(
+            pos2(rect.left(), rect.top()),
+            pos2(rect.left() + 1.0, rect.bottom()),
+        ),
+        0.0,
+        palette.outline,
     );
-    None
-}
-
-/// The sidecar panel floating over the right of a conversation too narrow to share,
-/// with a drop shadow, floating on top of bubbles and wallpaper.
-pub fn show_overlay(app: &mut App, ctx: &egui::Context, region: Rect, chat: &Chat) {
-    let palette = app.palette;
-    let width = app
-        .settings
-        .crm_sidecar_width
-        .min(region.width())
-        .max(MIN_WIDTH.min(region.width()));
-    let rect = Rect::from_min_max(pos2(region.right() - width, region.top()), region.max);
-    egui::Area::new(egui::Id::new("crm-sidecar-overlay"))
-        .order(egui::Order::Middle)
-        .fixed_pos(rect.min)
-        .constrain(false)
-        .show(ctx, |ui| {
-            ui.set_clip_rect(rect.expand2(vec2(24.0, 0.0)));
-            Frame::new()
-                .fill(palette.panel)
-                .shadow(egui::epaint::Shadow {
-                    offset: [-4, 0],
-                    blur: 16,
-                    spread: 0,
-                    color: palette.shadow,
-                })
-                .show(ui, |ui| {
-                    ui.set_min_size(rect.size());
-                    ui.set_max_size(rect.size());
-                    render_content(app, ui, chat);
-                });
-            ui.painter().vline(
-                rect.left(),
-                rect.y_range(),
-                Stroke::new(1.0, palette.outline),
-            );
-        });
 }
 
 fn render_content(app: &mut App, ui: &mut egui::Ui, chat: &Chat) {
@@ -93,7 +53,7 @@ fn render_content(app: &mut App, ui: &mut egui::Ui, chat: &Chat) {
     let existing_deal = app.crm_deals.get(&chat.id).cloned();
 
     Frame::new()
-        .inner_margin(Margin::symmetric(14, 10))
+        .inner_margin(Margin::symmetric(10, 8))
         .show(ui, |ui| {
             // Header with Contact info, Kanban shortcut and close button
             render_header(app, ui, &palette, chat);
@@ -137,40 +97,7 @@ fn render_header(app: &mut App, ui: &mut egui::Ui, palette: &Palette, chat: &Cha
     };
 
     ui.horizontal(|ui| {
-        // Contact photo / avatar
-        let (rect, _) = ui.allocate_exact_size(Vec2::splat(32.0), egui::Sense::hover());
-        let picture = app.avatar(&chat.id);
-        super::widgets::paint_avatar(ui, palette, rect, &title, &chat.id, picture.as_deref());
-
-        ui.add_space(4.0);
-
-        // Reserve space for the two buttons on the right: 28px + 28px = 56px + margin = 64px
-        let right_buttons_w = 64.0;
-        let text_w = (ui.available_width() - right_buttons_w - 6.0).max(60.0);
-
-        ui.allocate_ui_with_layout(
-            vec2(text_w, 34.0),
-            Layout::top_down(Align::Min),
-            |ui| {
-                ui.add(
-                    egui::Label::new(
-                        egui::RichText::new(&title)
-                            .font(theme::semibold(13.5))
-                            .color(palette.text),
-                    )
-                    .truncate(),
-                );
-                ui.add(
-                    egui::Label::new(
-                        egui::RichText::new(&subtitle)
-                            .font(theme::regular(11.0))
-                            .color(palette.dim),
-                    )
-                    .truncate(),
-                );
-            },
-        );
-
+        // Right action buttons first: guaranteed to anchor at the right border without clipping
         ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
             // Close button
             if theme::icon_button(ui, Icon::X, 16.0, palette.dim, palette.text, "Fechar painel").clicked() {
@@ -181,6 +108,39 @@ fn render_header(app: &mut App, ui: &mut egui::Ui, palette: &Palette, chat: &Cha
             if theme::icon_button(ui, Icon::ListChecks, 16.0, palette.secondary, palette.accent, "Ver no Funil").clicked() {
                 app.actions.push(Action::ShowDialog(Dialog::Kanban));
             }
+
+            // Contact avatar and titles fill the remaining space on the left
+            ui.with_layout(Layout::left_to_right(Align::Center), |ui| {
+                let (rect, _) = ui.allocate_exact_size(Vec2::splat(32.0), egui::Sense::hover());
+                let picture = app.avatar(&chat.id);
+                super::widgets::paint_avatar(ui, palette, rect, &title, &chat.id, picture.as_deref());
+
+                ui.add_space(4.0);
+
+                let text_w = ui.available_width().max(40.0);
+                ui.allocate_ui_with_layout(
+                    vec2(text_w, 34.0),
+                    Layout::top_down(Align::Min),
+                    |ui| {
+                        ui.add(
+                            egui::Label::new(
+                                egui::RichText::new(&title)
+                                    .font(theme::semibold(13.0))
+                                    .color(palette.text),
+                            )
+                            .truncate(),
+                        );
+                        ui.add(
+                            egui::Label::new(
+                                egui::RichText::new(&subtitle)
+                                    .font(theme::regular(11.0))
+                                    .color(palette.dim),
+                            )
+                            .truncate(),
+                        );
+                    },
+                );
+            });
         });
     });
 }
@@ -236,50 +196,33 @@ fn render_stage_selector(
                             order: 0,
                         });
 
-                        ui.horizontal(|ui| {
-                            let add_lead_btn = egui::Button::new(format!("+ Adicionar como {}", first_col.title))
-                                .fill(palette.accent)
-                                .min_size(vec2((ui.available_width() - 36.0).max(60.0), 28.0));
-                            if ui.add(add_lead_btn).clicked() {
-                                let new_deal = CrmDeal {
-                                    chat_id: chat_id.to_owned(),
-                                    column_id: first_col.id.clone(),
-                                    value_cents: 0,
-                                    notes: String::new(),
-                                    tags: Vec::new(),
-                                    updated_at: crate::util::now(),
-                                };
-                                app.actions.push(Action::SaveCrmDeal(new_deal));
-                            }
-
-                            // Or choose specific stage
-                            egui::ComboBox::from_id_salt("sidecar_pick_initial_stage")
-                                .selected_text("▾")
-                                .width(28.0)
-                                .show_ui(ui, |ui| {
-                                    for col in &columns {
-                                        let dot_color = parse_hex_color(&col.color).unwrap_or(palette.accent);
-                                        ui.horizontal(|ui| {
-                                            let (r, _) = ui.allocate_exact_size(Vec2::splat(8.0), egui::Sense::hover());
-                                            ui.painter().circle_filled(r.center(), 4.0, dot_color);
-                                            if ui.selectable_label(false, &col.title).clicked() {
-                                                let new_deal = CrmDeal {
-                                                    chat_id: chat_id.to_owned(),
-                                                    column_id: col.id.clone(),
-                                                    value_cents: 0,
-                                                    notes: String::new(),
-                                                    tags: Vec::new(),
-                                                    updated_at: crate::util::now(),
-                                                };
-                                                app.actions.push(Action::SaveCrmDeal(new_deal));
-                                            }
-                                        });
-                                    }
-                                });
-                        });
+                        egui::ComboBox::from_id_salt("sidecar_pick_initial_stage")
+                            .selected_text(format!("+ Adicionar ao funil ({})", first_col.title))
+                            .width(ui.available_width() - 4.0)
+                            .show_ui(ui, |ui| {
+                                for col in &columns {
+                                    let dot_color = parse_hex_color(&col.color).unwrap_or(palette.accent);
+                                    ui.horizontal(|ui| {
+                                        let (r, _) = ui.allocate_exact_size(Vec2::splat(8.0), egui::Sense::hover());
+                                        ui.painter().circle_filled(r.center(), 4.0, dot_color);
+                                        if ui.selectable_label(false, &col.title).clicked() {
+                                            let new_deal = CrmDeal {
+                                                chat_id: chat_id.to_owned(),
+                                                column_id: col.id.clone(),
+                                                value_cents: 0,
+                                                notes: String::new(),
+                                                tags: Vec::new(),
+                                                updated_at: crate::util::now(),
+                                            };
+                                            app.actions.push(Action::SaveCrmDeal(new_deal));
+                                        }
+                                    });
+                                }
+                            });
                     }
                     Some(deal) => {
-                        let current_col = columns.iter().find(|c| c.id == deal.column_id);
+                        let current_col = columns.iter().find(|c| c.id == deal.column_id)
+                            .or_else(|| columns.first());
                         let current_title = current_col.map(|c| c.title.as_str()).unwrap_or("Lead");
                         let current_color = current_col
                             .and_then(|c| parse_hex_color(&c.color))
@@ -299,7 +242,7 @@ fn render_stage_selector(
                         // ComboBox Dropdown
                         egui::ComboBox::from_id_salt("sidecar_stage_selector")
                             .selected_text(current_title)
-                            .width(ui.available_width() - 8.0)
+                            .width(ui.available_width() - 4.0)
                             .show_ui(ui, |ui| {
                                 for col in &columns {
                                     let dot_color = parse_hex_color(&col.color).unwrap_or(palette.accent);
@@ -434,21 +377,25 @@ fn render_deal_value(
                         Stroke::new(1.0, palette.surface_hover)
                     };
 
-                    let btn_w = 60.0;
-                    let text_w = (ui.available_width() - btn_w - 10.0).max(60.0);
+                    let (save_clicked, enter_pressed) = ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
+                        let save_clicked = ui.button("Salvar").clicked();
+                        let text_w = (ui.available_width() - 4.0).max(50.0);
 
-                    let response = ui.add(
-                        egui::TextEdit::singleline(&mut val_str)
-                            .hint_text("0,00")
-                            .desired_width(text_w)
-                            .margin(Margin::symmetric(6, 4)),
-                    );
-                    if is_error {
-                        ui.painter().rect_stroke(response.rect, 4.0, stroke, egui::StrokeKind::Inside);
-                    }
-
-                    let save_clicked = ui.button("Salvar").clicked();
-                    let enter_pressed = response.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter));
+                        let mut enter_pressed = false;
+                        ui.with_layout(Layout::left_to_right(Align::Center), |ui| {
+                            let response = ui.add(
+                                egui::TextEdit::singleline(&mut val_str)
+                                    .hint_text("0,00")
+                                    .desired_width(text_w)
+                                    .margin(Margin::symmetric(6, 4)),
+                            );
+                            if is_error {
+                                ui.painter().rect_stroke(response.rect, 4.0, stroke, egui::StrokeKind::Inside);
+                            }
+                            enter_pressed = response.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter));
+                        });
+                        (save_clicked, enter_pressed)
+                    }).inner;
 
                     if save_clicked || enter_pressed {
                         if val_str.trim().is_empty() {
@@ -557,16 +504,21 @@ fn render_tags(
                 let mut new_tag = ui.ctx().data(|d| d.get_temp::<String>(tag_input_id)).unwrap_or_default();
 
                 ui.horizontal(|ui| {
-                    let btn_w = 78.0;
-                    let text_w = (ui.available_width() - btn_w - 6.0).max(60.0);
-                    let text_resp = ui.add(
-                        egui::TextEdit::singleline(&mut new_tag)
-                            .hint_text("+ Nova tag...")
-                            .desired_width(text_w),
-                    );
+                    let (add_clicked, enter_pressed) = ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
+                        let add_clicked = ui.button("+ Adicionar").clicked();
+                        let text_w = (ui.available_width() - 4.0).max(50.0);
+                        let mut enter_pressed = false;
 
-                    let add_clicked = ui.button("+ Adicionar").clicked();
-                    let enter_pressed = text_resp.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter));
+                        ui.with_layout(Layout::left_to_right(Align::Center), |ui| {
+                            let text_resp = ui.add(
+                                egui::TextEdit::singleline(&mut new_tag)
+                                    .hint_text("+ Nova tag...")
+                                    .desired_width(text_w),
+                            );
+                            enter_pressed = text_resp.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter));
+                        });
+                        (add_clicked, enter_pressed)
+                    }).inner;
 
                     if (add_clicked || enter_pressed) && !new_tag.trim().is_empty() {
                         let trimmed = new_tag.trim().to_owned();
@@ -747,17 +699,6 @@ fn render_followups(app: &mut App, ui: &mut egui::Ui, palette: &Palette, chat_id
 
                                 ui.horizontal(|ui| {
                                     let date_str = format_timestamp(f.remind_at);
-                                    let actions_w = 75.0;
-                                    let date_w = (ui.available_width() - actions_w - 6.0).max(60.0);
-
-                                    ui.allocate_ui_with_layout(
-                                        vec2(date_w, 18.0),
-                                        Layout::left_to_right(Align::Center),
-                                        |ui| {
-                                            theme::text(ui, &date_str, theme::regular(10.5), palette.dim);
-                                        },
-                                    );
-
                                     ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
                                         ui.spacing_mut().item_spacing.x = 4.0;
                                         if theme::icon_button(ui, Icon::Trash, 12.0, palette.dim, palette.danger, "Excluir").clicked() {
@@ -773,6 +714,15 @@ fn render_followups(app: &mut App, ui: &mut egui::Ui, palette: &Palette, chat_id
                                                 app.actions.push(Action::SnoozeCrmFollowup { id: f.id.clone(), until: next_day });
                                             }
                                         }
+
+                                        let text_w = ui.available_width().max(40.0);
+                                        ui.allocate_ui_with_layout(
+                                            vec2(text_w, 18.0),
+                                            Layout::left_to_right(Align::Center),
+                                            |ui| {
+                                                theme::text(ui, &date_str, theme::regular(10.5), palette.dim);
+                                            },
+                                        );
                                     });
                                 });
                             });

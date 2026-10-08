@@ -2205,6 +2205,8 @@ impl Worker {
                     // Archives from before group editing do not know who may
                     // edit a group's info; a group we left has nothing to ask.
                     && (chat.info_locked.is_some() || chat.left)
+                    // If description has never been fetched, learn it from WhatsApp.
+                    && (chat.description.is_some() || chat.left)
             });
             if known {
                 return;
@@ -4944,6 +4946,9 @@ impl Worker {
             Command::SetGroupName { chat, name } => self.set_group_name(chat, name),
             Command::SetGroupDescription { chat, description } => {
                 self.set_group_description(chat, description)
+            }
+            Command::FetchGroupInfo(chat) => {
+                self.request_group_info(&chat, true);
             }
             Command::PickGroupPicture(chat) => {
                 if !self.may_edit_group(&chat) {

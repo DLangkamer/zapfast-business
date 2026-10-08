@@ -91,8 +91,29 @@ pub fn show(app: &mut App, ui: &mut egui::Ui) {
 }
 
 fn render_top_bar(app: &mut App, ui: &mut egui::Ui, palette: &Palette) {
-    let total_deals = app.crm_deals.len();
-    let total_value: i64 = app.crm_deals.values().map(|d| d.value_cents).sum();
+    let search_lower = app.crm_search.trim().to_lowercase();
+    let (total_deals, total_value) = {
+        let mut count = 0;
+        let mut val: i64 = 0;
+        for d in app.crm_deals.values() {
+            let is_match = if search_lower.is_empty() {
+                true
+            } else {
+                let contact_name = app
+                    .chat(&d.chat_id)
+                    .map(|c| app.chat_title(c).to_lowercase())
+                    .unwrap_or_else(|| d.chat_id.to_lowercase());
+                contact_name.contains(&search_lower)
+                    || d.tags.iter().any(|t| t.to_lowercase().contains(&search_lower))
+                    || d.notes.to_lowercase().contains(&search_lower)
+            };
+            if is_match {
+                count += 1;
+                val += d.value_cents;
+            }
+        }
+        (count, val)
+    };
 
     let add_deal_id = egui::Id::new(ADD_DEAL_OPEN_ID);
     let add_stage_id = egui::Id::new(ADD_STAGE_OPEN_ID);
@@ -627,10 +648,27 @@ fn render_column(
     col: &CrmColumn,
     search: &str,
 ) {
+    let columns = if app.crm_columns.is_empty() {
+        default_columns()
+    } else {
+        app.crm_columns.clone()
+    };
+    let first_col_id = columns.first().map(|c| c.id.as_str()).unwrap_or("lead");
+    let is_first_col = col.id == first_col_id;
+
     let deals_in_col: Vec<CrmDeal> = app
         .crm_deals
         .values()
-        .filter(|d| d.column_id == col.id)
+        .filter(|d| {
+            if d.column_id == col.id {
+                true
+            } else if is_first_col {
+                // Orphaned or legacy stage deals belong to the initial stage (Lead)
+                !columns.iter().any(|c| c.id == d.column_id)
+            } else {
+                false
+            }
+        })
         .filter(|d| {
             if search.is_empty() {
                 return true;

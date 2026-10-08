@@ -464,6 +464,8 @@ pub enum Command {
         chat: ChatId,
         description: String,
     },
+    /// Requests metadata and description for a group from WhatsApp.
+    FetchGroupInfo(ChatId),
     /// Asks for a picture and makes it the group's photo.
     PickGroupPicture(ChatId),
     /// Sets the group's photo to a JPEG, or removes it with `None`.

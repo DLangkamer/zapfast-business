@@ -467,7 +467,7 @@ impl Archive {
 
     /// Updates the group's description.
     pub fn set_group_description(&self, id: &str, description: Option<&str>) -> Result<()> {
-        let desc = description.filter(|d| !d.trim().is_empty());
+        let desc = description.map(|d| d.trim()).unwrap_or("");
         self.connection.execute(
             "UPDATE chats SET description = ?2 WHERE id = ?1",
             params![id, desc],

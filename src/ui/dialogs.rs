@@ -2784,42 +2784,11 @@ fn render_group_description(
             .fill(palette.surface)
             .corner_radius(CornerRadius::same(theme::RADIUS))
             .stroke(Stroke::new(1.0, palette.surface_hover))
-            .inner_margin(Margin::same(8))
+            .inner_margin(Margin::same(10))
             .show(ui, |ui| {
-                ui.horizontal(|ui| {
-                    let btn_w = if group_editable { 28.0 } else { 0.0 };
-                    let text_w = (ui.available_width() - btn_w).max(40.0);
-
-                    if current_desc.is_empty() {
-                        ui.allocate_ui_with_layout(
-                            vec2(text_w, 18.0),
-                            Layout::left_to_right(Align::Center),
-                            |ui| {
-                                theme::text(
-                                    ui,
-                                    "Nenhuma descrição definida.",
-                                    theme::regular(12.5),
-                                    palette.dim,
-                                );
-                            },
-                        );
-                    } else {
-                        ui.allocate_ui_with_layout(
-                            vec2(text_w, 18.0),
-                            Layout::top_down(Align::Min),
-                            |ui| {
-                                super::widgets::selectable_rich_text(
-                                    ui,
-                                    current_desc,
-                                    theme::regular(13.0),
-                                    palette.text,
-                                );
-                            },
-                        );
-                    }
-
+                ui.horizontal_top(|ui| {
                     if group_editable {
-                        ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
+                        ui.with_layout(Layout::right_to_left(Align::Min), |ui| {
                             let pencil = theme::icon_button(
                                 ui,
                                 Icon::Pencil,
@@ -2836,6 +2805,33 @@ fn render_group_description(
                             }
                         });
                     }
+
+                    ui.vertical(|ui| {
+                        if current_desc.is_empty() {
+                            if chat.description.is_none() {
+                                theme::text(
+                                    ui,
+                                    "Carregando descrição…",
+                                    theme::regular(12.5),
+                                    palette.dim,
+                                );
+                            } else {
+                                theme::text(
+                                    ui,
+                                    "Nenhuma descrição definida.",
+                                    theme::regular(12.5),
+                                    palette.dim,
+                                );
+                            }
+                        } else {
+                            super::widgets::rich_text(
+                                ui,
+                                current_desc,
+                                theme::regular(13.0),
+                                palette.text,
+                            );
+                        }
+                    });
                 });
             });
     }
