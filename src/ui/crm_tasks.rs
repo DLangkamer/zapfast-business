@@ -4,6 +4,15 @@ use crate::app::App;
 use crate::model::{Action, CrmFollowup, CrmTask};
 use crate::theme::{self, Icon};
 use egui::{Align, CornerRadius, Frame, Layout, Margin, Stroke};
+use jiff::civil::Date;
+
+#[derive(Clone, Copy, Default, PartialEq, Eq)]
+enum TaskView {
+    #[default]
+    Today,
+    Tasks,
+    Calendar,
+}
 
 #[derive(Clone)]
 struct TaskDraft {
@@ -11,7 +20,10 @@ struct TaskDraft {
     title: String,
     description: String,
     priority: String,
-    due_days: i64,
+    has_due: bool,
+    due_date: Date,
+    due_hour: u8,
+    due_minute: u8,
     link_chat: bool,
 }
 impl Default for TaskDraft {
@@ -21,7 +33,12 @@ impl Default for TaskDraft {
             title: String::new(),
             description: String::new(),
             priority: "normal".into(),
-            due_days: 1,
+            has_due: true,
+            due_date: crate::util::today()
+                .tomorrow()
+                .unwrap_or_else(|_| crate::util::today()),
+            due_hour: 9,
+            due_minute: 0,
             link_chat: true,
         }
     }
@@ -31,6 +48,8 @@ pub fn show(app: &mut App, ui: &mut egui::Ui) {
     let p = app.palette;
     let now = crate::util::now();
     let draft_id = ui.id().with("crm-task-draft");
+    let view_id = ui.id().with("crm-task-view");
+    let mut view = ui.data_mut(|d| d.get_temp::<TaskView>(view_id).unwrap_or_default());
     let mut draft = ui.data_mut(|d| d.get_temp::<TaskDraft>(draft_id).unwrap_or_default());
     let mut followups: Vec<_> = app
         .crm_followups
@@ -64,13 +83,30 @@ pub fn show(app: &mut App, ui: &mut egui::Ui) {
         p.dim,
     );
     ui.add_space(8.0);
-    ui.horizontal(|ui| {
+    ui.horizontal_wrapped(|ui| {
         summary(ui, &p, "Atrasados", late, late > 0);
         summary(ui, &p, "Tarefas", open, false);
         summary(ui, &p, "Concluídas", done, false);
         summary(ui, &p, "Follow-ups", followups.len(), false);
     });
     ui.separator();
+
+    ui.horizontal_wrapped(|ui| {
+        ui.selectable_value(&mut view, TaskView::Today, "Meu dia");
+        ui.selectable_value(&mut view, TaskView::Tasks, "Tarefas");
+        ui.selectable_value(&mut view, TaskView::Calendar, "Agenda");
+    });
+    ui.data_mut(|d| d.insert_temp(view_id, view));
+    if view == TaskView::Today {
+        show_day(app, ui, crate::util::today(), now, &mut draft);
+        ui.data_mut(|d| d.insert_temp(draft_id, draft));
+        return;
+    }
+    if view == TaskView::Calendar {
+        show_calendar(app, ui, now, &mut draft);
+        ui.data_mut(|d| d.insert_temp(draft_id, draft));
+        return;
+    }
 
     Frame::new()
         .fill(p.surface)
@@ -87,7 +123,7 @@ pub fn show(app: &mut App, ui: &mut egui::Ui) {
                 theme::semibold(13.0),
                 p.text,
             );
-            ui.horizontal(|ui| {
+            ui.horizontal_wrapped(|ui| {
                 ui.add_sized(
                     [260.0, 28.0],
                     egui::TextEdit::singleline(&mut draft.title)
@@ -105,19 +141,19 @@ pub fn show(app: &mut App, ui: &mut egui::Ui) {
                             ui.selectable_value(&mut draft.priority, v.into(), l);
                         }
                     });
-                egui::ComboBox::from_id_salt("task-due")
-                    .selected_text(due_label(draft.due_days))
-                    .show_ui(ui, |ui| {
-                        for (v, l) in [
-                            (-1, "Sem prazo"),
-                            (0, "Hoje"),
-                            (1, "Amanhã"),
-                            (7, "Em 7 dias"),
-                        ] {
-                            ui.selectable_value(&mut draft.due_days, v, l);
-                        }
-                    });
+                ui.checkbox(&mut draft.has_due, "Definir prazo");
             });
+            if draft.has_due {
+                super::dialogs::date_time_picker(
+                    ui,
+                    app.locale,
+                    &p,
+                    "crm-task-due",
+                    &mut draft.due_date,
+                    &mut draft.due_hour,
+                    &mut draft.due_minute,
+                );
+            }
             ui.add_sized(
                 [ui.available_width(), 44.0],
                 egui::TextEdit::multiline(&mut draft.description)
@@ -166,7 +202,14 @@ pub fn show(app: &mut App, ui: &mut egui::Ui) {
                                 .as_ref()
                                 .map_or_else(|| "todo".into(), |x| x.status.clone()),
                             priority: draft.priority.clone(),
-                            due_at: (draft.due_days >= 0).then_some(now + draft.due_days * 86_400),
+                            due_at: draft.has_due.then(|| {
+                                crate::util::to_unix_seconds(
+                                    draft.due_date,
+                                    draft.due_hour,
+                                    draft.due_minute,
+                                )
+                                .unwrap_or(now)
+                            }),
                             completed_at: old.as_ref().and_then(|x| x.completed_at),
                             created_at: old.as_ref().map_or(now, |x| x.created_at),
                             updated_at: now,
@@ -228,6 +271,172 @@ fn summary(ui: &mut egui::Ui, p: &crate::theme::Palette, title: &str, value: usi
         });
 }
 
+fn show_day(app: &mut App, ui: &mut egui::Ui, date: Date, now: i64, draft: &mut TaskDraft) {
+    let p = app.palette;
+    ui.add_space(4.0);
+    theme::text(
+        ui,
+        &crate::util::long_date(app.locale, date),
+        theme::semibold(15.0),
+        p.text,
+    );
+    let tasks: Vec<_> = app
+        .crm_tasks
+        .iter()
+        .filter(|task| {
+            task.due_at
+                .and_then(crate::util::local_datetime)
+                .is_some_and(|(due, _, _)| due == date)
+        })
+        .cloned()
+        .collect();
+    let followups: Vec<_> = app
+        .crm_followups
+        .iter()
+        .filter(|item| {
+            !item.done
+                && crate::util::local_datetime(item.remind_at)
+                    .is_some_and(|(due, _, _)| due == date)
+        })
+        .cloned()
+        .collect();
+    ui.add_space(6.0);
+    egui::ScrollArea::vertical()
+        .max_height(470.0)
+        .show(ui, |ui| {
+            if tasks.is_empty() && followups.is_empty() {
+                ui.add_space(28.0);
+                ui.vertical_centered(|ui| {
+                    theme::icon(ui, Icon::CircleCheck, 30.0, p.accent);
+                    theme::text(
+                        ui,
+                        "Nenhum compromisso neste dia",
+                        theme::semibold(14.0),
+                        p.text,
+                    );
+                    theme::text(
+                        ui,
+                        "Use a aba Tarefas para criar um item com data e hora.",
+                        theme::regular(12.0),
+                        p.dim,
+                    );
+                });
+            }
+            for task in tasks {
+                task_row(app, ui, &task, now, draft);
+                ui.add_space(6.0);
+            }
+            for item in followups {
+                followup_row(app, ui, &item, now);
+                ui.add_space(6.0);
+            }
+        });
+    if draft.id.is_some() {
+        ui.data_mut(|d| d.insert_temp(ui.id().with("crm-task-view"), TaskView::Tasks));
+    }
+}
+
+fn show_calendar(app: &mut App, ui: &mut egui::Ui, now: i64, draft: &mut TaskDraft) {
+    let p = app.palette;
+    let month_id = ui.id().with("crm-agenda-month");
+    let selected_id = ui.id().with("crm-agenda-selected");
+    let mut month = ui
+        .data_mut(|d| d.get_temp::<Date>(month_id))
+        .unwrap_or_else(|| crate::util::today().first_of_month());
+    let mut selected = ui
+        .data_mut(|d| d.get_temp::<Date>(selected_id))
+        .unwrap_or_else(crate::util::today);
+
+    ui.horizontal(|ui| {
+        if ui.button("‹").on_hover_text("Mês anterior").clicked() {
+            month = crate::util::month_step(month, -1);
+            selected = month;
+        }
+        theme::text(
+            ui,
+            &crate::util::month_heading(app.locale, month),
+            theme::semibold(15.0),
+            p.text,
+        );
+        if ui.button("›").on_hover_text("Próximo mês").clicked() {
+            month = crate::util::month_step(month, 1);
+            selected = month;
+        }
+        if ui.small_button("Hoje").clicked() {
+            selected = crate::util::today();
+            month = selected.first_of_month();
+        }
+    });
+    ui.data_mut(|d| {
+        d.insert_temp(month_id, month);
+        d.insert_temp(selected_id, selected);
+    });
+
+    let headings = crate::util::weekday_headings(app.locale);
+    let cell_width = ((ui.available_width() - 24.0) / 7.0).clamp(36.0, 88.0);
+    egui::Grid::new("crm-agenda-grid")
+        .num_columns(7)
+        .spacing([4.0, 4.0])
+        .show(ui, |ui| {
+            for heading in headings {
+                ui.add_sized(
+                    [cell_width, 18.0],
+                    egui::Label::new(egui::RichText::new(heading).color(p.dim).strong()),
+                );
+            }
+            ui.end_row();
+            let first = month.first_of_month();
+            let lead = usize::try_from(first.weekday().to_monday_zero_offset()).unwrap_or(0);
+            let days = first.days_in_month() as usize;
+            let cells = ((lead + days + 6) / 7) * 7;
+            for index in 0..cells {
+                if index < lead || index >= lead + days {
+                    ui.add_sized([cell_width, 48.0], egui::Label::new(""));
+                } else {
+                    let day = (index - lead + 1) as i8;
+                    if let Ok(date) = Date::new(month.year(), month.month(), day) {
+                        let task_count = app
+                            .crm_tasks
+                            .iter()
+                            .filter(|task| {
+                                task.status != "done"
+                                    && task
+                                        .due_at
+                                        .and_then(crate::util::local_datetime)
+                                        .is_some_and(|(d, _, _)| d == date)
+                            })
+                            .count();
+                        let followup_count = app
+                            .crm_followups
+                            .iter()
+                            .filter(|item| {
+                                !item.done
+                                    && crate::util::local_datetime(item.remind_at)
+                                        .is_some_and(|(d, _, _)| d == date)
+                            })
+                            .count();
+                        let count = task_count + followup_count;
+                        let label = if count == 0 {
+                            day.to_string()
+                        } else {
+                            format!("{day}\n{count} item{}", if count == 1 { "" } else { "s" })
+                        };
+                        let button = egui::Button::new(label).selected(selected == date);
+                        if ui.add_sized([cell_width, 48.0], button).clicked() {
+                            selected = date;
+                        }
+                    }
+                }
+                if (index + 1) % 7 == 0 {
+                    ui.end_row();
+                }
+            }
+        });
+    ui.data_mut(|d| d.insert_temp(selected_id, selected));
+    ui.separator();
+    show_day(app, ui, selected, now, draft);
+}
+
 fn task_row(app: &mut App, ui: &mut egui::Ui, task: &CrmTask, now: i64, draft: &mut TaskDraft) {
     let p = app.palette;
     let done = task.status == "done";
@@ -280,9 +489,14 @@ fn task_row(app: &mut App, ui: &mut egui::Ui, task: &CrmTask, now: i64, draft: &
                         draft.title = task.title.clone();
                         draft.description = task.description.clone();
                         draft.priority = task.priority.clone();
-                        draft.due_days = task
-                            .due_at
-                            .map_or(-1, |d| ((d - now).max(0) + 86_399) / 86_400);
+                        draft.has_due = task.due_at.is_some();
+                        if let Some((date, hour, minute)) =
+                            task.due_at.and_then(crate::util::local_datetime)
+                        {
+                            draft.due_date = date;
+                            draft.due_hour = hour;
+                            draft.due_minute = minute;
+                        }
                         draft.link_chat = task.chat_id.is_some();
                     }
                     if ui
@@ -372,15 +586,6 @@ fn priority_label(v: &str) -> &str {
         "high" => "Alta",
         "urgent" => "Urgente",
         _ => "Normal",
-    }
-}
-fn due_label(v: i64) -> &'static str {
-    match v {
-        -1 => "Sem prazo",
-        0 => "Hoje",
-        1 => "Amanhã",
-        7 => "Em 7 dias",
-        _ => "Prazo definido",
     }
 }
 fn new_task_id() -> String {

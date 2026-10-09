@@ -11,6 +11,8 @@ keeps future upstream merges small.
 - Create, edit, complete/reopen, delete and open the linked conversation from the task center.
 - CRM backup version 2 includes tasks and still accepts older backups without a `tasks` field.
 - The task model is the shared base for the planned agenda and project views.
+- The task center now has My day, task list and responsive monthly agenda views.
+- Task deadlines use an exact local calendar date and time instead of elapsed-hour shortcuts.
 
 ## What exists in 0.19.10
 
@@ -104,9 +106,9 @@ work inbox. Later tables and screens should keep the same hierarchy:
 ## Delivery order
 
 1. Keep CRM, quick replies and reminders isolated per linked WhatsApp account.
-2. Expand the work inbox and add CRUD for tasks.
+2. Expand the work inbox and add CRUD for tasks. **Completed.**
 3. Add projects and link them to contacts/deals.
-4. Add local calendar views and meeting/event CRUD.
+4. Add local calendar views and meeting/event CRUD. **Task and follow-up calendar delivered; meeting/event records remain.**
 5. Add optional Fluxo and calendar-provider adapters with explicit credentials,
    field mapping and audit logs.
 6. Add reports, assignment and team synchronization after the local data model
