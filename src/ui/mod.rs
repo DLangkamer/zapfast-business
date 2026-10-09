@@ -7,6 +7,7 @@ pub mod conversation;
 pub mod crm_metrics;
 pub mod crm_sidecar;
 pub mod crm_tasks;
+pub mod crm_workspace;
 pub mod dialogs;
 pub(crate) mod focus;
 pub mod image_preview;
@@ -77,11 +78,17 @@ pub fn show(app: &mut App, ui: &mut egui::Ui) {
     if !macos {
         banner(app, ui);
     }
-    match app.sidebar_mode() {
-        SidebarDisplayMode::Expanded => chats::show(app, ui),
-        SidebarDisplayMode::CollapsedIconsOnly => chats::compact_show(app, ui),
+    if app.page != Page::Crm {
+        match app.sidebar_mode() {
+            SidebarDisplayMode::Expanded => chats::show(app, ui),
+            SidebarDisplayMode::CollapsedIconsOnly => chats::compact_show(app, ui),
+        }
     }
-    let search_overlay = pane::show(app, ui);
+    let search_overlay = if app.page == Page::Crm {
+        None
+    } else {
+        pane::show(app, ui)
+    };
     if app.show_crm_sidecar && app.page == Page::Chats {
         if let Some(chat) = app.current_chat().cloned() {
             crm_sidecar::show(app, ui, &chat);
@@ -92,6 +99,7 @@ pub fn show(app: &mut App, ui: &mut egui::Ui) {
         .show(ui, |ui| match app.page {
             Page::Settings => settings::show(app, ui),
             Page::Chats => conversation::show(app, ui),
+            Page::Crm => crm_workspace::show(app, ui),
             Page::Wallpaper => settings::wallpaper_show(app, ui),
         });
     if let Some(region) = search_overlay {

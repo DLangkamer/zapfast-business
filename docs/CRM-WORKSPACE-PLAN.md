@@ -4,7 +4,7 @@ This document records the product direction and the account-isolation rule for
 the Business-only CRM features. It complements `BUSINESS-MAINTENANCE.md` and
 keeps future upstream merges small.
 
-## Implemented foundation after 0.19.11
+## Implemented foundation through 0.20.0
 
 - Account-scoped persistent CRM tasks stored in the encrypted archive.
 - Task title, description, priority, due date, completion state and optional chat link.
@@ -13,6 +13,10 @@ keeps future upstream merges small.
 - The task model is the shared base for the planned agenda and project views.
 - The task center now has My day, task list and responsive monthly agenda views.
 - Task deadlines use an exact local calendar date and time instead of elapsed-hour shortcuts.
+- A full-window CRM workspace now separates My day, Projects, Tasks and the commercial funnel from chat reading.
+- Account-scoped projects can reference one or more conversations or groups by id without copying messages.
+- Existing tasks can be attached to and removed from projects; deleting a project preserves its tasks.
+- CRM backup version 3 includes projects and chat links while remaining compatible with older backups.
 
 ## What exists in 0.19.10
 
@@ -59,7 +63,7 @@ contact or removing a deal from the funnel must not silently delete tasks.
 
 ### Projects
 
-`crm_projects` should represent delivery after a sale. A project can link one
+`crm_projects` represents delivery after a sale. A project can link one
 or more WhatsApp chats and contain:
 
 - client and responsible person;
@@ -107,7 +111,7 @@ work inbox. Later tables and screens should keep the same hierarchy:
 
 1. Keep CRM, quick replies and reminders isolated per linked WhatsApp account.
 2. Expand the work inbox and add CRUD for tasks. **Completed.**
-3. Add projects and link them to contacts/deals.
+3. Add projects and link them to conversations/groups and tasks. **First local project workspace completed.**
 4. Add local calendar views and meeting/event CRUD. **Task and follow-up calendar delivered; meeting/event records remain.**
 5. Add optional Fluxo and calendar-provider adapters with explicit credentials,
    field mapping and audit logs.

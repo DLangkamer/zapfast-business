@@ -45,10 +45,20 @@ impl Default for TaskDraft {
 }
 
 pub fn show(app: &mut App, ui: &mut egui::Ui) {
+    show_inner(app, ui, true);
+}
+
+/// Draws the task center as part of the full CRM page instead of a modal.
+pub fn show_workspace(app: &mut App, ui: &mut egui::Ui) {
+    show_inner(app, ui, false);
+}
+
+fn show_inner(app: &mut App, ui: &mut egui::Ui, modal: bool) {
     let p = app.palette;
     let now = crate::util::now();
-    let draft_id = ui.id().with("crm-task-draft");
-    let view_id = ui.id().with("crm-task-view");
+    let account_id = app.id.as_str().to_owned();
+    let draft_id = ui.id().with(("crm-task-draft", &account_id));
+    let view_id = ui.id().with(("crm-task-view", &account_id));
     let mut view = ui.data_mut(|d| d.get_temp::<TaskView>(view_id).unwrap_or_default());
     let mut draft = ui.data_mut(|d| d.get_temp::<TaskDraft>(draft_id).unwrap_or_default());
     let mut followups: Vec<_> = app
@@ -70,11 +80,13 @@ pub fn show(app: &mut App, ui: &mut egui::Ui) {
     ui.horizontal(|ui| {
         theme::icon(ui, Icon::Bell, 20.0, p.accent);
         theme::text(ui, "Central de tarefas", theme::bold(18.0), p.text);
-        ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-            if theme::icon_button(ui, Icon::X, 16.0, p.dim, p.text, "Fechar").clicked() {
-                app.actions.push(Action::CloseDialog);
-            }
-        });
+        if modal {
+            ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
+                if theme::icon_button(ui, Icon::X, 16.0, p.dim, p.text, "Fechar").clicked() {
+                    app.actions.push(Action::CloseDialog);
+                }
+            });
+        }
     });
     theme::text(
         ui,
@@ -332,14 +344,21 @@ fn show_day(app: &mut App, ui: &mut egui::Ui, date: Date, now: i64, draft: &mut 
             }
         });
     if draft.id.is_some() {
-        ui.data_mut(|d| d.insert_temp(ui.id().with("crm-task-view"), TaskView::Tasks));
+        let account_id = app.id.as_str().to_owned();
+        ui.data_mut(|d| {
+            d.insert_temp(
+                ui.id().with(("crm-task-view", &account_id)),
+                TaskView::Tasks,
+            )
+        });
     }
 }
 
 fn show_calendar(app: &mut App, ui: &mut egui::Ui, now: i64, draft: &mut TaskDraft) {
     let p = app.palette;
-    let month_id = ui.id().with("crm-agenda-month");
-    let selected_id = ui.id().with("crm-agenda-selected");
+    let account_id = app.id.as_str().to_owned();
+    let month_id = ui.id().with(("crm-agenda-month", &account_id));
+    let selected_id = ui.id().with(("crm-agenda-selected", &account_id));
     let mut month = ui
         .data_mut(|d| d.get_temp::<Date>(month_id))
         .unwrap_or_else(|| crate::util::today().first_of_month());
@@ -374,7 +393,7 @@ fn show_calendar(app: &mut App, ui: &mut egui::Ui, now: i64, draft: &mut TaskDra
 
     let headings = crate::util::weekday_headings(app.locale);
     let cell_width = ((ui.available_width() - 24.0) / 7.0).clamp(36.0, 88.0);
-    egui::Grid::new("crm-agenda-grid")
+    egui::Grid::new(("crm-agenda-grid", &account_id))
         .num_columns(7)
         .spacing([4.0, 4.0])
         .show(ui, |ui| {

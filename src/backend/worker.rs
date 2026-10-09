@@ -1201,19 +1201,22 @@ impl Worker {
             self.archive.crm_deals(),
             self.archive.crm_followups(),
             self.archive.crm_tasks(),
+            self.archive.crm_projects(),
         ) {
-            (Ok(columns), Ok(deals), Ok(followups), Ok(tasks)) => {
+            (Ok(columns), Ok(deals), Ok(followups), Ok(tasks), Ok(projects)) => {
                 self.emit(Event::CrmData {
                     columns,
                     deals,
                     followups,
                     tasks,
+                    projects,
                 });
             }
-            (Err(err), _, _, _)
-            | (_, Err(err), _, _)
-            | (_, _, Err(err), _)
-            | (_, _, _, Err(err)) => {
+            (Err(err), _, _, _, _)
+            | (_, Err(err), _, _, _)
+            | (_, _, Err(err), _, _)
+            | (_, _, _, Err(err), _)
+            | (_, _, _, _, Err(err)) => {
                 log::warn!("could not list crm data: {err}");
             }
         }
@@ -5929,6 +5932,18 @@ impl Worker {
             Command::DeleteCrmTask(id) => {
                 if let Err(e) = self.archive.delete_crm_task(&id) {
                     self.emit(Event::Error(format!("Erro ao excluir tarefa: {e}")));
+                }
+                self.emit_crm_data();
+            }
+            Command::SaveCrmProject(project) => {
+                if let Err(e) = self.archive.upsert_crm_project(&project) {
+                    self.emit(Event::Error(format!("Erro ao salvar projeto: {e}")));
+                }
+                self.emit_crm_data();
+            }
+            Command::DeleteCrmProject(id) => {
+                if let Err(e) = self.archive.delete_crm_project(&id) {
+                    self.emit(Event::Error(format!("Erro ao excluir projeto: {e}")));
                 }
                 self.emit_crm_data();
             }

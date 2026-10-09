@@ -182,8 +182,7 @@ fn header(app: &mut App, ui: &mut egui::Ui) {
                         )
                         .clicked()
                         {
-                            app.actions
-                                .push(Action::ShowDialog(crate::model::Dialog::CrmTasks));
+                            app.actions.push(Action::Open(Page::Crm));
                         }
                         if theme::icon_button(
                             ui,

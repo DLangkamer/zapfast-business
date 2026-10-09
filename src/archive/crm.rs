@@ -5,7 +5,7 @@
 use rusqlite::params;
 
 use super::{Archive, Result};
-use crate::model::{CrmBackup, CrmColumn, CrmDeal, CrmFollowup, CrmTask};
+use crate::model::{CrmBackup, CrmColumn, CrmDeal, CrmFollowup, CrmProject, CrmTask};
 
 pub const SCHEMA: &str = "
 CREATE TABLE IF NOT EXISTS crm_columns (
@@ -51,6 +51,28 @@ CREATE TABLE IF NOT EXISTS crm_tasks (
 
 CREATE INDEX IF NOT EXISTS idx_crm_tasks_status_due ON crm_tasks (status, due_at);
 CREATE INDEX IF NOT EXISTS idx_crm_tasks_chat ON crm_tasks (chat_id);
+
+CREATE TABLE IF NOT EXISTS crm_projects (
+    id TEXT PRIMARY KEY,
+    name TEXT NOT NULL,
+    description TEXT NOT NULL DEFAULT '',
+    kind TEXT NOT NULL DEFAULT 'client',
+    status TEXT NOT NULL DEFAULT 'active',
+    color TEXT NOT NULL DEFAULT '#00a884',
+    icon TEXT NOT NULL DEFAULT 'briefcase',
+    start_at INTEGER,
+    due_at INTEGER,
+    created_at INTEGER NOT NULL,
+    updated_at INTEGER NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS crm_project_chats (
+    project_id TEXT NOT NULL,
+    chat_id TEXT NOT NULL,
+    PRIMARY KEY (project_id, chat_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_crm_project_chats_chat ON crm_project_chats (chat_id);
 ";
 
 impl Archive {
@@ -359,24 +381,103 @@ impl Archive {
             > 0)
     }
 
+    pub fn crm_projects(&self) -> Result<Vec<CrmProject>> {
+        let mut statement = self.connection.prepare(
+            "SELECT id, name, description, kind, status, color, icon, start_at,
+                    due_at, created_at, updated_at
+             FROM crm_projects ORDER BY CASE status WHEN 'active' THEN 0 ELSE 1 END,
+                    updated_at DESC, name ASC",
+        )?;
+        let rows = statement.query_map([], |row| {
+            Ok(CrmProject {
+                id: row.get(0)?,
+                name: row.get(1)?,
+                description: row.get(2)?,
+                kind: row.get(3)?,
+                status: row.get(4)?,
+                color: row.get(5)?,
+                icon: row.get(6)?,
+                start_at: row.get(7)?,
+                due_at: row.get(8)?,
+                created_at: row.get(9)?,
+                updated_at: row.get(10)?,
+                chat_ids: Vec::new(),
+            })
+        })?;
+        let mut projects = rows.collect::<std::result::Result<Vec<_>, _>>()?;
+        let mut chats = self.connection.prepare(
+            "SELECT chat_id FROM crm_project_chats WHERE project_id = ?1 ORDER BY rowid",
+        )?;
+        for project in &mut projects {
+            project.chat_ids = chats
+                .query_map(params![project.id], |row| row.get(0))?
+                .collect::<std::result::Result<Vec<_>, _>>()?;
+        }
+        Ok(projects)
+    }
+
+    pub fn upsert_crm_project(&self, project: &CrmProject) -> Result<()> {
+        self.connection.execute(
+            "INSERT INTO crm_projects
+             (id, name, description, kind, status, color, icon, start_at, due_at, created_at, updated_at)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)
+             ON CONFLICT(id) DO UPDATE SET name=excluded.name,
+                description=excluded.description, kind=excluded.kind,
+                status=excluded.status, color=excluded.color, icon=excluded.icon,
+                start_at=excluded.start_at, due_at=excluded.due_at,
+                updated_at=excluded.updated_at",
+            params![project.id, project.name, project.description, project.kind,
+                project.status, project.color, project.icon, project.start_at,
+                project.due_at, project.created_at, project.updated_at],
+        )?;
+        self.connection.execute(
+            "DELETE FROM crm_project_chats WHERE project_id = ?1",
+            params![project.id],
+        )?;
+        for chat_id in &project.chat_ids {
+            self.connection.execute(
+                "INSERT OR IGNORE INTO crm_project_chats (project_id, chat_id) VALUES (?1, ?2)",
+                params![project.id, chat_id],
+            )?;
+        }
+        Ok(())
+    }
+
+    pub fn delete_crm_project(&self, id: &str) -> Result<bool> {
+        self.connection.execute(
+            "UPDATE crm_tasks SET project_id = NULL, updated_at = strftime('%s','now') WHERE project_id = ?1",
+            params![id],
+        )?;
+        self.connection.execute(
+            "DELETE FROM crm_project_chats WHERE project_id = ?1",
+            params![id],
+        )?;
+        Ok(self
+            .connection
+            .execute("DELETE FROM crm_projects WHERE id = ?1", params![id])?
+            > 0)
+    }
+
     /// Exports all CRM pipeline columns, contact deals, notes, tags, and follow-ups to a portable backup struct.
     pub fn export_crm_backup(&self) -> Result<CrmBackup> {
         let columns = self.crm_columns()?;
         let deals = self.crm_deals()?;
         let followups = self.crm_followups()?;
         let tasks = self.crm_tasks()?;
+        let projects = self.crm_projects()?;
         let now = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
             .unwrap_or_default()
             .as_secs() as i64;
         Ok(CrmBackup {
-            version: 2,
+            version: 3,
             exported_at: now,
             account_id: None,
             columns,
             deals,
             followups,
             tasks,
+            projects,
         })
     }
 
@@ -395,6 +496,9 @@ impl Archive {
             }
             for task in &backup.tasks {
                 self.upsert_crm_task(task)?;
+            }
+            for project in &backup.projects {
+                self.upsert_crm_project(project)?;
             }
             Ok(())
         })();
@@ -525,10 +629,49 @@ mod tests {
         assert_eq!(archive.crm_tasks().unwrap()[0].status, "done");
 
         let backup = archive.export_crm_backup().unwrap();
-        assert_eq!(backup.version, 2);
+        assert_eq!(backup.version, 3);
         assert_eq!(backup.tasks, vec![task]);
 
         assert!(archive.delete_crm_task("task_123").unwrap());
         assert!(archive.crm_tasks().unwrap().is_empty());
+    }
+
+    #[test]
+    fn crm_project_keeps_chat_links_and_detaches_tasks_when_deleted() {
+        let archive = Archive::in_memory().unwrap();
+        let project = CrmProject {
+            id: "project_123".to_owned(),
+            name: "Implantação".to_owned(),
+            description: "Projeto do grupo do cliente".to_owned(),
+            kind: "client".to_owned(),
+            status: "active".to_owned(),
+            color: "#00a884".to_owned(),
+            icon: "briefcase".to_owned(),
+            start_at: Some(1700000000),
+            due_at: None,
+            created_at: 1700000000,
+            updated_at: 1700000000,
+            chat_ids: vec!["120363000000000000@g.us".to_owned()],
+        };
+        archive.upsert_crm_project(&project).unwrap();
+        assert_eq!(archive.crm_projects().unwrap(), vec![project.clone()]);
+
+        let task = CrmTask {
+            id: "task_project".to_owned(),
+            chat_id: None,
+            project_id: Some(project.id.clone()),
+            title: "Preparar briefing".to_owned(),
+            description: String::new(),
+            status: "todo".to_owned(),
+            priority: "normal".to_owned(),
+            due_at: None,
+            completed_at: None,
+            created_at: 1700000000,
+            updated_at: 1700000000,
+        };
+        archive.upsert_crm_task(&task).unwrap();
+        assert!(archive.delete_crm_project(&project.id).unwrap());
+        assert!(archive.crm_projects().unwrap().is_empty());
+        assert_eq!(archive.crm_tasks().unwrap()[0].project_id, None);
     }
 }

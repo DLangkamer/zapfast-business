@@ -166,6 +166,25 @@ pub struct CrmTask {
     pub updated_at: i64,
 }
 
+/// A CRM project owned by one linked WhatsApp account.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct CrmProject {
+    pub id: String,
+    pub name: String,
+    pub description: String,
+    pub kind: String,
+    pub status: String,
+    pub color: String,
+    pub icon: String,
+    pub start_at: Option<i64>,
+    pub due_at: Option<i64>,
+    pub created_at: i64,
+    pub updated_at: i64,
+    /// Conversations and groups connected to this project. No message content is copied.
+    #[serde(default)]
+    pub chat_ids: Vec<ChatId>,
+}
+
 /// Portable CRM backup structure for machine migration and data retention.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct CrmBackup {
@@ -177,6 +196,8 @@ pub struct CrmBackup {
     pub followups: Vec<CrmFollowup>,
     #[serde(default)]
     pub tasks: Vec<CrmTask>,
+    #[serde(default)]
+    pub projects: Vec<CrmProject>,
 }
 
 /// Chat-list filter chosen from the chips under the search field.
@@ -1084,6 +1105,7 @@ impl Contact {
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Page {
     Chats,
+    Crm,
     Settings,
     Wallpaper,
 }
@@ -1802,6 +1824,8 @@ pub enum Action {
     },
     SaveCrmTask(CrmTask),
     DeleteCrmTask(String),
+    SaveCrmProject(CrmProject),
+    DeleteCrmProject(String),
     ExportCrmBackup(std::path::PathBuf),
     ImportCrmBackup(std::path::PathBuf),
     PickExportCrmBackup,

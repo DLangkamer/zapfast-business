@@ -2470,11 +2470,13 @@ impl App {
                 deals,
                 followups,
                 tasks,
+                projects,
             } => {
                 self.crm_columns = columns;
                 self.crm_deals = deals.into_iter().map(|d| (d.chat_id.clone(), d)).collect();
                 self.crm_followups = followups;
                 self.crm_tasks = tasks;
+                self.crm_projects = projects;
             }
             Event::ScheduledMessages(messages) => {
                 self.scheduled_messages = messages;
@@ -5540,6 +5542,12 @@ impl App {
             Action::DeleteCrmTask(id) => {
                 self.backend.send(Command::DeleteCrmTask(id));
             }
+            Action::SaveCrmProject(project) => {
+                self.backend.send(Command::SaveCrmProject(project));
+            }
+            Action::DeleteCrmProject(id) => {
+                self.backend.send(Command::DeleteCrmProject(id));
+            }
             Action::ExportCrmBackup(path) => {
                 self.backend.send(Command::ExportCrmBackup(path));
             }
@@ -7382,6 +7390,20 @@ mod tests {
                     created_at: 1,
                     updated_at: 1,
                 }],
+                projects: vec![crate::model::CrmProject {
+                    id: "work-project".to_owned(),
+                    name: "Projeto comercial".to_owned(),
+                    description: String::new(),
+                    kind: "client".to_owned(),
+                    status: "active".to_owned(),
+                    color: "#00a884".to_owned(),
+                    icon: "briefcase".to_owned(),
+                    start_at: None,
+                    due_at: None,
+                    created_at: 1,
+                    updated_at: 1,
+                    chat_ids: Vec::new(),
+                }],
             })
             .unwrap();
         events
@@ -7398,10 +7420,12 @@ mod tests {
         assert!(app.accounts[0].quick_replies.is_empty());
         assert!(app.accounts[0].crm_followups.is_empty());
         assert!(app.accounts[0].crm_tasks.is_empty());
+        assert!(app.accounts[0].crm_projects.is_empty());
         assert!(app.accounts[0].broadcast_lists.is_empty());
         assert_eq!(app.accounts[1].quick_replies[0].id, "work-reply");
         assert_eq!(app.accounts[1].crm_followups[0].id, "work-followup");
         assert_eq!(app.accounts[1].crm_tasks[0].id, "work-task");
+        assert_eq!(app.accounts[1].crm_projects[0].id, "work-project");
         assert_eq!(app.accounts[1].broadcast_lists[0].id, "work-list");
     }
 
