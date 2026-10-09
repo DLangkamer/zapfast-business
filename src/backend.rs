@@ -357,6 +357,8 @@ pub enum Command {
         id: String,
         until: i64,
     },
+    SaveCrmTask(crate::model::CrmTask),
+    DeleteCrmTask(String),
     ExportCrmBackup(PathBuf),
     ImportCrmBackup(PathBuf),
     PickExportCrmBackup,
@@ -828,6 +830,7 @@ pub enum Event {
         columns: Vec<crate::model::CrmColumn>,
         deals: Vec<crate::model::CrmDeal>,
         followups: Vec<crate::model::CrmFollowup>,
+        tasks: Vec<crate::model::CrmTask>,
     },
     ScheduledMessages(Vec<crate::archive::ScheduledMessage>),
     /// Unsent text stored for each chat, sent once at startup.

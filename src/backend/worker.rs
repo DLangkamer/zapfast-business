@@ -1200,15 +1200,20 @@ impl Worker {
             self.archive.crm_columns(),
             self.archive.crm_deals(),
             self.archive.crm_followups(),
+            self.archive.crm_tasks(),
         ) {
-            (Ok(columns), Ok(deals), Ok(followups)) => {
+            (Ok(columns), Ok(deals), Ok(followups), Ok(tasks)) => {
                 self.emit(Event::CrmData {
                     columns,
                     deals,
                     followups,
+                    tasks,
                 });
             }
-            (Err(err), _, _) | (_, Err(err), _) | (_, _, Err(err)) => {
+            (Err(err), _, _, _)
+            | (_, Err(err), _, _)
+            | (_, _, Err(err), _)
+            | (_, _, _, Err(err)) => {
                 log::warn!("could not list crm data: {err}");
             }
         }
@@ -1227,11 +1232,7 @@ impl Worker {
             });
         let phone = crate::model::phone_of(target);
         let first_name = name.as_deref().map(crate::variables::extract_first_name);
-        let ctx = crate::variables::ContactContext::new(
-            name.as_deref(),
-            first_name,
-            phone,
-        );
+        let ctx = crate::variables::ContactContext::new(name.as_deref(), first_name, phone);
         crate::variables::resolve_template(template, &ctx)
     }
 
@@ -1254,9 +1255,9 @@ impl Worker {
                     if i == 0 && send_at.is_none() {
                         self.send_text(target, resolved, None, Vec::new());
                     } else {
-                        let _ = self
-                            .archive
-                            .schedule_text(&target, &resolved, &[], None, target_time);
+                        let _ =
+                            self.archive
+                                .schedule_text(&target, &resolved, &[], None, target_time);
                     }
                 }
                 crate::model::BulkDispatchContent::Voice(samples) => {
@@ -4353,9 +4354,7 @@ impl Worker {
                 );
             }
             for revoked in chat.revoked {
-                let _ = self
-                    .archive
-                    .mark_revoked(&id, &revoked);
+                let _ = self.archive.mark_revoked(&id, &revoked);
             }
             if (metadata || existing.is_none())
                 && let Some(snapshot_unread) = chat.unread
@@ -5921,33 +5920,46 @@ impl Worker {
                 }
                 self.emit_crm_data();
             }
-            Command::ExportCrmBackup(path) => {
-                match self.archive.export_crm_backup() {
-                    Ok(backup) => match serde_json::to_string_pretty(&backup) {
-                        Ok(json) => match std::fs::write(&path, json) {
-                            Ok(_) => self.emit(Event::Info(format!("Backup do CRM exportado: {}", path.display()))),
-                            Err(e) => self.emit(Event::Error(format!("Erro ao salvar backup: {e}"))),
-                        },
-                        Err(e) => self.emit(Event::Error(format!("Erro ao gerar JSON: {e}"))),
-                    },
-                    Err(e) => self.emit(Event::Error(format!("Erro ao exportar dados do CRM: {e}"))),
+            Command::SaveCrmTask(task) => {
+                if let Err(e) = self.archive.upsert_crm_task(&task) {
+                    self.emit(Event::Error(format!("Erro ao salvar tarefa: {e}")));
                 }
+                self.emit_crm_data();
             }
-            Command::ImportCrmBackup(path) => {
-                match std::fs::read_to_string(&path) {
-                    Ok(json) => match serde_json::from_str::<crate::model::CrmBackup>(&json) {
-                        Ok(backup) => match self.archive.import_crm_backup(&backup) {
-                            Ok(_) => {
-                                self.emit_crm_data();
-                                self.emit(Event::Info("Backup do CRM importado com sucesso!".into()));
-                            }
-                            Err(e) => self.emit(Event::Error(format!("Erro ao importar dados no banco: {e}"))),
-                        },
-                        Err(e) => self.emit(Event::Error(format!("Arquivo de backup inválido: {e}"))),
-                    },
-                    Err(e) => self.emit(Event::Error(format!("Erro ao ler arquivo de backup: {e}"))),
+            Command::DeleteCrmTask(id) => {
+                if let Err(e) = self.archive.delete_crm_task(&id) {
+                    self.emit(Event::Error(format!("Erro ao excluir tarefa: {e}")));
                 }
+                self.emit_crm_data();
             }
+            Command::ExportCrmBackup(path) => match self.archive.export_crm_backup() {
+                Ok(backup) => match serde_json::to_string_pretty(&backup) {
+                    Ok(json) => match std::fs::write(&path, json) {
+                        Ok(_) => self.emit(Event::Info(format!(
+                            "Backup do CRM exportado: {}",
+                            path.display()
+                        ))),
+                        Err(e) => self.emit(Event::Error(format!("Erro ao salvar backup: {e}"))),
+                    },
+                    Err(e) => self.emit(Event::Error(format!("Erro ao gerar JSON: {e}"))),
+                },
+                Err(e) => self.emit(Event::Error(format!("Erro ao exportar dados do CRM: {e}"))),
+            },
+            Command::ImportCrmBackup(path) => match std::fs::read_to_string(&path) {
+                Ok(json) => match serde_json::from_str::<crate::model::CrmBackup>(&json) {
+                    Ok(backup) => match self.archive.import_crm_backup(&backup) {
+                        Ok(_) => {
+                            self.emit_crm_data();
+                            self.emit(Event::Info("Backup do CRM importado com sucesso!".into()));
+                        }
+                        Err(e) => self.emit(Event::Error(format!(
+                            "Erro ao importar dados no banco: {e}"
+                        ))),
+                    },
+                    Err(e) => self.emit(Event::Error(format!("Arquivo de backup inválido: {e}"))),
+                },
+                Err(e) => self.emit(Event::Error(format!("Erro ao ler arquivo de backup: {e}"))),
+            },
             Command::PickExportCrmBackup => {
                 let commands = self.commands.clone();
                 tokio::task::spawn_blocking(move || {
@@ -6169,7 +6181,9 @@ impl Worker {
                 let _ =
                     self.archive
                         .set_group_info(&chat, name.as_deref(), &participants, read_only);
-                let _ = self.archive.set_group_description(&chat, description.as_deref());
+                let _ = self
+                    .archive
+                    .set_group_description(&chat, description.as_deref());
                 let _ = self.archive.set_group_rights(&chat, info_locked, admin);
                 // Metadata that lists us again means we are back in, so a
                 // remembered leave no longer holds. Only a snapshot asked for
@@ -6287,14 +6301,15 @@ impl Worker {
             };
             let result = client
                 .groups()
-                .set_description(jid, desc_payload, whatsapp_rust::PreviousDescription::Resolve)
+                .set_description(
+                    jid,
+                    desc_payload,
+                    whatsapp_rust::PreviousDescription::Resolve,
+                )
                 .await
                 .map(|_| desc_trimmed)
                 .map_err(|error| error.to_string());
-            let _ = commands.send(Command::GroupDescriptionEdited {
-                chat,
-                result,
-            });
+            let _ = commands.send(Command::GroupDescriptionEdited { chat, result });
             waker.wake();
         });
     }
@@ -7654,10 +7669,7 @@ impl Worker {
             self.emit(Event::Error("Not connected to WhatsApp".to_owned()));
             return;
         };
-        if let Ok(true) = self
-            .archive
-            .mark_revoked(&chat, &id)
-        {
+        if let Ok(true) = self.archive.mark_revoked(&chat, &id) {
             self.emit_message(&chat, &id);
             self.emit_chat(&chat);
         }

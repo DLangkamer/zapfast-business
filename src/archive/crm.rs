@@ -5,7 +5,7 @@
 use rusqlite::params;
 
 use super::{Archive, Result};
-use crate::model::{CrmBackup, CrmColumn, CrmDeal, CrmFollowup};
+use crate::model::{CrmBackup, CrmColumn, CrmDeal, CrmFollowup, CrmTask};
 
 pub const SCHEMA: &str = "
 CREATE TABLE IF NOT EXISTS crm_columns (
@@ -34,6 +34,23 @@ CREATE TABLE IF NOT EXISTS crm_followups (
 );
 
 CREATE INDEX IF NOT EXISTS idx_crm_followups_remind ON crm_followups (remind_at, done);
+
+CREATE TABLE IF NOT EXISTS crm_tasks (
+    id TEXT PRIMARY KEY,
+    chat_id TEXT,
+    project_id TEXT,
+    title TEXT NOT NULL,
+    description TEXT NOT NULL DEFAULT '',
+    status TEXT NOT NULL DEFAULT 'todo',
+    priority TEXT NOT NULL DEFAULT 'normal',
+    due_at INTEGER,
+    completed_at INTEGER,
+    created_at INTEGER NOT NULL,
+    updated_at INTEGER NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_crm_tasks_status_due ON crm_tasks (status, due_at);
+CREATE INDEX IF NOT EXISTS idx_crm_tasks_chat ON crm_tasks (chat_id);
 ";
 
 impl Archive {
@@ -126,10 +143,9 @@ impl Archive {
                     params![target, id],
                 )?;
             }
-            let rows = self.connection.execute(
-                "DELETE FROM crm_columns WHERE id = ?1",
-                params![id],
-            )?;
+            let rows = self
+                .connection
+                .execute("DELETE FROM crm_columns WHERE id = ?1", params![id])?;
             Ok(rows > 0)
         })();
 
@@ -226,10 +242,9 @@ impl Archive {
     }
 
     pub fn delete_crm_deal(&self, chat_id: &str) -> Result<bool> {
-        let rows = self.connection.execute(
-            "DELETE FROM crm_deals WHERE chat_id = ?1",
-            params![chat_id],
-        )?;
+        let rows = self
+            .connection
+            .execute("DELETE FROM crm_deals WHERE chat_id = ?1", params![chat_id])?;
         Ok(rows > 0)
     }
 
@@ -275,10 +290,10 @@ impl Archive {
     }
 
     pub fn delete_crm_followup(&self, id: &str) -> Result<bool> {
-        Ok(self.connection.execute(
-            "DELETE FROM crm_followups WHERE id = ?1",
-            params![id],
-        )? > 0)
+        Ok(self
+            .connection
+            .execute("DELETE FROM crm_followups WHERE id = ?1", params![id])?
+            > 0)
     }
 
     pub fn complete_crm_followup(&self, id: &str) -> Result<bool> {
@@ -295,22 +310,73 @@ impl Archive {
         )? > 0)
     }
 
+    pub fn crm_tasks(&self) -> Result<Vec<CrmTask>> {
+        let mut statement = self.connection.prepare(
+            "SELECT id, chat_id, project_id, title, description, status, priority,
+                    due_at, completed_at, created_at, updated_at
+             FROM crm_tasks
+             ORDER BY CASE WHEN status = 'done' THEN 1 ELSE 0 END, due_at IS NULL, due_at, created_at",
+        )?;
+        let rows = statement.query_map([], |row| {
+            Ok(CrmTask {
+                id: row.get(0)?,
+                chat_id: row.get(1)?,
+                project_id: row.get(2)?,
+                title: row.get(3)?,
+                description: row.get(4)?,
+                status: row.get(5)?,
+                priority: row.get(6)?,
+                due_at: row.get(7)?,
+                completed_at: row.get(8)?,
+                created_at: row.get(9)?,
+                updated_at: row.get(10)?,
+            })
+        })?;
+        rows.collect()
+    }
+
+    pub fn upsert_crm_task(&self, task: &CrmTask) -> Result<()> {
+        self.connection.execute(
+            "INSERT INTO crm_tasks
+             (id, chat_id, project_id, title, description, status, priority, due_at, completed_at, created_at, updated_at)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)
+             ON CONFLICT(id) DO UPDATE SET chat_id=excluded.chat_id,
+                project_id=excluded.project_id, title=excluded.title,
+                description=excluded.description, status=excluded.status,
+                priority=excluded.priority, due_at=excluded.due_at,
+                completed_at=excluded.completed_at, updated_at=excluded.updated_at",
+            params![task.id, task.chat_id, task.project_id, task.title, task.description,
+                task.status, task.priority, task.due_at, task.completed_at,
+                task.created_at, task.updated_at],
+        )?;
+        Ok(())
+    }
+
+    pub fn delete_crm_task(&self, id: &str) -> Result<bool> {
+        Ok(self
+            .connection
+            .execute("DELETE FROM crm_tasks WHERE id = ?1", params![id])?
+            > 0)
+    }
+
     /// Exports all CRM pipeline columns, contact deals, notes, tags, and follow-ups to a portable backup struct.
     pub fn export_crm_backup(&self) -> Result<CrmBackup> {
         let columns = self.crm_columns()?;
         let deals = self.crm_deals()?;
         let followups = self.crm_followups()?;
+        let tasks = self.crm_tasks()?;
         let now = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
             .unwrap_or_default()
             .as_secs() as i64;
         Ok(CrmBackup {
-            version: 1,
+            version: 2,
             exported_at: now,
             account_id: None,
             columns,
             deals,
             followups,
+            tasks,
         })
     }
 
@@ -326,6 +392,9 @@ impl Archive {
             }
             for followup in &backup.followups {
                 self.upsert_crm_followup(followup)?;
+            }
+            for task in &backup.tasks {
+                self.upsert_crm_task(task)?;
             }
             Ok(())
         })();
@@ -392,7 +461,9 @@ mod tests {
         assert_eq!(deals[0].tags, vec!["VIP", "Empresarial"]);
 
         // Delete deal
-        let deleted = archive.delete_crm_deal("551199999999@s.whatsapp.net").unwrap();
+        let deleted = archive
+            .delete_crm_deal("551199999999@s.whatsapp.net")
+            .unwrap();
         assert!(deleted);
         let deals_after = archive.crm_deals().unwrap();
         assert!(deals_after.is_empty());
@@ -424,5 +495,40 @@ mod tests {
 
         archive.delete_crm_followup("fu_123").unwrap();
         assert!(archive.crm_followups().unwrap().is_empty());
+    }
+
+    #[test]
+    fn crm_task_lifecycle_is_persistent_and_included_in_backup() {
+        let archive = Archive::in_memory().unwrap();
+        let mut task = CrmTask {
+            id: "task_123".to_owned(),
+            chat_id: Some("551199999999@s.whatsapp.net".to_owned()),
+            project_id: None,
+            title: "Preparar proposta".to_owned(),
+            description: "Revisar valores antes da reunião".to_owned(),
+            status: "todo".to_owned(),
+            priority: "high".to_owned(),
+            due_at: Some(1700003600),
+            completed_at: None,
+            created_at: 1700000000,
+            updated_at: 1700000000,
+        };
+
+        archive.upsert_crm_task(&task).unwrap();
+        let stored = archive.crm_tasks().unwrap();
+        assert_eq!(stored, vec![task.clone()]);
+
+        task.status = "done".to_owned();
+        task.completed_at = Some(1700001800);
+        task.updated_at = 1700001800;
+        archive.upsert_crm_task(&task).unwrap();
+        assert_eq!(archive.crm_tasks().unwrap()[0].status, "done");
+
+        let backup = archive.export_crm_backup().unwrap();
+        assert_eq!(backup.version, 2);
+        assert_eq!(backup.tasks, vec![task]);
+
+        assert!(archive.delete_crm_task("task_123").unwrap());
+        assert!(archive.crm_tasks().unwrap().is_empty());
     }
 }

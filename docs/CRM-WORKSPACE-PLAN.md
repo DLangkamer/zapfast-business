@@ -4,6 +4,14 @@ This document records the product direction and the account-isolation rule for
 the Business-only CRM features. It complements `BUSINESS-MAINTENANCE.md` and
 keeps future upstream merges small.
 
+## Implemented foundation after 0.19.11
+
+- Account-scoped persistent CRM tasks stored in the encrypted archive.
+- Task title, description, priority, due date, completion state and optional chat link.
+- Create, edit, complete/reopen, delete and open the linked conversation from the task center.
+- CRM backup version 2 includes tasks and still accepts older backups without a `tasks` field.
+- The task model is the shared base for the planned agenda and project views.
+
 ## What exists in 0.19.10
 
 - A resizable CRM sidecar for pipeline stage, deal value, tags, encrypted

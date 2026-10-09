@@ -12,7 +12,7 @@ use crate::app::{ComposerMention, Conversation};
 use crate::backend::{Backend, LinkStatus, Waker};
 use crate::model::{
     AccountId, BroadcastList, Chat, ChatFilter, ChatId, Contact, CrmColumn, CrmDeal, CrmFollowup,
-    Label, Message, PollDraft, QuickReply, StickerPack,
+    CrmTask, Label, Message, PollDraft, QuickReply, StickerPack,
 };
 use crate::paths::{AccountDirs, AppDirs};
 use crate::settings::AccountSettings;
@@ -75,6 +75,7 @@ pub struct Account {
     pub crm_columns: Vec<CrmColumn>,
     pub crm_deals: HashMap<String, CrmDeal>,
     pub crm_followups: Vec<CrmFollowup>,
+    pub crm_tasks: Vec<CrmTask>,
     pub crm_search: String,
     pub crm_notified_followups: HashSet<String>,
     pub quick_replies: Vec<QuickReply>,
@@ -157,6 +158,7 @@ impl Account {
             crm_columns: Vec::new(),
             crm_deals: HashMap::new(),
             crm_followups: Vec::new(),
+            crm_tasks: Vec::new(),
             crm_search: String::new(),
             crm_notified_followups: HashSet::new(),
             quick_replies: Vec::new(),

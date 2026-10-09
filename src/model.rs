@@ -150,6 +150,22 @@ pub struct CrmFollowup {
     pub created_at: i64,
 }
 
+/// A persistent CRM work item, optionally linked to a chat or project.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct CrmTask {
+    pub id: String,
+    pub chat_id: Option<String>,
+    pub project_id: Option<String>,
+    pub title: String,
+    pub description: String,
+    pub status: String,
+    pub priority: String,
+    pub due_at: Option<i64>,
+    pub completed_at: Option<i64>,
+    pub created_at: i64,
+    pub updated_at: i64,
+}
+
 /// Portable CRM backup structure for machine migration and data retention.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct CrmBackup {
@@ -159,6 +175,8 @@ pub struct CrmBackup {
     pub columns: Vec<CrmColumn>,
     pub deals: Vec<CrmDeal>,
     pub followups: Vec<CrmFollowup>,
+    #[serde(default)]
+    pub tasks: Vec<CrmTask>,
 }
 
 /// Chat-list filter chosen from the chips under the search field.
@@ -1782,6 +1800,8 @@ pub enum Action {
         id: String,
         until: i64,
     },
+    SaveCrmTask(CrmTask),
+    DeleteCrmTask(String),
     ExportCrmBackup(std::path::PathBuf),
     ImportCrmBackup(std::path::PathBuf),
     PickExportCrmBackup,
