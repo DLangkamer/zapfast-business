@@ -11,7 +11,8 @@ use std::time::Instant;
 use crate::app::{ComposerMention, Conversation};
 use crate::backend::{Backend, LinkStatus, Waker};
 use crate::model::{
-    AccountId, Chat, ChatFilter, ChatId, Contact, Label, Message, PollDraft, StickerPack,
+    AccountId, BroadcastList, Chat, ChatFilter, ChatId, Contact, CrmColumn, CrmDeal, CrmFollowup,
+    Label, Message, PollDraft, QuickReply, StickerPack,
 };
 use crate::paths::{AccountDirs, AppDirs};
 use crate::settings::AccountSettings;
@@ -68,6 +69,24 @@ pub struct Account {
     pub chat_filter: ChatFilter,
     pub labels: Vec<Label>,
     pub scheduled_messages: Vec<crate::archive::ScheduledMessage>,
+    /// Business data belongs to the linked WhatsApp account. Keeping it here
+    /// prevents background events from another account replacing the visible
+    /// account's CRM and canned replies while the user switches profiles.
+    pub crm_columns: Vec<CrmColumn>,
+    pub crm_deals: HashMap<String, CrmDeal>,
+    pub crm_followups: Vec<CrmFollowup>,
+    pub crm_search: String,
+    pub crm_notified_followups: HashSet<String>,
+    pub quick_replies: Vec<QuickReply>,
+    pub quick_reply_selected: usize,
+    pub quick_reply_editing: Option<String>,
+    pub quick_reply_shortcut: String,
+    pub quick_reply_message: String,
+    pub quick_reply_keywords: String,
+    pub quick_reply_voice: Option<Vec<f32>>,
+    pub quick_reply_voice_name: Option<String>,
+    pub quick_reply_voice_duration: Option<f32>,
+    pub broadcast_lists: Vec<BroadcastList>,
     pub account_privacy: crate::privacy::Snapshot,
     pub interactive_sending: HashSet<(ChatId, String)>,
     pub group_saving: HashSet<ChatId>,
@@ -135,6 +154,21 @@ impl Account {
             chat_filter: ChatFilter::All,
             labels: Vec::new(),
             scheduled_messages: Vec::new(),
+            crm_columns: Vec::new(),
+            crm_deals: HashMap::new(),
+            crm_followups: Vec::new(),
+            crm_search: String::new(),
+            crm_notified_followups: HashSet::new(),
+            quick_replies: Vec::new(),
+            quick_reply_selected: 0,
+            quick_reply_editing: None,
+            quick_reply_shortcut: String::new(),
+            quick_reply_message: String::new(),
+            quick_reply_keywords: String::new(),
+            quick_reply_voice: None,
+            quick_reply_voice_name: None,
+            quick_reply_voice_duration: None,
+            broadcast_lists: Vec::new(),
             account_privacy: crate::privacy::Snapshot::default(),
             interactive_sending: HashSet::new(),
             group_saving: HashSet::new(),

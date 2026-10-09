@@ -155,6 +155,36 @@ fn header(app: &mut App, ui: &mut egui::Ui) {
                         );
                     }
                     ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
+                        let pending_followups =
+                            app.crm_followups.iter().filter(|f| !f.done).count();
+                        let followup_hint = if pending_followups == 0 {
+                            "Central de tarefas e follow-ups".to_owned()
+                        } else {
+                            format!(
+                                "Central de tarefas e follow-ups ({pending_followups} pendentes)"
+                            )
+                        };
+                        if theme::icon_button(
+                            ui,
+                            Icon::Bell,
+                            18.0,
+                            if app
+                                .crm_followups
+                                .iter()
+                                .any(|f| !f.done && f.remind_at <= crate::util::now())
+                            {
+                                palette.accent
+                            } else {
+                                palette.secondary
+                            },
+                            palette.text,
+                            &followup_hint,
+                        )
+                        .clicked()
+                        {
+                            app.actions
+                                .push(Action::ShowDialog(crate::model::Dialog::CrmTasks));
+                        }
                         if theme::icon_button(
                             ui,
                             Icon::Settings,
@@ -341,8 +371,7 @@ fn macos_header(app: &mut App, ui: &mut egui::Ui) {
                     )
                     .clicked()
                     {
-                        app.actions
-                            .push(Action::ShowDialog(Dialog::Kanban));
+                        app.actions.push(Action::ShowDialog(Dialog::Kanban));
                     }
                     if theme::icon_button(
                         ui,

@@ -539,23 +539,8 @@ pub struct App {
     pub label_editing: Option<(String, String)>,
     /// Label the chat list shows; `None` shows every chat.
     pub label_filter: Option<String>,
-    pub broadcast_lists: Vec<BroadcastList>,
     pub bulk_state: crate::ui::bulk_dispatch::BulkDispatchState,
-    pub crm_columns: Vec<crate::model::CrmColumn>,
-    pub crm_deals: std::collections::HashMap<String, crate::model::CrmDeal>,
-    pub crm_followups: Vec<crate::model::CrmFollowup>,
     pub show_crm_sidecar: bool,
-    pub crm_search: String,
-    pub crm_notified_followups: HashSet<String>,
-    pub quick_replies: Vec<QuickReply>,
-    pub quick_reply_selected: usize,
-    pub quick_reply_editing: Option<String>,
-    pub quick_reply_shortcut: String,
-    pub quick_reply_message: String,
-    pub quick_reply_keywords: String,
-    pub quick_reply_voice: Option<Vec<f32>>,
-    pub quick_reply_voice_name: Option<String>,
-    pub quick_reply_voice_duration: Option<f32>,
     /// Recording waiting for the schedule time to be chosen.
     pub scheduled_voice: Option<(ChatId, Vec<f32>, Option<String>)>,
     /// Chats opened from the Unread list, kept there until the filter changes.
@@ -1105,23 +1090,8 @@ impl App {
             label_color: crate::archive::DEFAULT_COLOR.to_owned(),
             label_editing: None,
             label_filter: None,
-            broadcast_lists: Vec::new(),
             bulk_state: Default::default(),
-            crm_columns: Vec::new(),
-            crm_deals: std::collections::HashMap::new(),
-            crm_followups: Vec::new(),
             show_crm_sidecar: false,
-            crm_search: String::new(),
-            crm_notified_followups: HashSet::new(),
-            quick_replies: Vec::new(),
-            quick_reply_selected: 0,
-            quick_reply_editing: None,
-            quick_reply_shortcut: String::new(),
-            quick_reply_message: String::new(),
-            quick_reply_keywords: String::new(),
-            quick_reply_voice: None,
-            quick_reply_voice_name: None,
-            quick_reply_voice_duration: None,
             scheduled_voice: None,
             unread_kept: HashSet::new(),
             toasts: Vec::new(),
@@ -2495,7 +2465,11 @@ impl App {
             Event::BroadcastLists(lists) => {
                 self.broadcast_lists = lists;
             }
-            Event::CrmData { columns, deals, followups } => {
+            Event::CrmData {
+                columns,
+                deals,
+                followups,
+            } => {
                 self.crm_columns = columns;
                 self.crm_deals = deals.into_iter().map(|d| (d.chat_id.clone(), d)).collect();
                 self.crm_followups = followups;
@@ -4324,7 +4298,8 @@ impl App {
                 }
                 self.player.stop();
                 if final_samples.len() >= crate::voice::RATE as usize / 2 {
-                    self.scheduled_voice = Some((chat.clone(), final_samples, self.reply_to.take()));
+                    self.scheduled_voice =
+                        Some((chat.clone(), final_samples, self.reply_to.take()));
                     self.dialog = Some(Dialog::ScheduleVoice(chat));
                 } else {
                     self.toast_error("Grave pelo menos meio segundo antes de agendar");
@@ -5520,7 +5495,11 @@ impl App {
                 self.backend.send(Command::SaveCrmColumn(col));
             }
             Action::DeleteCrmColumn(id) => {
-                let fallback = self.crm_columns.iter().find(|c| c.id != id).map(|c| c.id.clone());
+                let fallback = self
+                    .crm_columns
+                    .iter()
+                    .find(|c| c.id != id)
+                    .map(|c| c.id.clone());
                 self.crm_columns.retain(|c| c.id != id);
                 if let Some(target) = fallback {
                     for deal in self.crm_deals.values_mut() {
@@ -5833,7 +5812,8 @@ impl App {
                 self.backend.send(Command::SetGroupName { chat, name });
             }
             Action::SetGroupDescription { chat, description } => {
-                self.backend.send(Command::SetGroupDescription { chat, description });
+                self.backend
+                    .send(Command::SetGroupDescription { chat, description });
             }
             Action::PickGroupPicture(chat) => self.backend.send(Command::PickGroupPicture(chat)),
             Action::RemoveGroupPicture(chat) => {
@@ -6129,7 +6109,9 @@ impl App {
         let due: Vec<crate::model::CrmFollowup> = self
             .crm_followups
             .iter()
-            .filter(|f| !f.done && f.remind_at <= now && !self.crm_notified_followups.contains(&f.id))
+            .filter(|f| {
+                !f.done && f.remind_at <= now && !self.crm_notified_followups.contains(&f.id)
+            })
             .cloned()
             .collect();
 
@@ -7339,6 +7321,63 @@ mod tests {
         );
         assert_eq!(app.deferred_account_actions.len(), 1);
         assert_eq!(app.deferred_account_actions[0].0.as_str(), "2");
+    }
+
+    #[test]
+    fn business_data_from_a_background_account_stays_with_that_account() {
+        let directory = tempfile::tempdir().unwrap();
+        let dirs = AppDirs::under(directory.path());
+        let mut app = App::headless(dirs.clone(), Settings::default()).0;
+        let (second, events) = Account::detached(
+            &dirs,
+            AccountId::parse("2").unwrap(),
+            crate::settings::AccountSettings::default(),
+        )
+        .unwrap();
+        app.accounts.push(second);
+        app.active = 0;
+
+        events
+            .send(crate::backend::Event::QuickReplies(vec![QuickReply {
+                id: "work-reply".to_owned(),
+                shortcut: "proposta".to_owned(),
+                message: "Resposta da conta comercial".to_owned(),
+                keywords: Vec::new(),
+                count: 0,
+                voice: None,
+            }]))
+            .unwrap();
+        events
+            .send(crate::backend::Event::CrmData {
+                columns: Vec::new(),
+                deals: Vec::new(),
+                followups: vec![crate::model::CrmFollowup {
+                    id: "work-followup".to_owned(),
+                    chat_id: "551199999999@s.whatsapp.net".to_owned(),
+                    title: "Retornar cliente".to_owned(),
+                    remind_at: 1,
+                    done: false,
+                    created_at: 1,
+                }],
+            })
+            .unwrap();
+        events
+            .send(crate::backend::Event::BroadcastLists(vec![BroadcastList {
+                id: "work-list".to_owned(),
+                name: "Clientes".to_owned(),
+                chats: Vec::new(),
+                created_at: 1,
+            }]))
+            .unwrap();
+
+        app.handle_events();
+
+        assert!(app.accounts[0].quick_replies.is_empty());
+        assert!(app.accounts[0].crm_followups.is_empty());
+        assert!(app.accounts[0].broadcast_lists.is_empty());
+        assert_eq!(app.accounts[1].quick_replies[0].id, "work-reply");
+        assert_eq!(app.accounts[1].crm_followups[0].id, "work-followup");
+        assert_eq!(app.accounts[1].broadcast_lists[0].id, "work-list");
     }
 
     /// A trackpad gesture keeps its pane while fastframe-scroll says it goes

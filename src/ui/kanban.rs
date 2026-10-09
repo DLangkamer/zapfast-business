@@ -1,12 +1,12 @@
 //! Visual Sales Kanban Board: customizable pipeline columns, deal cards,
 //! stage transitions, contact picker, search filter, and JSON backup export/import.
 
-use egui::{vec2, Align, CornerRadius, Frame, Layout, Margin, Stroke, Vec2};
+use egui::{Align, CornerRadius, Frame, Layout, Margin, Stroke, Vec2, vec2};
 
+use super::crm_sidecar::{format_currency, parse_currency_cents, parse_hex_color};
 use crate::app::App;
 use crate::model::{Action, CrmColumn, CrmDeal, Dialog};
 use crate::theme::{self, Icon, Palette};
-use super::crm_sidecar::{format_currency, parse_currency_cents, parse_hex_color};
 
 pub const ADD_DEAL_OPEN_ID: &str = "kanban_add_deal_open";
 pub const ADD_STAGE_OPEN_ID: &str = "kanban_add_stage_open";
@@ -104,7 +104,9 @@ fn render_top_bar(app: &mut App, ui: &mut egui::Ui, palette: &Palette) {
                     .map(|c| app.chat_title(c).to_lowercase())
                     .unwrap_or_else(|| d.chat_id.to_lowercase());
                 contact_name.contains(&search_lower)
-                    || d.tags.iter().any(|t| t.to_lowercase().contains(&search_lower))
+                    || d.tags
+                        .iter()
+                        .any(|t| t.to_lowercase().contains(&search_lower))
                     || d.notes.to_lowercase().contains(&search_lower)
             };
             if is_match {
@@ -117,8 +119,14 @@ fn render_top_bar(app: &mut App, ui: &mut egui::Ui, palette: &Palette) {
 
     let add_deal_id = egui::Id::new(ADD_DEAL_OPEN_ID);
     let add_stage_id = egui::Id::new(ADD_STAGE_OPEN_ID);
-    let add_deal_open = ui.ctx().data(|d| d.get_temp::<bool>(add_deal_id)).unwrap_or(false);
-    let add_stage_open = ui.ctx().data(|d| d.get_temp::<bool>(add_stage_id)).unwrap_or(false);
+    let add_deal_open = ui
+        .ctx()
+        .data(|d| d.get_temp::<bool>(add_deal_id))
+        .unwrap_or(false);
+    let add_stage_open = ui
+        .ctx()
+        .data(|d| d.get_temp::<bool>(add_stage_id))
+        .unwrap_or(false);
 
     let compact = ui.available_width() < 840.0;
     if compact {
@@ -131,12 +139,18 @@ fn render_top_bar(app: &mut App, ui: &mut egui::Ui, palette: &Palette) {
                 .corner_radius(CornerRadius::same(6))
                 .inner_margin(Margin::symmetric(6, 3))
                 .show(ui, |ui| {
-                    let kpi_text = format!("{} negócios • {}", total_deals, format_currency(total_value));
+                    let kpi_text = format!(
+                        "{} negócios • {}",
+                        total_deals,
+                        format_currency(total_value)
+                    );
                     theme::text(ui, &kpi_text, theme::medium(11.0), palette.accent);
                 });
 
             ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-                if theme::icon_button(ui, Icon::X, 18.0, palette.dim, palette.text, "Fechar").clicked() {
+                if theme::icon_button(ui, Icon::X, 18.0, palette.dim, palette.text, "Fechar")
+                    .clicked()
+                {
                     app.dialog = None;
                 }
             });
@@ -144,17 +158,35 @@ fn render_top_bar(app: &mut App, ui: &mut egui::Ui, palette: &Palette) {
 
         ui.horizontal(|ui| {
             // + Novo Negócio button (Primary Accent)
-            let btn_deal = egui::Button::new(if add_deal_open { "✕ Fechar Cadastro" } else { "+ Novo Negócio" })
-                .fill(if add_deal_open { palette.surface_hover } else { palette.accent });
+            let btn_deal = egui::Button::new(if add_deal_open {
+                "✕ Fechar Cadastro"
+            } else {
+                "+ Novo Negócio"
+            })
+            .fill(if add_deal_open {
+                palette.surface_hover
+            } else {
+                palette.accent
+            });
             if ui.add(btn_deal).clicked() {
-                ui.ctx().data_mut(|d| d.insert_temp(add_deal_id, !add_deal_open));
+                ui.ctx()
+                    .data_mut(|d| d.insert_temp(add_deal_id, !add_deal_open));
             }
 
             // + Nova Etapa button
-            let btn_stage = egui::Button::new(if add_stage_open { "✕ Fechar Etapa" } else { "+ Nova Etapa" })
-                .fill(if add_stage_open { palette.surface_hover } else { palette.surface });
+            let btn_stage = egui::Button::new(if add_stage_open {
+                "✕ Fechar Etapa"
+            } else {
+                "+ Nova Etapa"
+            })
+            .fill(if add_stage_open {
+                palette.surface_hover
+            } else {
+                palette.surface
+            });
             if ui.add(btn_stage).clicked() {
-                ui.ctx().data_mut(|d| d.insert_temp(add_stage_id, !add_stage_open));
+                ui.ctx()
+                    .data_mut(|d| d.insert_temp(add_stage_id, !add_stage_open));
             }
 
             // Backup Dropdown / Buttons
@@ -162,20 +194,30 @@ fn render_top_bar(app: &mut App, ui: &mut egui::Ui, palette: &Palette) {
                 .selected_text("💾 Backup")
                 .width(110.0)
                 .show_ui(ui, |ui| {
-                    if ui.selectable_label(false, "📤 Exportar Backup JSON").clicked() {
+                    if ui
+                        .selectable_label(false, "📤 Exportar Backup JSON")
+                        .clicked()
+                    {
                         app.actions.push(Action::PickExportCrmBackup);
                     }
-                    if ui.selectable_label(false, "📥 Importar Backup JSON").clicked() {
+                    if ui
+                        .selectable_label(false, "📥 Importar Backup JSON")
+                        .clicked()
+                    {
                         app.actions.push(Action::PickImportCrmBackup);
                     }
                     ui.separator();
-                    if ui.selectable_label(false, "🔄 Restaurar 5 Etapas Padrão").clicked() {
+                    if ui
+                        .selectable_label(false, "🔄 Restaurar 5 Etapas Padrão")
+                        .clicked()
+                    {
                         if app.crm_columns.is_empty() {
                             for col in default_columns() {
                                 app.actions.push(Action::SaveCrmColumn(col));
                             }
                         } else {
-                            let mut next_ord = app.crm_columns.iter().map(|c| c.order).max().unwrap_or(0);
+                            let mut next_ord =
+                                app.crm_columns.iter().map(|c| c.order).max().unwrap_or(0);
                             for mut col in default_columns() {
                                 if !app.crm_columns.iter().any(|c| c.id == col.id) {
                                     next_ord += 1;
@@ -195,7 +237,12 @@ fn render_top_bar(app: &mut App, ui: &mut egui::Ui, palette: &Palette) {
     } else {
         ui.horizontal(|ui| {
             theme::icon(ui, Icon::ListChecks, 22.0, palette.accent);
-            theme::text(ui, "Funil de Vendas Comercial", theme::bold(18.0), palette.text);
+            theme::text(
+                ui,
+                "Funil de Vendas Comercial",
+                theme::bold(18.0),
+                palette.text,
+            );
 
             // KPI Badge
             Frame::new()
@@ -203,13 +250,19 @@ fn render_top_bar(app: &mut App, ui: &mut egui::Ui, palette: &Palette) {
                 .corner_radius(CornerRadius::same(6))
                 .inner_margin(Margin::symmetric(8, 4))
                 .show(ui, |ui| {
-                    let kpi_text = format!("{} negócios • {}", total_deals, format_currency(total_value));
+                    let kpi_text = format!(
+                        "{} negócios • {}",
+                        total_deals,
+                        format_currency(total_value)
+                    );
                     theme::text(ui, &kpi_text, theme::medium(12.0), palette.accent);
                 });
 
             ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
                 // Close dialog
-                if theme::icon_button(ui, Icon::X, 18.0, palette.dim, palette.text, "Fechar").clicked() {
+                if theme::icon_button(ui, Icon::X, 18.0, palette.dim, palette.text, "Fechar")
+                    .clicked()
+                {
                     app.dialog = None;
                 }
 
@@ -223,20 +276,30 @@ fn render_top_bar(app: &mut App, ui: &mut egui::Ui, palette: &Palette) {
                     .selected_text("💾 Backup / Opções")
                     .width(135.0)
                     .show_ui(ui, |ui| {
-                        if ui.selectable_label(false, "📤 Exportar Backup JSON").clicked() {
+                        if ui
+                            .selectable_label(false, "📤 Exportar Backup JSON")
+                            .clicked()
+                        {
                             app.actions.push(Action::PickExportCrmBackup);
                         }
-                        if ui.selectable_label(false, "📥 Importar Backup JSON").clicked() {
+                        if ui
+                            .selectable_label(false, "📥 Importar Backup JSON")
+                            .clicked()
+                        {
                             app.actions.push(Action::PickImportCrmBackup);
                         }
                         ui.separator();
-                        if ui.selectable_label(false, "🔄 Restaurar 5 Etapas Padrão").clicked() {
+                        if ui
+                            .selectable_label(false, "🔄 Restaurar 5 Etapas Padrão")
+                            .clicked()
+                        {
                             if app.crm_columns.is_empty() {
                                 for col in default_columns() {
                                     app.actions.push(Action::SaveCrmColumn(col));
                                 }
                             } else {
-                                let mut next_ord = app.crm_columns.iter().map(|c| c.order).max().unwrap_or(0);
+                                let mut next_ord =
+                                    app.crm_columns.iter().map(|c| c.order).max().unwrap_or(0);
                                 for mut col in default_columns() {
                                     if !app.crm_columns.iter().any(|c| c.id == col.id) {
                                         next_ord += 1;
@@ -249,17 +312,35 @@ fn render_top_bar(app: &mut App, ui: &mut egui::Ui, palette: &Palette) {
                     });
 
                 // + Nova Etapa button
-                let btn_stage = egui::Button::new(if add_stage_open { "✕ Fechar Etapa" } else { "+ Nova Etapa" })
-                    .fill(if add_stage_open { palette.surface_hover } else { palette.surface });
+                let btn_stage = egui::Button::new(if add_stage_open {
+                    "✕ Fechar Etapa"
+                } else {
+                    "+ Nova Etapa"
+                })
+                .fill(if add_stage_open {
+                    palette.surface_hover
+                } else {
+                    palette.surface
+                });
                 if ui.add(btn_stage).clicked() {
-                    ui.ctx().data_mut(|d| d.insert_temp(add_stage_id, !add_stage_open));
+                    ui.ctx()
+                        .data_mut(|d| d.insert_temp(add_stage_id, !add_stage_open));
                 }
 
                 // + Novo Negócio button (Primary Accent)
-                let btn_deal = egui::Button::new(if add_deal_open { "✕ Fechar Cadastro" } else { "+ Novo Negócio" })
-                    .fill(if add_deal_open { palette.surface_hover } else { palette.accent });
+                let btn_deal = egui::Button::new(if add_deal_open {
+                    "✕ Fechar Cadastro"
+                } else {
+                    "+ Novo Negócio"
+                })
+                .fill(if add_deal_open {
+                    palette.surface_hover
+                } else {
+                    palette.accent
+                });
                 if ui.add(btn_deal).clicked() {
-                    ui.ctx().data_mut(|d| d.insert_temp(add_deal_id, !add_deal_open));
+                    ui.ctx()
+                        .data_mut(|d| d.insert_temp(add_deal_id, !add_deal_open));
                 }
             });
         });
@@ -275,7 +356,9 @@ fn render_search_bar(app: &mut App, ui: &mut egui::Ui, palette: &Palette) {
                 .desired_width(ui.available_width() - 40.0),
         );
         if !app.crm_search.is_empty() {
-            if theme::icon_button(ui, Icon::X, 12.0, palette.dim, palette.text, "Limpar busca").clicked() {
+            if theme::icon_button(ui, Icon::X, 12.0, palette.dim, palette.text, "Limpar busca")
+                .clicked()
+            {
                 app.crm_search.clear();
             }
         }
@@ -285,8 +368,14 @@ fn render_search_bar(app: &mut App, ui: &mut egui::Ui, palette: &Palette) {
 fn render_popovers(app: &mut App, ui: &mut egui::Ui, palette: &Palette) {
     let add_deal_id = egui::Id::new(ADD_DEAL_OPEN_ID);
     let add_stage_id = egui::Id::new(ADD_STAGE_OPEN_ID);
-    let add_deal_open = ui.ctx().data(|d| d.get_temp::<bool>(add_deal_id)).unwrap_or(false);
-    let add_stage_open = ui.ctx().data(|d| d.get_temp::<bool>(add_stage_id)).unwrap_or(false);
+    let add_deal_open = ui
+        .ctx()
+        .data(|d| d.get_temp::<bool>(add_deal_id))
+        .unwrap_or(false);
+    let add_stage_open = ui
+        .ctx()
+        .data(|d| d.get_temp::<bool>(add_stage_id))
+        .unwrap_or(false);
 
     // 1. Popover: Adicionar Novo Negócio ao Funil
     if add_deal_open {
@@ -299,9 +388,23 @@ fn render_popovers(app: &mut App, ui: &mut egui::Ui, palette: &Palette) {
                 ui.vertical(|ui| {
                     ui.horizontal(|ui| {
                         theme::icon(ui, Icon::User, 16.0, palette.accent);
-                        theme::text(ui, "Adicionar Contato / Negócio ao Funil", theme::bold(14.0), palette.text);
+                        theme::text(
+                            ui,
+                            "Adicionar Contato / Negócio ao Funil",
+                            theme::bold(14.0),
+                            palette.text,
+                        );
                         ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-                            if theme::icon_button(ui, Icon::X, 14.0, palette.dim, palette.text, "Fechar").clicked() {
+                            if theme::icon_button(
+                                ui,
+                                Icon::X,
+                                14.0,
+                                palette.dim,
+                                palette.text,
+                                "Fechar",
+                            )
+                            .clicked()
+                            {
                                 ui.ctx().data_mut(|d| d.insert_temp(add_deal_id, false));
                             }
                         });
@@ -310,25 +413,48 @@ fn render_popovers(app: &mut App, ui: &mut egui::Ui, palette: &Palette) {
                     ui.add_space(8.0);
 
                     let filter_contact_id = egui::Id::new(FILTER_CONTACT_ID);
-                    let mut contact_filter = ui.ctx().data(|d| d.get_temp::<String>(filter_contact_id)).unwrap_or_default();
+                    let mut contact_filter = ui
+                        .ctx()
+                        .data(|d| d.get_temp::<String>(filter_contact_id))
+                        .unwrap_or_default();
                     let selected_chat_id = egui::Id::new(SELECTED_CHAT_ID);
-                    let mut selected_chat = ui.ctx().data(|d| d.get_temp::<String>(selected_chat_id)).unwrap_or_default();
+                    let mut selected_chat = ui
+                        .ctx()
+                        .data(|d| d.get_temp::<String>(selected_chat_id))
+                        .unwrap_or_default();
 
                     let selected_col_id = egui::Id::new(SELECTED_COL_ID);
-                    let mut selected_col = ui.ctx().data(|d| d.get_temp::<String>(selected_col_id)).unwrap_or_else(|| {
-                        app.crm_columns.first().map(|c| c.id.clone()).unwrap_or_else(|| "lead".to_owned())
-                    });
+                    let mut selected_col = ui
+                        .ctx()
+                        .data(|d| d.get_temp::<String>(selected_col_id))
+                        .unwrap_or_else(|| {
+                            app.crm_columns
+                                .first()
+                                .map(|c| c.id.clone())
+                                .unwrap_or_else(|| "lead".to_owned())
+                        });
 
                     let val_id = egui::Id::new(VAL_INPUT_ID);
-                    let mut val_str = ui.ctx().data(|d| d.get_temp::<String>(val_id)).unwrap_or_default();
+                    let mut val_str = ui
+                        .ctx()
+                        .data(|d| d.get_temp::<String>(val_id))
+                        .unwrap_or_default();
 
                     let tag_id = egui::Id::new(TAG_INPUT_ID);
-                    let mut tag_str = ui.ctx().data(|d| d.get_temp::<String>(tag_id)).unwrap_or_default();
+                    let mut tag_str = ui
+                        .ctx()
+                        .data(|d| d.get_temp::<String>(tag_id))
+                        .unwrap_or_default();
 
                     ui.horizontal_wrapped(|ui| {
                         // Contact Picker
                         ui.vertical(|ui| {
-                            theme::text(ui, "Selecione o Contato:", theme::semibold(12.0), palette.dim);
+                            theme::text(
+                                ui,
+                                "Selecione o Contato:",
+                                theme::semibold(12.0),
+                                palette.dim,
+                            );
                             ui.add(
                                 egui::TextEdit::singleline(&mut contact_filter)
                                     .hint_text("Filtrar contatos...")
@@ -336,9 +462,13 @@ fn render_popovers(app: &mut App, ui: &mut egui::Ui, palette: &Palette) {
                             );
 
                             let filter_lower = contact_filter.trim().to_lowercase();
-                            let chats: Vec<_> = app.chats.iter()
+                            let chats: Vec<_> = app
+                                .chats
+                                .iter()
                                 .filter(|c| {
-                                    if filter_lower.is_empty() { return true; }
+                                    if filter_lower.is_empty() {
+                                        return true;
+                                    }
                                     let title = app.chat_title(c).to_lowercase();
                                     title.contains(&filter_lower) || c.id.contains(&filter_lower)
                                 })
@@ -348,7 +478,9 @@ fn render_popovers(app: &mut App, ui: &mut egui::Ui, palette: &Palette) {
                             let current_display = if selected_chat.is_empty() {
                                 "Nenhum selecionado".to_owned()
                             } else {
-                                app.chat(&selected_chat).map(|c| app.chat_title(c)).unwrap_or_else(|| selected_chat.clone())
+                                app.chat(&selected_chat)
+                                    .map(|c| app.chat_title(c))
+                                    .unwrap_or_else(|| selected_chat.clone())
                             };
 
                             egui::ComboBox::from_id_salt("picker_chat_combo")
@@ -357,9 +489,14 @@ fn render_popovers(app: &mut App, ui: &mut egui::Ui, palette: &Palette) {
                                 .show_ui(ui, |ui| {
                                     for chat in chats {
                                         let title = app.chat_title(chat);
-                                        if ui.selectable_label(selected_chat == chat.id, &title).clicked() {
+                                        if ui
+                                            .selectable_label(selected_chat == chat.id, &title)
+                                            .clicked()
+                                        {
                                             selected_chat = chat.id.clone();
-                                            if let Some(existing) = app.crm_deals.get(&selected_chat) {
+                                            if let Some(existing) =
+                                                app.crm_deals.get(&selected_chat)
+                                            {
                                                 selected_col = existing.column_id.clone();
                                                 if existing.value_cents > 0 {
                                                     let reais = existing.value_cents / 100;
@@ -378,16 +515,27 @@ fn render_popovers(app: &mut App, ui: &mut egui::Ui, palette: &Palette) {
                         ui.add_space(16.0);
 
                         // Stage Selector
-                        let columns = if app.crm_columns.is_empty() { default_columns() } else { app.crm_columns.clone() };
+                        let columns = if app.crm_columns.is_empty() {
+                            default_columns()
+                        } else {
+                            app.crm_columns.clone()
+                        };
                         ui.vertical(|ui| {
                             theme::text(ui, "Etapa Inicial:", theme::semibold(12.0), palette.dim);
-                            let col_title = columns.iter().find(|c| c.id == selected_col).map(|c| c.title.as_str()).unwrap_or("Selecione");
+                            let col_title = columns
+                                .iter()
+                                .find(|c| c.id == selected_col)
+                                .map(|c| c.title.as_str())
+                                .unwrap_or("Selecione");
                             egui::ComboBox::from_id_salt("picker_col_combo")
                                 .selected_text(col_title)
                                 .width(180.0)
                                 .show_ui(ui, |ui| {
                                     for col in &columns {
-                                        if ui.selectable_label(selected_col == col.id, &col.title).clicked() {
+                                        if ui
+                                            .selectable_label(selected_col == col.id, &col.title)
+                                            .clicked()
+                                        {
                                             selected_col = col.id.clone();
                                         }
                                     }
@@ -406,7 +554,12 @@ fn render_popovers(app: &mut App, ui: &mut egui::Ui, palette: &Palette) {
 
                         // Tags & Submit
                         ui.vertical(|ui| {
-                            theme::text(ui, "Etiquetas (separadas por vírgula):", theme::semibold(12.0), palette.dim);
+                            theme::text(
+                                ui,
+                                "Etiquetas (separadas por vírgula):",
+                                theme::semibold(12.0),
+                                palette.dim,
+                            );
                             ui.add(
                                 egui::TextEdit::singleline(&mut tag_str)
                                     .hint_text("ex: VIP, Decisor")
@@ -415,12 +568,19 @@ fn render_popovers(app: &mut App, ui: &mut egui::Ui, palette: &Palette) {
 
                             ui.add_space(8.0);
                             let can_save = !selected_chat.is_empty() && !selected_col.is_empty();
-                            if ui.add_enabled(can_save, egui::Button::new("✓ Adicionar ao Funil").fill(palette.accent)).clicked() {
+                            if ui
+                                .add_enabled(
+                                    can_save,
+                                    egui::Button::new("✓ Adicionar ao Funil").fill(palette.accent),
+                                )
+                                .clicked()
+                            {
                                 let existing = app.crm_deals.get(&selected_chat);
                                 let cents = parse_currency_cents(&val_str).unwrap_or_else(|| {
                                     existing.map(|d| d.value_cents).unwrap_or(0)
                                 });
-                                let mut tags: Vec<String> = tag_str.split(',')
+                                let mut tags: Vec<String> = tag_str
+                                    .split(',')
                                     .map(|s| s.trim().to_owned())
                                     .filter(|s| !s.is_empty())
                                     .collect();
@@ -471,10 +631,18 @@ fn render_popovers(app: &mut App, ui: &mut egui::Ui, palette: &Palette) {
             .inner_margin(Margin::same(12))
             .show(ui, |ui| {
                 ui.horizontal(|ui| {
-                    theme::text(ui, "Nova Etapa do Funil:", theme::semibold(13.0), palette.text);
+                    theme::text(
+                        ui,
+                        "Nova Etapa do Funil:",
+                        theme::semibold(13.0),
+                        palette.text,
+                    );
 
                     let name_id = egui::Id::new(STAGE_NAME_ID);
-                    let mut name = ui.ctx().data(|d| d.get_temp::<String>(name_id)).unwrap_or_default();
+                    let mut name = ui
+                        .ctx()
+                        .data(|d| d.get_temp::<String>(name_id))
+                        .unwrap_or_default();
                     ui.add(
                         egui::TextEdit::singleline(&mut name)
                             .hint_text("Nome da etapa (ex: Contrato Enviado)")
@@ -482,7 +650,10 @@ fn render_popovers(app: &mut App, ui: &mut egui::Ui, palette: &Palette) {
                     );
 
                     let color_id = egui::Id::new(STAGE_COLOR_ID);
-                    let mut color_hex = ui.ctx().data(|d| d.get_temp::<String>(color_id)).unwrap_or_else(|| "#3b82f6".to_owned());
+                    let mut color_hex = ui
+                        .ctx()
+                        .data(|d| d.get_temp::<String>(color_id))
+                        .unwrap_or_else(|| "#3b82f6".to_owned());
 
                     let colors = [
                         ("#3b82f6", "Azul"),
@@ -495,10 +666,19 @@ fn render_popovers(app: &mut App, ui: &mut egui::Ui, palette: &Palette) {
                     for (hex, _label) in colors {
                         let is_active = color_hex == hex;
                         let c = parse_hex_color(hex).unwrap_or(palette.accent);
-                        let (r, resp) = ui.allocate_exact_size(Vec2::splat(16.0), egui::Sense::click());
-                        ui.painter().circle_filled(r.center(), if is_active { 8.0 } else { 6.0 }, c);
+                        let (r, resp) =
+                            ui.allocate_exact_size(Vec2::splat(16.0), egui::Sense::click());
+                        ui.painter().circle_filled(
+                            r.center(),
+                            if is_active { 8.0 } else { 6.0 },
+                            c,
+                        );
                         if is_active {
-                            ui.painter().circle_stroke(r.center(), 9.0, Stroke::new(1.5, palette.text));
+                            ui.painter().circle_stroke(
+                                r.center(),
+                                9.0,
+                                Stroke::new(1.5, palette.text),
+                            );
                         }
                         if resp.clicked() {
                             color_hex = hex.to_owned();
@@ -506,7 +686,8 @@ fn render_popovers(app: &mut App, ui: &mut egui::Ui, palette: &Palette) {
                     }
 
                     if ui.button("✓ Criar Etapa").clicked() && !name.trim().is_empty() {
-                        let next_order = app.crm_columns.iter().map(|c| c.order).max().unwrap_or(0) + 1;
+                        let next_order =
+                            app.crm_columns.iter().map(|c| c.order).max().unwrap_or(0) + 1;
                         let col = CrmColumn {
                             id: format!("col_{}_{:08x}", crate::util::now(), rand::random::<u32>()),
                             title: name.trim().to_owned(),
@@ -529,11 +710,23 @@ fn render_popovers(app: &mut App, ui: &mut egui::Ui, palette: &Palette) {
 
     // 3. Popover: Confirmar Exclusão de Etapa
     let delete_stage_confirm_id = egui::Id::new(DELETE_STAGE_CONFIRM_ID);
-    let delete_col_id: Option<String> = ui.ctx().data(|d| d.get_temp(delete_stage_confirm_id)).flatten();
+    let delete_col_id: Option<String> = ui
+        .ctx()
+        .data(|d| d.get_temp(delete_stage_confirm_id))
+        .flatten();
     if let Some(col_id) = delete_col_id {
         if let Some(target_col) = app.crm_columns.iter().find(|c| c.id == col_id).cloned() {
-            let deals_count = app.crm_deals.values().filter(|d| d.column_id == col_id).count();
-            let fallback_title = app.crm_columns.iter().find(|c| c.id != col_id).map(|c| c.title.as_str()).unwrap_or("outra etapa");
+            let deals_count = app
+                .crm_deals
+                .values()
+                .filter(|d| d.column_id == col_id)
+                .count();
+            let fallback_title = app
+                .crm_columns
+                .iter()
+                .find(|c| c.id != col_id)
+                .map(|c| c.title.as_str())
+                .unwrap_or("outra etapa");
 
             Frame::new()
                 .fill(palette.surface)
@@ -567,7 +760,8 @@ fn render_popovers(app: &mut App, ui: &mut egui::Ui, palette: &Palette) {
                 });
             ui.add_space(8.0);
         } else {
-            ui.ctx().data_mut(|d| d.insert_temp(delete_stage_confirm_id, None::<String>));
+            ui.ctx()
+                .data_mut(|d| d.insert_temp(delete_stage_confirm_id, None::<String>));
         }
     }
 }
@@ -611,7 +805,10 @@ fn render_board(app: &mut App, ui: &mut egui::Ui, palette: &Palette) {
 
 fn render_add_column_card(_app: &mut App, ui: &mut egui::Ui, palette: &Palette) {
     let add_stage_id = egui::Id::new(ADD_STAGE_OPEN_ID);
-    let add_stage_open = ui.ctx().data(|d| d.get_temp::<bool>(add_stage_id)).unwrap_or(false);
+    let add_stage_open = ui
+        .ctx()
+        .data(|d| d.get_temp::<bool>(add_stage_id))
+        .unwrap_or(false);
 
     Frame::new()
         .fill(palette.surface.gamma_multiply(0.5))
@@ -628,14 +825,28 @@ fn render_add_column_card(_app: &mut App, ui: &mut egui::Ui, palette: &Palette) 
                 ui.add_space(8.0);
                 theme::text(ui, "Nova Etapa", theme::bold(14.0), palette.text);
                 ui.add_space(4.0);
-                theme::text(ui, "Adicione mais etapas ao seu funil comercial", theme::regular(11.0), palette.dim);
+                theme::text(
+                    ui,
+                    "Adicione mais etapas ao seu funil comercial",
+                    theme::regular(11.0),
+                    palette.dim,
+                );
                 ui.add_space(14.0);
 
-                let btn = egui::Button::new(if add_stage_open { "✕ Cancelar" } else { "+ Adicionar Etapa" })
-                    .fill(if add_stage_open { palette.surface_hover } else { palette.accent })
-                    .min_size(vec2(160.0, 32.0));
+                let btn = egui::Button::new(if add_stage_open {
+                    "✕ Cancelar"
+                } else {
+                    "+ Adicionar Etapa"
+                })
+                .fill(if add_stage_open {
+                    palette.surface_hover
+                } else {
+                    palette.accent
+                })
+                .min_size(vec2(160.0, 32.0));
                 if ui.add(btn).clicked() {
-                    ui.ctx().data_mut(|d| d.insert_temp(add_stage_id, !add_stage_open));
+                    ui.ctx()
+                        .data_mut(|d| d.insert_temp(add_stage_id, !add_stage_open));
                 }
             });
         });
@@ -701,7 +912,8 @@ fn render_column(
             // 1. Column Header
             ui.horizontal(|ui| {
                 let (dot_rect, _) = ui.allocate_exact_size(Vec2::splat(12.0), egui::Sense::hover());
-                ui.painter().circle_filled(dot_rect.center(), 5.0, dot_color);
+                ui.painter()
+                    .circle_filled(dot_rect.center(), 5.0, dot_color);
 
                 let max_title_w = (ui.available_width() - 65.0).max(60.0);
                 ui.allocate_ui_with_layout(
@@ -725,7 +937,16 @@ fn render_column(
                 ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
                     // Delete column option (if more than 1 column exists)
                     if app.crm_columns.len() > 1 {
-                        if theme::icon_button(ui, Icon::Trash, 12.0, palette.dim, palette.danger, "Excluir etapa").clicked() {
+                        if theme::icon_button(
+                            ui,
+                            Icon::Trash,
+                            12.0,
+                            palette.dim,
+                            palette.danger,
+                            "Excluir etapa",
+                        )
+                        .clicked()
+                        {
                             let delete_stage_confirm_id = egui::Id::new(DELETE_STAGE_CONFIRM_ID);
                             ui.ctx().data_mut(|d| {
                                 d.insert_temp(delete_stage_confirm_id, Some(col.id.clone()));
@@ -736,7 +957,16 @@ fn render_column(
                     // Quick + button on column header
                     let add_deal_id = egui::Id::new(ADD_DEAL_OPEN_ID);
                     let selected_col_id = egui::Id::new(SELECTED_COL_ID);
-                    if theme::icon_button(ui, Icon::Plus, 14.0, palette.secondary, palette.accent, "Adicionar negócio nesta etapa").clicked() {
+                    if theme::icon_button(
+                        ui,
+                        Icon::Plus,
+                        14.0,
+                        palette.secondary,
+                        palette.accent,
+                        "Adicionar negócio nesta etapa",
+                    )
+                    .clicked()
+                    {
                         ui.ctx().data_mut(|d| {
                             d.insert_temp(add_deal_id, true);
                             d.insert_temp(selected_col_id, col.id.clone());
@@ -770,7 +1000,12 @@ fn render_column(
                     if deals_in_col.is_empty() {
                         ui.add_space(20.0);
                         ui.vertical_centered(|ui| {
-                            theme::text(ui, "Nenhum negócio aqui", theme::regular(12.0), palette.dim);
+                            theme::text(
+                                ui,
+                                "Nenhum negócio aqui",
+                                theme::regular(12.0),
+                                palette.dim,
+                            );
                             ui.add_space(8.0);
 
                             let add_deal_id = egui::Id::new(ADD_DEAL_OPEN_ID);
@@ -816,7 +1051,14 @@ fn render_deal_card(app: &mut App, ui: &mut egui::Ui, palette: &Palette, deal: &
                 ui.horizontal(|ui| {
                     let (r, _) = ui.allocate_exact_size(Vec2::splat(22.0), egui::Sense::hover());
                     let picture = app.avatar(&deal.chat_id);
-                    super::widgets::paint_avatar(ui, palette, r, &title, &deal.chat_id, picture.as_deref());
+                    super::widgets::paint_avatar(
+                        ui,
+                        palette,
+                        r,
+                        &title,
+                        &deal.chat_id,
+                        picture.as_deref(),
+                    );
 
                     ui.add_space(2.0);
                     let max_w = if has_active_followup {
@@ -842,8 +1084,16 @@ fn render_deal_card(app: &mut App, ui: &mut egui::Ui, palette: &Palette, deal: &
 
                     if has_active_followup {
                         ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-                            let icon_color = if followup_overdue { palette.danger } else { palette.accent };
-                            let label = if followup_overdue { "Lembrete atrasado!" } else { "Lembrete ativo" };
+                            let icon_color = if followup_overdue {
+                                palette.danger
+                            } else {
+                                palette.accent
+                            };
+                            let label = if followup_overdue {
+                                "Lembrete atrasado!"
+                            } else {
+                                "Lembrete ativo"
+                            };
                             theme::icon(ui, Icon::Clock, 13.0, icon_color).on_hover_text(label);
                         });
                     }
@@ -889,19 +1139,39 @@ fn render_deal_card(app: &mut App, ui: &mut egui::Ui, palette: &Palette, deal: &
                 ui.separator();
                 ui.add_space(4.0);
 
-                let delete_confirm_id = egui::Id::new(("kanban_delete_deal_confirm", &deal.chat_id));
-                let is_deleting = ui.ctx().data(|d| d.get_temp::<bool>(delete_confirm_id)).unwrap_or(false);
+                let delete_confirm_id =
+                    egui::Id::new(("kanban_delete_deal_confirm", &deal.chat_id));
+                let is_deleting = ui
+                    .ctx()
+                    .data(|d| d.get_temp::<bool>(delete_confirm_id))
+                    .unwrap_or(false);
 
                 if is_deleting {
                     ui.horizontal(|ui| {
-                        theme::text(ui, "Excluir negócio?", theme::semibold(11.5), palette.danger);
+                        theme::text(
+                            ui,
+                            "Excluir negócio?",
+                            theme::semibold(11.5),
+                            palette.danger,
+                        );
                         ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
                             if ui.small_button("Não").clicked() {
-                                ui.ctx().data_mut(|d| d.insert_temp(delete_confirm_id, false));
+                                ui.ctx()
+                                    .data_mut(|d| d.insert_temp(delete_confirm_id, false));
                             }
-                            if ui.add(egui::Button::new(egui::RichText::new("Sim, excluir").color(palette.danger)).small()).clicked() {
-                                app.actions.push(Action::DeleteCrmDeal(deal.chat_id.clone()));
-                                ui.ctx().data_mut(|d| d.insert_temp(delete_confirm_id, false));
+                            if ui
+                                .add(
+                                    egui::Button::new(
+                                        egui::RichText::new("Sim, excluir").color(palette.danger),
+                                    )
+                                    .small(),
+                                )
+                                .clicked()
+                            {
+                                app.actions
+                                    .push(Action::DeleteCrmDeal(deal.chat_id.clone()));
+                                ui.ctx()
+                                    .data_mut(|d| d.insert_temp(delete_confirm_id, false));
                             }
                         });
                     });
@@ -914,24 +1184,49 @@ fn render_deal_card(app: &mut App, ui: &mut egui::Ui, palette: &Palette, deal: &
                         }
 
                         // Trash button to delete deal
-                        if theme::icon_button(ui, Icon::Trash, 12.0, palette.dim, palette.danger, "Excluir negócio").clicked() {
-                            ui.ctx().data_mut(|d| d.insert_temp(delete_confirm_id, true));
+                        if theme::icon_button(
+                            ui,
+                            Icon::Trash,
+                            12.0,
+                            palette.dim,
+                            palette.danger,
+                            "Excluir negócio",
+                        )
+                        .clicked()
+                        {
+                            ui.ctx()
+                                .data_mut(|d| d.insert_temp(delete_confirm_id, true));
                         }
 
                         // Stage Transition ComboBox
                         ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-                            let columns = if app.crm_columns.is_empty() { default_columns() } else { app.crm_columns.clone() };
+                            let columns = if app.crm_columns.is_empty() {
+                                default_columns()
+                            } else {
+                                app.crm_columns.clone()
+                            };
                             egui::ComboBox::from_id_salt(format!("move_col_{}", deal.chat_id))
                                 .selected_text("Mover etapa ▾")
                                 .width(105.0)
                                 .show_ui(ui, |ui| {
                                     for target_col in &columns {
                                         if target_col.id != deal.column_id {
-                                            let dot_color = parse_hex_color(&target_col.color).unwrap_or(palette.accent);
+                                            let dot_color = parse_hex_color(&target_col.color)
+                                                .unwrap_or(palette.accent);
                                             ui.horizontal(|ui| {
-                                                let (r, _) = ui.allocate_exact_size(Vec2::splat(8.0), egui::Sense::hover());
-                                                ui.painter().circle_filled(r.center(), 4.0, dot_color);
-                                                if ui.selectable_label(false, &target_col.title).clicked() {
+                                                let (r, _) = ui.allocate_exact_size(
+                                                    Vec2::splat(8.0),
+                                                    egui::Sense::hover(),
+                                                );
+                                                ui.painter().circle_filled(
+                                                    r.center(),
+                                                    4.0,
+                                                    dot_color,
+                                                );
+                                                if ui
+                                                    .selectable_label(false, &target_col.title)
+                                                    .clicked()
+                                                {
                                                     let mut updated = deal.clone();
                                                     updated.column_id = target_col.id.clone();
                                                     updated.updated_at = crate::util::now();

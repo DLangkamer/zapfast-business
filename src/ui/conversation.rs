@@ -227,7 +227,11 @@ fn header(app: &mut App, ui: &mut egui::Ui, chat: &Chat) -> Rect {
                         ui,
                         Icon::PanelLeft,
                         18.0,
-                        if app.show_crm_sidecar { palette.accent } else { palette.secondary },
+                        if app.show_crm_sidecar {
+                            palette.accent
+                        } else {
+                            palette.secondary
+                        },
                         palette.text,
                         "Painel CRM do Contato",
                     );
@@ -761,7 +765,8 @@ fn quick_reply_suggestions(app: &mut App, ui: &mut egui::Ui, field: egui::Id) {
                 let resolved_msg = if reply.message.is_empty() {
                     String::new()
                 } else {
-                    app.resolve_template(&reply.message, chat_ref.as_ref()).replace('\n', " ")
+                    app.resolve_template(&reply.message, chat_ref.as_ref())
+                        .replace('\n', " ")
                 };
                 let label = if let Some(voice) = &reply.voice {
                     let dur = voice.len() as f32 / crate::voice::RATE as f32;
@@ -773,8 +778,7 @@ fn quick_reply_suggestions(app: &mut App, ui: &mut egui::Ui, field: egui::Id) {
                     } else {
                         format!(
                             "🎙 /{}  [Áudio PTT {dur_str}] {}",
-                            reply.shortcut,
-                            resolved_msg
+                            reply.shortcut, resolved_msg
                         )
                     }
                 } else {
@@ -3905,8 +3909,10 @@ fn footer_over_picture(ui: &mut egui::Ui, palette: &Palette, message: &Message, 
     } else {
         0.0
     };
-    let width =
-        time.size().x + failed.as_ref().map_or(0.0, |galley| galley.size().x + 6.0) + revoked_width + tick_width;
+    let width = time.size().x
+        + failed.as_ref().map_or(0.0, |galley| galley.size().x + 6.0)
+        + revoked_width
+        + tick_width;
     let row = Rect::from_min_max(
         pos2(
             picture.right() - OVER_PICTURE_INSET.x - width,
@@ -3934,7 +3940,13 @@ fn footer_over_picture(ui: &mut egui::Ui, palette: &Palette, message: &Message, 
     if message.revoked && !matches!(message.content, Content::Revoked) {
         x -= 16.0;
         let icon_rect = Rect::from_center_size(pos2(x + 8.0, row.center().y), Vec2::splat(12.0));
-        theme::paint_icon(ui, Icon::Ban, icon_rect, 12.0, Color32::from_rgb(248, 113, 113));
+        theme::paint_icon(
+            ui,
+            Icon::Ban,
+            icon_rect,
+            12.0,
+            Color32::from_rgb(248, 113, 113),
+        );
     }
     if let Some(failed) = failed {
         x -= failed.size().x + 6.0;
@@ -7132,7 +7144,9 @@ fn recording_strip(app: &mut App, ui: &mut egui::Ui) {
     let paused_duration = app
         .recording_paused
         .as_ref()
-        .map(|(_, s)| std::time::Duration::from_secs_f64(s.len() as f64 / f64::from(crate::voice::RATE)))
+        .map(|(_, s)| {
+            std::time::Duration::from_secs_f64(s.len() as f64 / f64::from(crate::voice::RATE))
+        })
         .unwrap_or(std::time::Duration::ZERO);
     let total_elapsed = paused_duration + elapsed;
 

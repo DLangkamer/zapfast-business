@@ -3,10 +3,10 @@
 //! Allows scanning the local network for ZapFast Docker servers, entering credentials,
 //! and connecting the desktop app.
 
-use egui::Layout;
 use crate::app::App;
 use crate::model::Action;
 use crate::theme::{self, Icon};
+use egui::Layout;
 
 pub fn show(app: &mut App, ui: &mut egui::Ui) {
     let palette = app.palette;

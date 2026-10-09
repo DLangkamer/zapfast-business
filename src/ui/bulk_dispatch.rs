@@ -478,7 +478,9 @@ fn content_input_section(app: &mut App, ui: &mut egui::Ui, palette: &Palette) {
                 }
             });
             let edit = egui::TextEdit::multiline(&mut app.bulk_state.message_text)
-                .hint_text("Digite a mensagem a ser enviada (suporta {{primeiro_nome}}, {{saudacao}}...)")
+                .hint_text(
+                    "Digite a mensagem a ser enviada (suporta {{primeiro_nome}}, {{saudacao}}...)",
+                )
                 .desired_rows(3)
                 .desired_width(ui.available_width())
                 .font(theme::regular(13.5));

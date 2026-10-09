@@ -8,7 +8,12 @@ use crate::theme::{self, Icon, Palette};
 
 pub fn manager(app: &mut App, ui: &mut egui::Ui, palette: &Palette) {
     ui.horizontal(|ui| {
-        theme::text(ui, "Respostas rapidas & Audios PTT", theme::bold(18.0), palette.text);
+        theme::text(
+            ui,
+            "Respostas rapidas & Audios PTT",
+            theme::bold(18.0),
+            palette.text,
+        );
         ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
             if theme::icon_button(ui, Icon::X, 17.0, palette.secondary, palette.text, "Fechar")
                 .clicked()
@@ -30,15 +35,30 @@ pub fn manager(app: &mut App, ui: &mut egui::Ui, palette: &Palette) {
     ui.separator();
 
     ui.horizontal(|ui| {
-        ui.label(theme::rich_text("Atalho (sem a barra)", theme::medium(13.0), palette.text));
+        ui.label(theme::rich_text(
+            "Atalho (sem a barra)",
+            theme::medium(13.0),
+            palette.text,
+        ));
         if app.quick_reply_editing.is_some() {
-            theme::text(ui, "(Editando resposta)", theme::semibold(12.0), palette.accent);
+            theme::text(
+                ui,
+                "(Editando resposta)",
+                theme::semibold(12.0),
+                palette.accent,
+            );
         }
     });
-    ui.add(TextEdit::singleline(&mut app.quick_reply_shortcut).hint_text("ex: apresentacao ou preco"));
+    ui.add(
+        TextEdit::singleline(&mut app.quick_reply_shortcut).hint_text("ex: apresentacao ou preco"),
+    );
 
     ui.horizontal(|ui| {
-        ui.label(theme::rich_text("Mensagem de texto (opcional se houver audio)", theme::medium(13.0), palette.text));
+        ui.label(theme::rich_text(
+            "Mensagem de texto (opcional se houver audio)",
+            theme::medium(13.0),
+            palette.text,
+        ));
     });
     ui.horizontal_wrapped(|ui| {
         theme::text(ui, "Variaveis:", theme::regular(11.5), palette.secondary);
@@ -75,16 +95,29 @@ pub fn manager(app: &mut App, ui: &mut egui::Ui, palette: &Palette) {
     ui.add(
         TextEdit::multiline(&mut app.quick_reply_message)
             .desired_rows(2)
-            .hint_text("Ex: Ola {{primeiro_nome}}, {{saudacao}}! Segue a apresentacao que mencionei."),
+            .hint_text(
+                "Ex: Ola {{primeiro_nome}}, {{saudacao}}! Segue a apresentacao que mencionei.",
+            ),
     );
 
-    ui.label(theme::rich_text("Palavras-chave (separadas por virgula)", theme::medium(13.0), palette.text));
-    ui.add(TextEdit::singleline(&mut app.quick_reply_keywords).hint_text("ex: plano, proposta, suporte"));
+    ui.label(theme::rich_text(
+        "Palavras-chave (separadas por virgula)",
+        theme::medium(13.0),
+        palette.text,
+    ));
+    ui.add(
+        TextEdit::singleline(&mut app.quick_reply_keywords)
+            .hint_text("ex: plano, proposta, suporte"),
+    );
 
     ui.add_space(4.0);
 
     // Audio attachment section
-    ui.label(theme::rich_text("Audio de voz (Enviado como se tivesse gravado na hora)", theme::bold(13.0), palette.text));
+    ui.label(theme::rich_text(
+        "Audio de voz (Enviado como se tivesse gravado na hora)",
+        theme::bold(13.0),
+        palette.text,
+    ));
     let attached_voice = app
         .quick_reply_voice_name
         .clone()
@@ -131,7 +164,11 @@ pub fn manager(app: &mut App, ui: &mut egui::Ui, palette: &Palette) {
                                 14.0,
                                 palette.secondary,
                                 palette.accent,
-                                if is_playing { "Pausar áudio" } else { "Ouvir áudio" },
+                                if is_playing {
+                                    "Pausar áudio"
+                                } else {
+                                    "Ouvir áudio"
+                                },
                             )
                             .clicked()
                             {
@@ -174,8 +211,7 @@ pub fn manager(app: &mut App, ui: &mut egui::Ui, palette: &Palette) {
                                 .to_string();
                             let mins = (duration / 60.0) as u32;
                             let secs = (duration % 60.0) as u32;
-                            app.quick_reply_voice_name =
-                                Some(format!("{name} ({mins}:{secs:02})"));
+                            app.quick_reply_voice_name = Some(format!("{name} ({mins}:{secs:02})"));
                             app.quick_reply_voice_duration = Some(duration);
                             app.quick_reply_voice = Some(samples);
                         }
@@ -207,7 +243,11 @@ pub fn manager(app: &mut App, ui: &mut egui::Ui, palette: &Palette) {
                 } else {
                     "Adicionar resposta rapida"
                 })
-                .fill(if ready { palette.accent } else { palette.surface })
+                .fill(if ready {
+                    palette.accent
+                } else {
+                    palette.surface
+                })
                 .corner_radius(6.0),
             )
             .clicked()
@@ -288,7 +328,9 @@ pub fn manager(app: &mut App, ui: &mut egui::Ui, palette: &Palette) {
                             }
                         });
                         if !reply.message.is_empty() {
-                            let preview = if let Some(chat) = active_chat.as_ref().and_then(|id| app.chat(id)) {
+                            let preview = if let Some(chat) =
+                                active_chat.as_ref().and_then(|id| app.chat(id))
+                            {
                                 app.resolve_template(&reply.message, Some(chat))
                             } else {
                                 reply.message.clone()
@@ -346,14 +388,19 @@ pub fn manager(app: &mut App, ui: &mut egui::Ui, palette: &Palette) {
                         }
                         if let Some(voice) = &reply.voice {
                             let play_id = format!("preview_qr_{}", reply.id);
-                            let is_playing = app.player.status(&play_id).state == crate::audio::State::Playing;
+                            let is_playing =
+                                app.player.status(&play_id).state == crate::audio::State::Playing;
                             if theme::icon_button(
                                 ui,
                                 if is_playing { Icon::Pause } else { Icon::Play },
                                 15.0,
                                 palette.secondary,
                                 palette.accent,
-                                if is_playing { "Pausar áudio" } else { "Ouvir áudio" },
+                                if is_playing {
+                                    "Pausar áudio"
+                                } else {
+                                    "Ouvir áudio"
+                                },
                             )
                             .clicked()
                             {
@@ -364,22 +411,34 @@ pub fn manager(app: &mut App, ui: &mut egui::Ui, palette: &Palette) {
                             }
                         }
                         if active_chat.is_some() {
-                            let (btn_label, is_accent) = if reply.voice.is_some() && !reply.message.trim().is_empty() {
-                                ("Enviar audio + texto", true)
-                            } else if reply.voice.is_some() {
-                                ("Enviar audio agora", true)
-                            } else {
-                                ("Inserir na conversa", false)
-                            };
+                            let (btn_label, is_accent) =
+                                if reply.voice.is_some() && !reply.message.trim().is_empty() {
+                                    ("Enviar audio + texto", true)
+                                } else if reply.voice.is_some() {
+                                    ("Enviar audio agora", true)
+                                } else {
+                                    ("Inserir na conversa", false)
+                                };
                             if ui
                                 .add(
                                     egui::Button::new(
                                         egui::RichText::new(btn_label)
                                             .font(theme::medium(12.0))
-                                            .color(if is_accent { palette.accent } else { palette.text }),
+                                            .color(if is_accent {
+                                                palette.accent
+                                            } else {
+                                                palette.text
+                                            }),
                                     )
                                     .fill(palette.surface_active)
-                                    .stroke(Stroke::new(1.0, if is_accent { palette.accent } else { palette.outline }))
+                                    .stroke(Stroke::new(
+                                        1.0,
+                                        if is_accent {
+                                            palette.accent
+                                        } else {
+                                            palette.outline
+                                        },
+                                    ))
                                     .corner_radius(4.0),
                                 )
                                 .clicked()

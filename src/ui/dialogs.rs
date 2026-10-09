@@ -58,12 +58,16 @@ pub fn show(app: &mut App, ctx: &egui::Context) {
                 Dialog::CrmMetrics => {
                     680.0_f32.min((ui.ctx().content_rect().width() - 48.0).max(320.0))
                 }
+                Dialog::CrmTasks => {
+                    720.0_f32.min((ui.ctx().content_rect().width() - 48.0).max(320.0))
+                }
                 Dialog::Kanban => (ui.ctx().content_rect().width() - 32.0).clamp(320.0, 1400.0),
             });
             ui.spacing_mut().item_spacing.y = 8.0;
             match dialog {
                 Dialog::Kanban => super::kanban::show(app, ui),
                 Dialog::CrmMetrics => super::crm_metrics::show(app, ui),
+                Dialog::CrmTasks => super::crm_tasks::show(app, ui),
                 Dialog::CreatePoll(chat) => super::polls::create(app, ui, &chat),
                 Dialog::ScheduleMessage(chat) => schedule_message(app, ui, &chat),
                 Dialog::ScheduleVoice(chat) => schedule_voice(app, ui, &chat),
@@ -394,7 +398,8 @@ fn schedule_voice(app: &mut App, ui: &mut egui::Ui, chat: &str) {
         .as_ref()
         .map(|(_, samples, _)| samples.clone());
     if let Some(samples) = scheduled_samples {
-        let is_playing = app.player.status("preview_sched_voice").state == crate::audio::State::Playing;
+        let is_playing =
+            app.player.status("preview_sched_voice").state == crate::audio::State::Playing;
         let dur = samples.len() as f32 / crate::voice::RATE as f32;
         let mins = (dur / 60.0) as u32;
         let secs = (dur % 60.0) as u32;
@@ -403,7 +408,11 @@ fn schedule_voice(app: &mut App, ui: &mut egui::Ui, chat: &str) {
                 ui,
                 &palette,
                 Some(if is_playing { Icon::Pause } else { Icon::Play }),
-                if is_playing { "Pausar" } else { "Ouvir gravacao" },
+                if is_playing {
+                    "Pausar"
+                } else {
+                    "Ouvir gravacao"
+                },
                 false,
             )
             .clicked()
@@ -667,7 +676,8 @@ fn scheduled_messages(app: &mut App, ui: &mut egui::Ui, initial_filter: Option<&
                                 ui.horizontal(|ui| {
                                     if let Some(samples) = &item.voice {
                                         let play_id = format!("preview_sched_item_{}", item.id);
-                                        let is_playing = app.player.status(&play_id).state == crate::audio::State::Playing;
+                                        let is_playing = app.player.status(&play_id).state
+                                            == crate::audio::State::Playing;
                                         let dur = samples.len() as f32 / crate::voice::RATE as f32;
                                         let mins = (dur / 60.0) as u32;
                                         let secs = (dur % 60.0) as u32;
@@ -2704,31 +2714,20 @@ fn render_group_description(
 ) {
     let desc_editing_id = egui::Id::new(("group_desc_editing", &chat.id));
     let desc_draft_id = egui::Id::new(("group_desc_draft", &chat.id));
-    let is_editing = ui.ctx().data(|d| d.get_temp::<bool>(desc_editing_id)).unwrap_or(false) && group_editable;
+    let is_editing = ui
+        .ctx()
+        .data(|d| d.get_temp::<bool>(desc_editing_id))
+        .unwrap_or(false)
+        && group_editable;
 
     ui.horizontal(|ui| {
-        theme::text(
-            ui,
-            "Descrição",
-            theme::medium(12.5),
-            palette.secondary,
-        );
+        theme::text(ui, "Descrição", theme::medium(12.5), palette.secondary);
         if !chat.can_edit_info() {
             ui.add_space(4.0);
-            theme::text(
-                ui,
-                "(somente leitura)",
-                theme::regular(11.0),
-                palette.dim,
-            );
+            theme::text(ui, "(somente leitura)", theme::regular(11.0), palette.dim);
         } else if saving {
             ui.add_space(4.0);
-            theme::text(
-                ui,
-                "(salvando…)",
-                theme::regular(11.0),
-                palette.dim,
-            );
+            theme::text(ui, "(salvando…)", theme::regular(11.0), palette.dim);
         }
     });
 

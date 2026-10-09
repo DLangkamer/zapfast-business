@@ -1246,6 +1246,8 @@ pub enum Dialog {
     ScheduleVoice(ChatId),
     BulkDispatch(Option<BulkDispatchInitial>),
     Kanban,
+    /// Central inbox for overdue and upcoming CRM follow-ups.
+    CrmTasks,
     CrmMetrics,
     PollResults {
         chat: ChatId,
@@ -1776,7 +1778,10 @@ pub enum Action {
     SaveCrmFollowup(CrmFollowup),
     DeleteCrmFollowup(String),
     CompleteCrmFollowup(String),
-    SnoozeCrmFollowup { id: String, until: i64 },
+    SnoozeCrmFollowup {
+        id: String,
+        until: i64,
+    },
     ExportCrmBackup(std::path::PathBuf),
     ImportCrmBackup(std::path::PathBuf),
     PickExportCrmBackup,
