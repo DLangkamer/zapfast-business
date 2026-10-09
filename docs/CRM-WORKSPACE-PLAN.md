@@ -76,6 +76,23 @@ Fluxo database. Define a versioned API for creating a project from a WhatsApp
 conversation and returning the external project id/URL. Map only fields the
 user chose to send. Never upload message history by default.
 
+The current Fluxo interface was reviewed in read-only mode on 9 October 2026.
+The ZapFast Business design should reuse these proven concepts without copying
+Fluxo data or credentials:
+
+- project cards with status, task completion ratio, percentage and deadline;
+- task views as Kanban, list, checklist and calendar, with project/status
+  filters, priority, assignee and timer;
+- a project workspace with Kanban, client dossier, credentials, deliverables,
+  documents and paid-traffic tabs;
+- month/week agenda combining customer-success events, meetings, tasks, sales
+  calls and paid-traffic end dates;
+- a personal "My day" view as the default operational inbox.
+
+In ZapFast Business, the first release of this pattern is the account-scoped
+work inbox. Later tables and screens should keep the same hierarchy:
+`WhatsApp account -> contact/deal -> project -> task/event`.
+
 ## Delivery order
 
 1. Keep CRM, quick replies and reminders isolated per linked WhatsApp account.

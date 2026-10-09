@@ -59,7 +59,7 @@ jobs:
         os: [ubuntu-24.04, ubuntu-24.04-arm]
         image: ['ubuntu:24.04', 'debian:13-slim', 'fedora:41', 'fedora:latest']
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@v4
       - uses: actions/download-artifact@v4
         with:
           name: native-packages
@@ -108,6 +108,6 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@v4
       - name: Install a source build into a prefix with spaces and a percent
         run: bash packaging/test-install-user.sh

@@ -19,7 +19,7 @@ jobs:
       image: ghcr.io/flathub-infra/flatpak-github-actions:freedesktop-25.08
       options: --privileged
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@v4
       - name: Generate offline Cargo sources
         run: |
           git config --global --add safe.directory "$GITHUB_WORKSPACE"
