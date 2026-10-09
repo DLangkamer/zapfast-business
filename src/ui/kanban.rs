@@ -725,8 +725,8 @@ fn render_popovers(app: &mut App, ui: &mut egui::Ui, palette: &Palette) {
                 .crm_columns
                 .iter()
                 .find(|c| c.id != col_id)
-                .map(|c| c.title.as_str())
-                .unwrap_or("outra etapa");
+                .map(|c| c.title.clone())
+                .unwrap_or_else(|| "outra etapa".to_owned());
 
             Frame::new()
                 .fill(palette.surface)

@@ -13,9 +13,9 @@ use crate::backend::{Backend, Command, Event, LinkStatus, Refusal, Unsent, Waker
 use crate::i18n::Locale;
 use crate::image_preview::PreviewState;
 use crate::model::{
-    AccountId, Action, BroadcastList, Chat, ChatFilter, ChatId, Contact, Content, Delivery, Dialog,
-    Gif, GifError, Label, Media, MediaState, Message, Page, PickerTab, QuickReply, Scroll,
-    SidebarDisplayMode, StickerPack, StickerShelf, Toast, ToastKind,
+    AccountId, Action, Chat, ChatFilter, ChatId, Contact, Content, Delivery, Dialog, Gif, GifError,
+    Label, Media, MediaState, Message, Page, PickerTab, Scroll, SidebarDisplayMode, StickerPack,
+    StickerShelf, Toast, ToastKind,
 };
 use crate::paths::AppDirs;
 use crate::settings::{AccountRoster, NotificationSound, Settings, ThemeChoice};
@@ -7074,7 +7074,9 @@ fn notification_eligible(chat: &Chat, now: i64, message_at: i64) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::model::{ChatKind, Content, Media, MediaState, ToastKind};
+    use crate::model::{
+        BroadcastList, ChatKind, Content, Media, MediaState, QuickReply, ToastKind,
+    };
 
     fn app() -> App {
         let root = std::env::temp_dir().join(format!("zapfast-app-{}", std::process::id()));
