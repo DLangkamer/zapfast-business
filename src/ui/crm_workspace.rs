@@ -3,7 +3,7 @@
 use crate::app::App;
 use crate::model::{Action, CrmProject, CrmTask, Page};
 use crate::theme::{self, Icon};
-use egui::{Align, CornerRadius, Frame, Layout, Margin, RichText, ScrollArea, Stroke};
+use egui::{Align, CornerRadius, Frame, Layout, Margin, RichText, ScrollArea, Stroke, vec2};
 use jiff::civil::Date;
 
 #[derive(Clone, Copy, Default, PartialEq, Eq)]
@@ -88,103 +88,126 @@ pub fn show(app: &mut App, ui: &mut egui::Ui) {
     let mut draft = ui.data_mut(|d| d.get_temp::<ProjectDraft>(draft_id).unwrap_or_default());
     let mut selected = ui.data_mut(|d| d.get_temp::<Option<String>>(selected_id).flatten());
 
+    let available = ui.available_size();
+    let gap = ui.spacing().item_spacing.x;
+    let (sidebar_width, content_width) = workspace_widths(available.x, gap);
     ui.horizontal(|ui| {
-        Frame::new()
-            .fill(palette.panel)
-            .stroke(Stroke::new(1.0, palette.outline))
-            .inner_margin(Margin::same(14))
-            .show(ui, |ui| {
-                ui.set_width(218.0);
-                ui.set_min_height(ui.available_height());
-                ui.horizontal(|ui| {
-                    theme::icon(ui, Icon::ListChecks, 22.0, palette.accent);
-                    ui.label(RichText::new("ZapFast CRM").size(18.0).strong());
-                });
-                ui.label(
-                    RichText::new("Central de relacionamento")
-                        .small()
-                        .color(palette.dim),
-                );
-                ui.add_space(20.0);
-                nav(
-                    ui,
-                    &mut view,
-                    WorkspaceView::Overview,
-                    Icon::Clock,
-                    "Meu dia",
-                );
-                nav(
-                    ui,
-                    &mut view,
-                    WorkspaceView::Projects,
-                    Icon::Users,
-                    "Projetos",
-                );
-                nav(
-                    ui,
-                    &mut view,
-                    WorkspaceView::Tasks,
-                    Icon::ListChecks,
-                    "Tarefas",
-                );
-                nav(
-                    ui,
-                    &mut view,
-                    WorkspaceView::Agenda,
-                    Icon::Calendar,
-                    "Agenda",
-                );
-                nav(
-                    ui,
-                    &mut view,
-                    WorkspaceView::Funnel,
-                    Icon::Tag,
-                    "Funil comercial",
-                );
-                ui.with_layout(Layout::bottom_up(Align::Min), |ui| {
-                    if ui
-                        .add_sized([190.0, 36.0], egui::Button::new("← Conversas"))
-                        .clicked()
-                    {
-                        app.actions.push(Action::Open(Page::Chats));
-                    }
-                    ui.label(
-                        RichText::new("Dados isolados nesta conta")
-                            .small()
-                            .color(palette.dim),
-                    );
-                });
-            });
-
-        Frame::new()
-            .fill(palette.window)
-            .inner_margin(Margin::symmetric(24, 18))
-            .show(ui, |ui| {
-                ui.set_min_width((ui.available_width() - 2.0).max(420.0));
-                let (title, subtitle) = match view {
-                    WorkspaceView::Overview => ("Meu dia", "Prioridades e próximos passos"),
-                    WorkspaceView::Projects => {
-                        ("Projetos", "Clientes, entregas e conversas vinculadas")
-                    }
-                    WorkspaceView::Tasks => ("Tarefas", "Organize e acompanhe o trabalho"),
-                    WorkspaceView::Agenda => ("Agenda", "Prazos e follow-ups da conta"),
-                    WorkspaceView::Funnel => ("Funil comercial", "Negócios e etapas de venda"),
-                };
-                ui.label(RichText::new(title).size(24.0).strong().color(palette.text));
-                ui.label(RichText::new(subtitle).size(12.0).color(palette.dim));
-                ui.add_space(14.0);
-                ui.separator();
-                ui.add_space(10.0);
-                ScrollArea::vertical()
-                    .auto_shrink([false, false])
-                    .show(ui, |ui| match view {
-                        WorkspaceView::Overview => overview(app, ui, &mut view),
-                        WorkspaceView::Projects => projects(app, ui, &mut draft, &mut selected),
-                        WorkspaceView::Tasks => super::crm_tasks::show_workspace(app, ui),
-                        WorkspaceView::Agenda => super::crm_tasks::show_agenda_workspace(app, ui),
-                        WorkspaceView::Funnel => funnel(app, ui),
+        ui.allocate_ui_with_layout(
+            vec2(sidebar_width, available.y),
+            Layout::top_down(Align::Min),
+            |ui| {
+                Frame::new()
+                    .fill(palette.panel)
+                    .stroke(Stroke::new(1.0, palette.outline))
+                    .inner_margin(Margin::same(14))
+                    .show(ui, |ui| {
+                        ui.set_width((sidebar_width - 28.0).max(140.0));
+                        ui.set_min_height((available.y - 28.0).max(320.0));
+                        ui.horizontal(|ui| {
+                            theme::icon(ui, Icon::ListChecks, 22.0, palette.accent);
+                            ui.label(RichText::new("ZapFast CRM").size(18.0).strong());
+                        });
+                        ui.label(
+                            RichText::new("Central de relacionamento")
+                                .small()
+                                .color(palette.dim),
+                        );
+                        ui.add_space(20.0);
+                        nav(
+                            ui,
+                            &mut view,
+                            WorkspaceView::Overview,
+                            Icon::Clock,
+                            "Meu dia",
+                        );
+                        nav(
+                            ui,
+                            &mut view,
+                            WorkspaceView::Projects,
+                            Icon::Users,
+                            "Projetos",
+                        );
+                        nav(
+                            ui,
+                            &mut view,
+                            WorkspaceView::Tasks,
+                            Icon::ListChecks,
+                            "Tarefas",
+                        );
+                        nav(
+                            ui,
+                            &mut view,
+                            WorkspaceView::Agenda,
+                            Icon::Calendar,
+                            "Agenda",
+                        );
+                        nav(
+                            ui,
+                            &mut view,
+                            WorkspaceView::Funnel,
+                            Icon::Tag,
+                            "Funil comercial",
+                        );
+                        ui.with_layout(Layout::bottom_up(Align::Min), |ui| {
+                            if ui
+                                .add_sized([190.0, 36.0], egui::Button::new("← Conversas"))
+                                .clicked()
+                            {
+                                app.actions.push(Action::Open(Page::Chats));
+                            }
+                            ui.label(
+                                RichText::new("Dados isolados nesta conta")
+                                    .small()
+                                    .color(palette.dim),
+                            );
+                        });
                     });
-            });
+            },
+        );
+
+        ui.allocate_ui_with_layout(
+            vec2(content_width, available.y),
+            Layout::top_down(Align::Min),
+            |ui| {
+                Frame::new()
+                    .fill(palette.window)
+                    .inner_margin(Margin::symmetric(24, 18))
+                    .show(ui, |ui| {
+                        ui.set_width((content_width - 48.0).max(272.0));
+                        ui.set_min_height((available.y - 36.0).max(320.0));
+                        let (title, subtitle) = match view {
+                            WorkspaceView::Overview => ("Meu dia", "Prioridades e próximos passos"),
+                            WorkspaceView::Projects => {
+                                ("Projetos", "Clientes, entregas e conversas vinculadas")
+                            }
+                            WorkspaceView::Tasks => ("Tarefas", "Organize e acompanhe o trabalho"),
+                            WorkspaceView::Agenda => ("Agenda", "Prazos e follow-ups da conta"),
+                            WorkspaceView::Funnel => {
+                                ("Funil comercial", "Negócios e etapas de venda")
+                            }
+                        };
+                        ui.label(RichText::new(title).size(24.0).strong().color(palette.text));
+                        ui.label(RichText::new(subtitle).size(12.0).color(palette.dim));
+                        ui.add_space(14.0);
+                        ui.separator();
+                        ui.add_space(10.0);
+                        ScrollArea::vertical().auto_shrink([false, false]).show(
+                            ui,
+                            |ui| match view {
+                                WorkspaceView::Overview => overview(app, ui, &mut view),
+                                WorkspaceView::Projects => {
+                                    projects(app, ui, &mut draft, &mut selected)
+                                }
+                                WorkspaceView::Tasks => super::crm_tasks::show_workspace(app, ui),
+                                WorkspaceView::Agenda => {
+                                    super::crm_tasks::show_agenda_workspace(app, ui)
+                                }
+                                WorkspaceView::Funnel => funnel(app, ui),
+                            },
+                        );
+                    });
+            },
+        );
     });
 
     ui.data_mut(|d| {
@@ -192,6 +215,12 @@ pub fn show(app: &mut App, ui: &mut egui::Ui) {
         d.insert_temp(draft_id, draft);
         d.insert_temp(selected_id, selected);
     });
+}
+
+fn workspace_widths(available: f32, gap: f32) -> (f32, f32) {
+    let sidebar = 218.0_f32.min((available * 0.32).max(170.0));
+    let content = (available - sidebar - gap).max(320.0);
+    (sidebar, content)
 }
 
 fn nav(
@@ -801,6 +830,23 @@ fn project_status(status: &str) -> &str {
         "completed" => "Concluído",
         "archived" => "Arquivado",
         _ => "Ativo",
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::workspace_widths;
+
+    #[test]
+    fn crm_workspace_reserves_visible_content_beside_navigation() {
+        let (sidebar, content) = workspace_widths(1920.0, 8.0);
+        assert_eq!(sidebar, 218.0);
+        assert_eq!(content, 1694.0);
+
+        let (sidebar, content) = workspace_widths(720.0, 8.0);
+        assert!(sidebar >= 170.0);
+        assert!(content >= 320.0);
+        assert!(sidebar + content + 8.0 <= 720.0);
     }
 }
 
