@@ -45,21 +45,32 @@ impl Default for TaskDraft {
 }
 
 pub fn show(app: &mut App, ui: &mut egui::Ui) {
-    show_inner(app, ui, true);
+    show_inner(app, ui, true, None);
 }
 
 /// Draws the task center as part of the full CRM page instead of a modal.
 pub fn show_workspace(app: &mut App, ui: &mut egui::Ui) {
-    show_inner(app, ui, false);
+    show_inner(app, ui, false, Some(TaskView::Tasks));
 }
 
-fn show_inner(app: &mut App, ui: &mut egui::Ui, modal: bool) {
+pub fn show_agenda_workspace(app: &mut App, ui: &mut egui::Ui) {
+    let account_id = app.id.as_str().to_owned();
+    let draft_id = ui.id().with(("crm-task-draft", &account_id));
+    let mut draft = ui.data_mut(|d| d.get_temp::<TaskDraft>(draft_id).unwrap_or_default());
+    show_calendar(app, ui, crate::util::now(), &mut draft);
+    ui.data_mut(|d| d.insert_temp(draft_id, draft));
+}
+
+fn show_inner(app: &mut App, ui: &mut egui::Ui, modal: bool, forced: Option<TaskView>) {
     let p = app.palette;
     let now = crate::util::now();
     let account_id = app.id.as_str().to_owned();
     let draft_id = ui.id().with(("crm-task-draft", &account_id));
     let view_id = ui.id().with(("crm-task-view", &account_id));
     let mut view = ui.data_mut(|d| d.get_temp::<TaskView>(view_id).unwrap_or_default());
+    if let Some(forced) = forced {
+        view = forced;
+    }
     let mut draft = ui.data_mut(|d| d.get_temp::<TaskDraft>(draft_id).unwrap_or_default());
     let mut followups: Vec<_> = app
         .crm_followups
@@ -77,23 +88,23 @@ fn show_inner(app: &mut App, ui: &mut egui::Ui, modal: bool) {
         .count()
         + followups.iter().filter(|x| x.remind_at <= now).count();
 
-    ui.horizontal(|ui| {
-        theme::icon(ui, Icon::Bell, 20.0, p.accent);
-        theme::text(ui, "Central de tarefas", theme::bold(18.0), p.text);
-        if modal {
+    if modal {
+        ui.horizontal(|ui| {
+            theme::icon(ui, Icon::Bell, 20.0, p.accent);
+            theme::text(ui, "Central de tarefas", theme::bold(18.0), p.text);
             ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
                 if theme::icon_button(ui, Icon::X, 16.0, p.dim, p.text, "Fechar").clicked() {
                     app.actions.push(Action::CloseDialog);
                 }
             });
-        }
-    });
-    theme::text(
-        ui,
-        "Tarefas e follow-ups ficam somente nesta conta do WhatsApp.",
-        theme::regular(12.0),
-        p.dim,
-    );
+        });
+        theme::text(
+            ui,
+            "Tarefas e follow-ups ficam somente nesta conta do WhatsApp.",
+            theme::regular(12.0),
+            p.dim,
+        );
+    }
     ui.add_space(8.0);
     ui.horizontal_wrapped(|ui| {
         summary(ui, &p, "Atrasados", late, late > 0);
@@ -103,11 +114,13 @@ fn show_inner(app: &mut App, ui: &mut egui::Ui, modal: bool) {
     });
     ui.separator();
 
-    ui.horizontal_wrapped(|ui| {
-        ui.selectable_value(&mut view, TaskView::Today, "Meu dia");
-        ui.selectable_value(&mut view, TaskView::Tasks, "Tarefas");
-        ui.selectable_value(&mut view, TaskView::Calendar, "Agenda");
-    });
+    if modal {
+        ui.horizontal_wrapped(|ui| {
+            ui.selectable_value(&mut view, TaskView::Today, "Meu dia");
+            ui.selectable_value(&mut view, TaskView::Tasks, "Tarefas");
+            ui.selectable_value(&mut view, TaskView::Calendar, "Agenda");
+        });
+    }
     ui.data_mut(|d| d.insert_temp(view_id, view));
     if view == TaskView::Today {
         show_day(app, ui, crate::util::today(), now, &mut draft);
@@ -392,7 +405,7 @@ fn show_calendar(app: &mut App, ui: &mut egui::Ui, now: i64, draft: &mut TaskDra
     });
 
     let headings = crate::util::weekday_headings(app.locale);
-    let cell_width = ((ui.available_width() - 24.0) / 7.0).clamp(36.0, 88.0);
+    let cell_width = ((ui.available_width() - 24.0) / 7.0).clamp(56.0, 180.0);
     egui::Grid::new(("crm-agenda-grid", &account_id))
         .num_columns(7)
         .spacing([4.0, 4.0])
@@ -410,7 +423,7 @@ fn show_calendar(app: &mut App, ui: &mut egui::Ui, now: i64, draft: &mut TaskDra
             let cells = ((lead + days + 6) / 7) * 7;
             for index in 0..cells {
                 if index < lead || index >= lead + days {
-                    ui.add_sized([cell_width, 48.0], egui::Label::new(""));
+                    ui.add_sized([cell_width, 64.0], egui::Label::new(""));
                 } else {
                     let day = (index - lead + 1) as i8;
                     if let Ok(date) = Date::new(month.year(), month.month(), day) {
@@ -441,7 +454,7 @@ fn show_calendar(app: &mut App, ui: &mut egui::Ui, now: i64, draft: &mut TaskDra
                             format!("{day}\n{count} item{}", if count == 1 { "" } else { "s" })
                         };
                         let button = egui::Button::new(label).selected(selected == date);
-                        if ui.add_sized([cell_width, 48.0], button).clicked() {
+                        if ui.add_sized([cell_width, 64.0], button).clicked() {
                             selected = date;
                         }
                     }

@@ -4,7 +4,7 @@ This document records the product direction and the account-isolation rule for
 the Business-only CRM features. It complements `BUSINESS-MAINTENANCE.md` and
 keeps future upstream merges small.
 
-## Implemented foundation through 0.20.0
+## Implemented foundation through 0.20.1
 
 - Account-scoped persistent CRM tasks stored in the encrypted archive.
 - Task title, description, priority, due date, completion state and optional chat link.
@@ -17,6 +17,8 @@ keeps future upstream merges small.
 - Account-scoped projects can reference one or more conversations or groups by id without copying messages.
 - Existing tasks can be attached to and removed from projects; deleting a project preserves its tasks.
 - CRM backup version 3 includes projects and chat links while remaining compatible with older backups.
+- The CRM uses a dedicated sidebar, responsive content panels, project search/status filters and a full-width agenda.
+- Projects support inline status changes, editing, deadlines, linked-chat navigation and quick task creation.
 
 ## What exists in 0.19.10
 
