@@ -43,6 +43,8 @@ CREATE TABLE IF NOT EXISTS crm_tasks (
     description TEXT NOT NULL DEFAULT '',
     status TEXT NOT NULL DEFAULT 'todo',
     priority TEXT NOT NULL DEFAULT 'normal',
+    kind TEXT NOT NULL DEFAULT 'task',
+    duration_minutes INTEGER,
     due_at INTEGER,
     completed_at INTEGER,
     created_at INTEGER NOT NULL,
@@ -335,7 +337,7 @@ impl Archive {
     pub fn crm_tasks(&self) -> Result<Vec<CrmTask>> {
         let mut statement = self.connection.prepare(
             "SELECT id, chat_id, project_id, title, description, status, priority,
-                    due_at, completed_at, created_at, updated_at
+                    kind, duration_minutes, due_at, completed_at, created_at, updated_at
              FROM crm_tasks
              ORDER BY CASE WHEN status = 'done' THEN 1 ELSE 0 END, due_at IS NULL, due_at, created_at",
         )?;
@@ -348,10 +350,12 @@ impl Archive {
                 description: row.get(4)?,
                 status: row.get(5)?,
                 priority: row.get(6)?,
-                due_at: row.get(7)?,
-                completed_at: row.get(8)?,
-                created_at: row.get(9)?,
-                updated_at: row.get(10)?,
+                kind: row.get(7)?,
+                duration_minutes: row.get(8)?,
+                due_at: row.get(9)?,
+                completed_at: row.get(10)?,
+                created_at: row.get(11)?,
+                updated_at: row.get(12)?,
             })
         })?;
         rows.collect()
@@ -360,16 +364,17 @@ impl Archive {
     pub fn upsert_crm_task(&self, task: &CrmTask) -> Result<()> {
         self.connection.execute(
             "INSERT INTO crm_tasks
-             (id, chat_id, project_id, title, description, status, priority, due_at, completed_at, created_at, updated_at)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)
+             (id, chat_id, project_id, title, description, status, priority, kind, duration_minutes, due_at, completed_at, created_at, updated_at)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13)
              ON CONFLICT(id) DO UPDATE SET chat_id=excluded.chat_id,
                 project_id=excluded.project_id, title=excluded.title,
                 description=excluded.description, status=excluded.status,
-                priority=excluded.priority, due_at=excluded.due_at,
+                priority=excluded.priority, kind=excluded.kind,
+                duration_minutes=excluded.duration_minutes, due_at=excluded.due_at,
                 completed_at=excluded.completed_at, updated_at=excluded.updated_at",
             params![task.id, task.chat_id, task.project_id, task.title, task.description,
-                task.status, task.priority, task.due_at, task.completed_at,
-                task.created_at, task.updated_at],
+                task.status, task.priority, task.kind, task.duration_minutes, task.due_at,
+                task.completed_at, task.created_at, task.updated_at],
         )?;
         Ok(())
     }
@@ -470,7 +475,7 @@ impl Archive {
             .unwrap_or_default()
             .as_secs() as i64;
         Ok(CrmBackup {
-            version: 3,
+            version: 4,
             exported_at: now,
             account_id: None,
             columns,
@@ -612,6 +617,8 @@ mod tests {
             description: "Revisar valores antes da reunião".to_owned(),
             status: "todo".to_owned(),
             priority: "high".to_owned(),
+            kind: "task".to_owned(),
+            duration_minutes: None,
             due_at: Some(1700003600),
             completed_at: None,
             created_at: 1700000000,
@@ -629,7 +636,7 @@ mod tests {
         assert_eq!(archive.crm_tasks().unwrap()[0].status, "done");
 
         let backup = archive.export_crm_backup().unwrap();
-        assert_eq!(backup.version, 3);
+        assert_eq!(backup.version, 4);
         assert_eq!(backup.tasks, vec![task]);
 
         assert!(archive.delete_crm_task("task_123").unwrap());
@@ -664,6 +671,8 @@ mod tests {
             description: String::new(),
             status: "todo".to_owned(),
             priority: "normal".to_owned(),
+            kind: "task".to_owned(),
+            duration_minutes: None,
             due_at: None,
             completed_at: None,
             created_at: 1700000000,

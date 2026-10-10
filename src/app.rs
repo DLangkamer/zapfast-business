@@ -7385,6 +7385,8 @@ mod tests {
                     description: String::new(),
                     status: "todo".to_owned(),
                     priority: "high".to_owned(),
+                    kind: "task".to_owned(),
+                    duration_minutes: None,
                     due_at: Some(2),
                     completed_at: None,
                     created_at: 1,

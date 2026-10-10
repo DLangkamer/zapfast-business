@@ -20,6 +20,9 @@ struct TaskDraft {
     title: String,
     description: String,
     priority: String,
+    kind: String,
+    duration_minutes: u16,
+    project_id: Option<String>,
     has_due: bool,
     due_date: Date,
     due_hour: u8,
@@ -33,6 +36,9 @@ impl Default for TaskDraft {
             title: String::new(),
             description: String::new(),
             priority: "normal".into(),
+            kind: "task".into(),
+            duration_minutes: 30,
+            project_id: None,
             has_due: true,
             due_date: crate::util::today()
                 .tomorrow()
@@ -149,6 +155,20 @@ fn show_inner(app: &mut App, ui: &mut egui::Ui, modal: bool, forced: Option<Task
                 p.text,
             );
             ui.horizontal_wrapped(|ui| {
+                egui::ComboBox::from_id_salt("task-kind")
+                    .selected_text(if draft.kind == "conversation" {
+                        "Conversa agendada"
+                    } else {
+                        "Tarefa"
+                    })
+                    .show_ui(ui, |ui| {
+                        ui.selectable_value(&mut draft.kind, "task".into(), "Tarefa");
+                        ui.selectable_value(
+                            &mut draft.kind,
+                            "conversation".into(),
+                            "Conversa agendada",
+                        );
+                    });
                 ui.add_sized(
                     [260.0, 28.0],
                     egui::TextEdit::singleline(&mut draft.title)
@@ -167,6 +187,40 @@ fn show_inner(app: &mut App, ui: &mut egui::Ui, modal: bool, forced: Option<Task
                         }
                     });
                 ui.checkbox(&mut draft.has_due, "Definir prazo");
+            });
+            ui.horizontal_wrapped(|ui| {
+                egui::ComboBox::from_id_salt("task-project")
+                    .selected_text(
+                        draft
+                            .project_id
+                            .as_ref()
+                            .and_then(|id| app.crm_projects.iter().find(|p| &p.id == id))
+                            .map_or("Sem projeto", |p| p.name.as_str()),
+                    )
+                    .show_ui(ui, |ui| {
+                        ui.selectable_value(&mut draft.project_id, None, "Sem projeto");
+                        for project in &app.crm_projects {
+                            ui.selectable_value(
+                                &mut draft.project_id,
+                                Some(project.id.clone()),
+                                &project.name,
+                            );
+                        }
+                    });
+                if draft.kind == "conversation" {
+                    ui.label("Duração");
+                    egui::ComboBox::from_id_salt("conversation-duration")
+                        .selected_text(format!("{} min", draft.duration_minutes))
+                        .show_ui(ui, |ui| {
+                            for minutes in [15, 30, 45, 60, 90, 120] {
+                                ui.selectable_value(
+                                    &mut draft.duration_minutes,
+                                    minutes,
+                                    format!("{minutes} min"),
+                                );
+                            }
+                        });
+                }
             });
             if draft.has_due {
                 super::dialogs::date_time_picker(
@@ -220,13 +274,16 @@ fn show_inner(app: &mut App, ui: &mut egui::Ui, modal: bool, forced: Option<Task
                             } else {
                                 None
                             },
-                            project_id: old.as_ref().and_then(|x| x.project_id.clone()),
+                            project_id: draft.project_id.clone(),
                             title: draft.title.trim().into(),
                             description: draft.description.trim().into(),
                             status: old
                                 .as_ref()
                                 .map_or_else(|| "todo".into(), |x| x.status.clone()),
                             priority: draft.priority.clone(),
+                            kind: draft.kind.clone(),
+                            duration_minutes: (draft.kind == "conversation")
+                                .then_some(draft.duration_minutes),
                             due_at: draft.has_due.then(|| {
                                 crate::util::to_unix_seconds(
                                     draft.due_date,
@@ -252,14 +309,39 @@ fn show_inner(app: &mut App, ui: &mut egui::Ui, modal: bool, forced: Option<Task
     egui::ScrollArea::vertical()
         .max_height(440.0)
         .show(ui, |ui| {
-            theme::text(ui, "Tarefas", theme::semibold(14.0), p.text);
-            if app.crm_tasks.is_empty() {
+            theme::text(ui, "Tarefas de trabalho", theme::semibold(14.0), p.text);
+            if !app.crm_tasks.iter().any(|task| task.kind != "conversation") {
                 theme::text(ui, "Nenhuma tarefa criada.", theme::regular(12.0), p.dim);
             }
-            for task in app.crm_tasks.clone() {
+            for task in app
+                .crm_tasks
+                .clone()
+                .into_iter()
+                .filter(|task| task.kind != "conversation")
+            {
                 task_row(app, ui, &task, now, &mut draft);
                 ui.add_space(6.0);
             }
+            ui.add_space(8.0);
+            theme::text(ui, "Conversas agendadas", theme::semibold(14.0), p.text);
+            if !app.crm_tasks.iter().any(|task| task.kind == "conversation") {
+                theme::text(
+                    ui,
+                    "Nenhuma conversa agendada.",
+                    theme::regular(12.0),
+                    p.dim,
+                );
+            }
+            for task in app
+                .crm_tasks
+                .clone()
+                .into_iter()
+                .filter(|task| task.kind == "conversation")
+            {
+                task_row(app, ui, &task, now, &mut draft);
+                ui.add_space(6.0);
+            }
+            ui.add_space(8.0);
             theme::text(ui, "Follow-ups", theme::semibold(14.0), p.text);
             if followups.is_empty() {
                 theme::text(
@@ -498,7 +580,18 @@ fn task_row(app: &mut App, ui: &mut egui::Ui, task: &CrmTask, now: i64, draft: &
                     if !task.description.is_empty() {
                         theme::text(ui, &task.description, theme::regular(11.0), p.secondary);
                     }
-                    let mut meta = priority_label(&task.priority).to_owned();
+                    let mut meta = if task.kind == "conversation" {
+                        format!("Conversa • {} min", task.duration_minutes.unwrap_or(30))
+                    } else {
+                        priority_label(&task.priority).to_owned()
+                    };
+                    if let Some(project) = task
+                        .project_id
+                        .as_ref()
+                        .and_then(|id| app.crm_projects.iter().find(|p| &p.id == id))
+                    {
+                        meta.push_str(&format!(" • Projeto: {}", project.name));
+                    }
                     if let Some(d) = task.due_at {
                         meta.push_str(&format!(" • {}", format_when(d)));
                     }
@@ -521,6 +614,9 @@ fn task_row(app: &mut App, ui: &mut egui::Ui, task: &CrmTask, now: i64, draft: &
                         draft.title = task.title.clone();
                         draft.description = task.description.clone();
                         draft.priority = task.priority.clone();
+                        draft.kind = task.kind.clone();
+                        draft.duration_minutes = task.duration_minutes.unwrap_or(30);
+                        draft.project_id = task.project_id.clone();
                         draft.has_due = task.due_at.is_some();
                         if let Some((date, hour, minute)) =
                             task.due_at.and_then(crate::util::local_datetime)

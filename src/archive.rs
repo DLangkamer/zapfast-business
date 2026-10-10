@@ -172,6 +172,8 @@ const MIGRATIONS: &[(&str, &str, &str)] = &[
     ("scheduled_messages", "kind", "TEXT NOT NULL DEFAULT 'text'"),
     ("scheduled_messages", "voice", "BLOB"),
     ("business_quick_replies", "voice", "BLOB"),
+    ("crm_tasks", "kind", "TEXT NOT NULL DEFAULT 'task'"),
+    ("crm_tasks", "duration_minutes", "INTEGER"),
     ("chats", "description", "TEXT"),
 ];
 const CHAT_JOIN: &str = "FROM chats c

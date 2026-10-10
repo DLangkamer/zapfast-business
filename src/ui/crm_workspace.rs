@@ -78,6 +78,29 @@ impl ProjectEdit {
     }
 }
 
+#[derive(Clone)]
+struct ConversationDraft {
+    title: String,
+    date: Date,
+    hour: u8,
+    minute: u8,
+    duration_minutes: u16,
+}
+
+impl Default for ConversationDraft {
+    fn default() -> Self {
+        Self {
+            title: "Conversa com cliente".into(),
+            date: crate::util::today()
+                .tomorrow()
+                .unwrap_or_else(|_| crate::util::today()),
+            hour: 9,
+            minute: 0,
+            duration_minutes: 30,
+        }
+    }
+}
+
 pub fn show(app: &mut App, ui: &mut egui::Ui) {
     let palette = app.palette;
     let account_id = app.id.as_str().to_owned();
@@ -768,6 +791,86 @@ fn project_detail(
         }
     }
     ui.separator();
+    ui.heading("Agenda do projeto");
+    ui.label("Marque uma conversa e abra o chat no horário combinado. Nenhuma mensagem é enviada automaticamente.");
+    let conversation_id = ui.id().with(("project-conversation", &project.id));
+    let mut conversation = ui.data_mut(|d| {
+        d.get_temp::<ConversationDraft>(conversation_id)
+            .unwrap_or_default()
+    });
+    Frame::new()
+        .fill(app.palette.surface)
+        .corner_radius(CornerRadius::same(8))
+        .inner_margin(Margin::same(10))
+        .show(ui, |ui| {
+            ui.horizontal_wrapped(|ui| {
+                ui.add_sized(
+                    [280.0, 28.0],
+                    egui::TextEdit::singleline(&mut conversation.title),
+                );
+                egui::ComboBox::from_id_salt(("project-conversation-duration", &project.id))
+                    .selected_text(format!("{} min", conversation.duration_minutes))
+                    .show_ui(ui, |ui| {
+                        for minutes in [15, 30, 45, 60, 90, 120] {
+                            ui.selectable_value(
+                                &mut conversation.duration_minutes,
+                                minutes,
+                                format!("{minutes} min"),
+                            );
+                        }
+                    });
+            });
+            super::dialogs::date_time_picker(
+                ui,
+                app.locale,
+                &app.palette,
+                "project-conversation-date",
+                &mut conversation.date,
+                &mut conversation.hour,
+                &mut conversation.minute,
+            );
+            if ui
+                .add_enabled(
+                    !conversation.title.trim().is_empty() && !project.chat_ids.is_empty(),
+                    egui::Button::new("Agendar conversa"),
+                )
+                .on_disabled_hover_text("Vincule uma conversa ou grupo ao projeto primeiro.")
+                .clicked()
+            {
+                let now = crate::util::now();
+                let nonce = std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .unwrap_or_default()
+                    .as_nanos();
+                app.actions.push(Action::SaveCrmTask(CrmTask {
+                    id: format!("conversation-{nonce}"),
+                    chat_id: project.chat_ids.first().cloned(),
+                    project_id: Some(project.id.clone()),
+                    title: conversation.title.trim().into(),
+                    description: String::new(),
+                    status: "todo".into(),
+                    priority: "normal".into(),
+                    kind: "conversation".into(),
+                    duration_minutes: Some(conversation.duration_minutes),
+                    due_at: crate::util::to_unix_seconds(
+                        conversation.date,
+                        conversation.hour,
+                        conversation.minute,
+                    ),
+                    completed_at: None,
+                    created_at: now,
+                    updated_at: now,
+                }));
+                conversation = ConversationDraft::default();
+            }
+        });
+    ui.data_mut(|d| d.insert_temp(conversation_id, conversation));
+    for task in app.crm_tasks.clone().into_iter().filter(|task| {
+        task.project_id.as_deref() == Some(&project.id) && task.kind == "conversation"
+    }) {
+        task_assignment_row(app, ui, task, None);
+    }
+    ui.separator();
     ui.heading("Tarefas do projeto");
     let new_task_id = ui.id().with(("new-project-task", &project.id));
     let mut new_task = ui.data_mut(|d| d.get_temp::<String>(new_task_id).unwrap_or_default());
@@ -793,6 +896,8 @@ fn project_detail(
                 description: String::new(),
                 status: "todo".into(),
                 priority: "normal".into(),
+                kind: "task".into(),
+                duration_minutes: None,
                 due_at: None,
                 completed_at: None,
                 created_at: now,
@@ -804,7 +909,7 @@ fn project_detail(
     ui.data_mut(|d| d.insert_temp(new_task_id, new_task));
     let mut any = false;
     for task in app.crm_tasks.clone() {
-        if task.project_id.as_deref() == Some(&project.id) {
+        if task.project_id.as_deref() == Some(&project.id) && task.kind != "conversation" {
             any = true;
             task_assignment_row(app, ui, task, None);
         }
@@ -853,7 +958,27 @@ mod tests {
 fn task_assignment_row(app: &mut App, ui: &mut egui::Ui, mut task: CrmTask, assign: Option<&str>) {
     ui.horizontal(|ui| {
         ui.label(if task.status == "done" { "✓" } else { "□" });
-        ui.label(&task.title);
+        ui.vertical(|ui| {
+            ui.label(RichText::new(&task.title).strong());
+            if let Some((date, hour, minute)) = task.due_at.and_then(crate::util::local_datetime) {
+                let duration = task
+                    .duration_minutes
+                    .map(|minutes| format!(" • {minutes} min"))
+                    .unwrap_or_default();
+                ui.label(
+                    RichText::new(format!(
+                        "{:02}/{:02}/{} {:02}:{:02}{duration}",
+                        date.day(),
+                        date.month(),
+                        date.year(),
+                        hour,
+                        minute
+                    ))
+                    .small()
+                    .color(app.palette.dim),
+                );
+            }
+        });
         ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
             let label = if assign.is_some() {
                 "Vincular"

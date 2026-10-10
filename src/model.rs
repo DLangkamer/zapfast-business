@@ -160,10 +160,20 @@ pub struct CrmTask {
     pub description: String,
     pub status: String,
     pub priority: String,
+    /// `task` for regular work or `conversation` for a scheduled client contact.
+    #[serde(default = "default_crm_task_kind")]
+    pub kind: String,
+    /// Planned duration for conversation appointments. Regular tasks keep this empty.
+    #[serde(default)]
+    pub duration_minutes: Option<u16>,
     pub due_at: Option<i64>,
     pub completed_at: Option<i64>,
     pub created_at: i64,
     pub updated_at: i64,
+}
+
+fn default_crm_task_kind() -> String {
+    "task".into()
 }
 
 /// A CRM project owned by one linked WhatsApp account.
