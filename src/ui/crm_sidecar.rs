@@ -4,7 +4,7 @@
 use egui::{Align, Color32, CornerRadius, Frame, Layout, Margin, Rect, Stroke, Vec2, pos2, vec2};
 
 use crate::app::App;
-use crate::model::{Action, Chat, CrmDeal, CrmFollowup, Dialog};
+use crate::model::{Action, Chat, CrmDeal, CrmFollowup, Dialog, Page};
 use crate::theme::{self, Icon, Palette};
 
 pub const MIN_WIDTH: f32 = 240.0;
@@ -80,12 +80,158 @@ fn render_content(app: &mut App, ui: &mut egui::Ui, chat: &Chat) {
                     // 4. Notas Internas (Criptografadas)
                     render_internal_notes(app, ui, &palette, &chat.id, existing_deal.as_ref());
 
-                    // 5. Lembretes de Follow-up (100% independentes de CrmDeal)
+                    // 5. Operational project, tasks, calls and timeline.
+                    render_operations(app, ui, &palette, &chat.id, existing_deal.as_ref());
+
+                    // 6. Lembretes de Follow-up (100% independentes de CrmDeal)
                     render_followups(app, ui, &palette, &chat.id);
 
                     ui.add_space(20.0);
                 });
         });
+}
+
+fn render_operations(
+    app: &mut App,
+    ui: &mut egui::Ui,
+    palette: &Palette,
+    chat_id: &str,
+    deal: Option<&CrmDeal>,
+) {
+    let projects: Vec<_> = app
+        .crm_projects
+        .iter()
+        .filter(|project| project.chat_ids.iter().any(|id| id == chat_id))
+        .cloned()
+        .collect();
+    let project_ids: Vec<_> = projects.iter().map(|project| project.id.as_str()).collect();
+    let tasks: Vec<_> = app
+        .crm_tasks
+        .iter()
+        .filter(|task| {
+            task.chat_id.as_deref() == Some(chat_id)
+                || task
+                    .project_id
+                    .as_deref()
+                    .is_some_and(|id| project_ids.contains(&id))
+        })
+        .cloned()
+        .collect();
+
+    Frame::new()
+        .fill(palette.surface)
+        .stroke(Stroke::new(1.0, palette.surface_hover))
+        .corner_radius(CornerRadius::same(8))
+        .inner_margin(Margin::same(10))
+        .show(ui, |ui| {
+            ui.horizontal(|ui| {
+                theme::icon(ui, Icon::ListChecks, 14.0, palette.accent);
+                theme::text(
+                    ui,
+                    "Operações do cliente",
+                    theme::semibold(12.5),
+                    palette.text,
+                );
+                ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
+                    if ui.small_button("Abrir CRM").clicked() {
+                        app.actions.push(Action::Open(Page::Crm));
+                    }
+                });
+            });
+            if projects.is_empty() {
+                theme::text(
+                    ui,
+                    "Nenhum projeto vinculado.",
+                    theme::regular(11.0),
+                    palette.dim,
+                );
+            }
+            for project in &projects {
+                ui.label(egui::RichText::new(&project.name).strong());
+                ui.label(
+                    egui::RichText::new(format!(
+                        "{}{}",
+                        project_status_label(&project.status),
+                        if project.assignee.is_empty() {
+                            String::new()
+                        } else {
+                            format!(" • {}", project.assignee)
+                        }
+                    ))
+                    .small()
+                    .color(palette.dim),
+                );
+            }
+            let open_tasks = tasks
+                .iter()
+                .filter(|task| task.status != "done" && task.kind == "task")
+                .count();
+            let upcoming_calls = tasks
+                .iter()
+                .filter(|task| {
+                    task.status != "done" && matches!(task.kind.as_str(), "call" | "conversation")
+                })
+                .count();
+            ui.horizontal_wrapped(|ui| {
+                ui.label(format!("{open_tasks} tarefa(s) aberta(s)"));
+                ui.label(format!("{upcoming_calls} call(s) próxima(s)"));
+            });
+
+            ui.collapsing("Linha do tempo", |ui| {
+                let mut events: Vec<(i64, String, String)> = Vec::new();
+                if let Some(conversation) = app.conversations.get(chat_id) {
+                    for message in conversation.messages.iter().rev().take(20) {
+                        events.push((
+                            message.timestamp,
+                            if message.from_me {
+                                "Mensagem enviada"
+                            } else {
+                                "Mensagem recebida"
+                            }
+                            .into(),
+                            message.summary(),
+                        ));
+                    }
+                }
+                for task in &tasks {
+                    events.push((
+                        task.updated_at,
+                        if matches!(task.kind.as_str(), "call" | "conversation") {
+                            "Call / reunião"
+                        } else {
+                            "Tarefa"
+                        }
+                        .into(),
+                        task.title.clone(),
+                    ));
+                }
+                if let Some(deal) = deal.filter(|deal| !deal.notes.trim().is_empty()) {
+                    events.push((
+                        deal.updated_at,
+                        "Anotação interna".into(),
+                        deal.notes.clone(),
+                    ));
+                }
+                events.sort_by_key(|event| std::cmp::Reverse(event.0));
+                for (at, kind, detail) in events.into_iter().take(30) {
+                    ui.label(
+                        egui::RichText::new(format!("{} • {}", format_timestamp(at), kind))
+                            .small()
+                            .strong(),
+                    );
+                    ui.label(egui::RichText::new(detail).small().color(palette.dim));
+                    ui.add_space(3.0);
+                }
+            });
+        });
+}
+
+fn project_status_label(status: &str) -> &str {
+    match status {
+        "paused" => "Pausado",
+        "completed" => "Concluído",
+        _ => "Ativo",
+    }
 }
 
 fn render_header(app: &mut App, ui: &mut egui::Ui, palette: &Palette, chat: &Chat) {
