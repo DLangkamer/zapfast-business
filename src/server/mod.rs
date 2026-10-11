@@ -10,11 +10,11 @@ pub mod manager;
 pub mod web_assets;
 pub mod ws;
 
-use std::path::PathBuf;
-use std::sync::Arc;
 use crate::server::db::ServerDb;
 use crate::server::discovery::DiscoveryBeacon;
 use crate::server::manager::InstanceManager;
+use std::path::PathBuf;
+use std::sync::Arc;
 
 #[derive(Clone, Debug)]
 pub struct ServerConfig {

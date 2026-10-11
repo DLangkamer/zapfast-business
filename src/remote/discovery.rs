@@ -2,8 +2,8 @@
 //!
 //! Sends UDP broadcast probes to locate ZapFast servers running on the LAN.
 
-use std::time::Duration;
 use serde::{Deserialize, Serialize};
+use std::time::Duration;
 use tokio::net::UdpSocket;
 
 use crate::server::discovery::{DISCOVERY_PORT, PROBE_MESSAGE};

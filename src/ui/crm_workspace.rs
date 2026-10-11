@@ -3,8 +3,45 @@
 use crate::app::App;
 use crate::model::{Action, CrmProject, CrmTask, Page};
 use crate::theme::{self, Icon};
-use egui::{Align, CornerRadius, Frame, Layout, Margin, RichText, ScrollArea, Stroke, vec2};
+use egui::{
+    Align, Color32, CornerRadius, Frame, Layout, Margin, RichText, ScrollArea, Stroke, Vec2, vec2,
+};
 use jiff::civil::Date;
+
+#[derive(Clone, Copy)]
+pub struct CrmPalette {
+    pub window: Color32,
+    pub panel: Color32,
+    pub surface: Color32,
+    pub surface_hover: Color32,
+    pub outline: Color32,
+    pub text: Color32,
+    pub secondary: Color32,
+    pub dim: Color32,
+    pub accent: Color32,
+    pub on_accent: Color32,
+    pub danger: Color32,
+    pub warning: Color32,
+}
+
+impl CrmPalette {
+    pub fn from_app(_palette: &crate::theme::Palette) -> Self {
+        Self {
+            window: Color32::from_rgb(0x08, 0x0c, 0x0f),
+            panel: Color32::from_rgb(0x0c, 0x12, 0x16),
+            surface: Color32::from_rgb(0x13, 0x1b, 0x21),
+            surface_hover: Color32::from_rgb(0x1a, 0x25, 0x2e),
+            outline: Color32::from_rgb(0x20, 0x2c, 0x36),
+            text: Color32::from_rgb(0xf3, 0xf6, 0xf8),
+            secondary: Color32::from_rgb(0xa1, 0xb0, 0xba),
+            dim: Color32::from_rgb(0x6f, 0x80, 0x8c),
+            accent: Color32::from_rgb(0x00, 0xe6, 0x99),
+            on_accent: Color32::from_rgb(0x06, 0x18, 0x11),
+            danger: Color32::from_rgb(0xff, 0x47, 0x57),
+            warning: Color32::from_rgb(0xff, 0xb8, 0x1c),
+        }
+    }
+}
 
 #[derive(Clone, Copy, Default, PartialEq, Eq)]
 enum WorkspaceView {
@@ -136,7 +173,7 @@ impl Default for ConversationDraft {
 }
 
 pub fn show(app: &mut App, ui: &mut egui::Ui) {
-    let palette = app.palette;
+    let cp = CrmPalette::from_app(&app.palette);
     let account_id = app.id.as_str().to_owned();
     let view_id = ui.id().with(("crm-workspace-view", &account_id));
     let draft_id = ui.id().with(("crm-project-draft", &account_id));
@@ -148,95 +185,125 @@ pub fn show(app: &mut App, ui: &mut egui::Ui) {
     let available = ui.available_size();
     let gap = ui.spacing().item_spacing.x;
     let (sidebar_width, content_width) = workspace_widths(available.x, gap);
+
     ui.horizontal(|ui| {
         ui.allocate_ui_with_layout(
             vec2(sidebar_width, available.y),
             Layout::top_down(Align::Min),
             |ui| {
                 Frame::new()
-                    .fill(palette.panel)
-                    .stroke(Stroke::new(1.0, palette.outline))
+                    .fill(cp.panel)
+                    .stroke(Stroke::new(1.0, cp.outline))
+                    .corner_radius(CornerRadius::same(12))
                     .inner_margin(Margin::same(14))
                     .show(ui, |ui| {
                         ui.set_width((sidebar_width - 28.0).max(140.0));
                         ui.set_min_height((available.y - 28.0).max(320.0));
                         ui.horizontal(|ui| {
-                            theme::icon(ui, Icon::ListChecks, 22.0, palette.accent);
-                            ui.label(RichText::new("ZapFast CRM").size(18.0).strong());
+                            theme::icon(ui, Icon::ListChecks, 24.0, cp.accent);
+                            ui.add_space(2.0);
+                            ui.label(
+                                RichText::new("ZapFast CRM")
+                                    .size(19.0)
+                                    .strong()
+                                    .color(cp.text),
+                            );
                         });
+                        ui.add_space(2.0);
                         ui.label(
-                            RichText::new("Central de relacionamento")
-                                .small()
-                                .color(palette.dim),
+                            RichText::new("Central de Operações")
+                                .size(12.0)
+                                .color(cp.dim),
                         );
-                        ui.add_space(20.0);
-                        ui.label(
-                            RichText::new("OPERAÇÕES")
-                                .size(10.0)
-                                .strong()
-                                .color(palette.dim),
+                        ui.add_space(14.0);
+                        let cur = ui.cursor();
+                        ui.painter().hline(
+                            cur.left()..=(cur.left() + ui.available_width()),
+                            cur.top(),
+                            Stroke::new(1.0, cp.outline),
                         );
-                        nav(
+                        ui.add_space(14.0);
+                        ui.label(RichText::new("OPERAÇÕES").size(10.5).strong().color(cp.dim));
+                        ui.add_space(6.0);
+                        nav_item(
                             ui,
                             &mut view,
                             WorkspaceView::Overview,
                             Icon::Clock,
                             "Meu dia",
+                            &cp,
                         );
-                        nav(
-                            ui,
-                            &mut view,
-                            WorkspaceView::Projects,
-                            Icon::Users,
-                            "Projetos",
-                        );
-                        nav(
+                        nav_item(
                             ui,
                             &mut view,
                             WorkspaceView::Tasks,
                             Icon::ListChecks,
                             "Tarefas",
+                            &cp,
                         );
-                        nav(
+                        nav_item(
+                            ui,
+                            &mut view,
+                            WorkspaceView::Projects,
+                            Icon::Users,
+                            "Projetos",
+                            &cp,
+                        );
+                        nav_item(
                             ui,
                             &mut view,
                             WorkspaceView::Timeline,
                             Icon::Clock,
                             "Timeline",
+                            &cp,
                         );
-                        nav(
+                        nav_item(
                             ui,
                             &mut view,
                             WorkspaceView::Calls,
-                            Icon::MessageCircle,
+                            Icon::Phone,
                             "Calls de Venda",
+                            &cp,
                         );
-                        nav(
+                        nav_item(
                             ui,
                             &mut view,
                             WorkspaceView::Agenda,
                             Icon::Calendar,
                             "Agenda",
+                            &cp,
                         );
-                        nav(
+                        nav_item(
                             ui,
                             &mut view,
                             WorkspaceView::Funnel,
                             Icon::Tag,
                             "Funil comercial",
+                            &cp,
                         );
                         ui.with_layout(Layout::bottom_up(Align::Min), |ui| {
-                            if ui
-                                .add_sized([190.0, 36.0], egui::Button::new("← Conversas"))
-                                .clicked()
-                            {
+                            ui.add_space(4.0);
+                            ui.horizontal(|ui| {
+                                theme::icon(ui, Icon::Lock, 13.0, cp.dim);
+                                ui.label(
+                                    RichText::new("Dados criptografados")
+                                        .size(11.0)
+                                        .color(cp.dim),
+                                );
+                            });
+                            ui.add_space(6.0);
+                            let back_btn = egui::Button::new(
+                                RichText::new("← Voltar às Conversas")
+                                    .size(13.0)
+                                    .color(cp.secondary),
+                            )
+                            .fill(cp.surface)
+                            .stroke(Stroke::new(1.0, cp.outline))
+                            .corner_radius(CornerRadius::same(8))
+                            .min_size(vec2(ui.available_width(), 38.0));
+                            if ui.add(back_btn).clicked() {
                                 app.actions.push(Action::Open(Page::Chats));
                             }
-                            ui.label(
-                                RichText::new("Dados isolados nesta conta")
-                                    .small()
-                                    .color(palette.dim),
-                            );
                         });
                     });
             },
@@ -247,49 +314,86 @@ pub fn show(app: &mut App, ui: &mut egui::Ui) {
             Layout::top_down(Align::Min),
             |ui| {
                 Frame::new()
-                    .fill(palette.window)
+                    .fill(cp.window)
                     .inner_margin(Margin::symmetric(24, 18))
                     .show(ui, |ui| {
                         ui.set_width((content_width - 48.0).max(272.0));
                         ui.set_min_height((available.y - 36.0).max(320.0));
                         let (title, subtitle) = match view {
-                            WorkspaceView::Overview => ("Meu dia", "Prioridades e próximos passos"),
+                            WorkspaceView::Overview => {
+                                ("Meu dia", "Prioridades matinais e próximos passos")
+                            }
                             WorkspaceView::Projects => {
                                 ("Projetos", "Clientes, entregas e conversas vinculadas")
                             }
-                            WorkspaceView::Tasks => ("Tarefas", "Organize e acompanhe o trabalho"),
+                            WorkspaceView::Tasks => (
+                                "Tarefas",
+                                "Quadro operacional de trabalho organizado por status",
+                            ),
                             WorkspaceView::Timeline => {
-                                ("Timeline", "Histórico operacional dos clientes")
+                                ("Timeline", "Histórico operacional consolidado por dia")
                             }
-                            WorkspaceView::Calls => {
-                                ("Calls de Venda", "Reuniões, resultados e conversão")
+                            WorkspaceView::Calls => (
+                                "Calls de Venda",
+                                "Reuniões comerciais, taxa de conversão e fechamentos",
+                            ),
+                            WorkspaceView::Agenda => {
+                                ("Agenda", "Prazos, reuniões e follow-ups da conta")
                             }
-                            WorkspaceView::Agenda => ("Agenda", "Prazos e follow-ups da conta"),
                             WorkspaceView::Funnel => {
-                                ("Funil comercial", "Negócios e etapas de venda")
+                                ("Funil comercial", "Negócios e etapas do pipeline de vendas")
                             }
                         };
-                        ui.label(RichText::new(title).size(24.0).strong().color(palette.text));
-                        ui.label(RichText::new(subtitle).size(12.0).color(palette.dim));
-                        ui.add_space(14.0);
-                        ui.separator();
-                        ui.add_space(10.0);
+
+                        crm_header(ui, &cp, title, subtitle, |ui| match view {
+                            WorkspaceView::Overview => {
+                                let btn = egui::Button::new(
+                                    RichText::new("+ Nova tarefa")
+                                        .size(13.0)
+                                        .strong()
+                                        .color(cp.on_accent),
+                                )
+                                .fill(cp.accent)
+                                .corner_radius(CornerRadius::same(8))
+                                .min_size(vec2(130.0, 34.0));
+                                if ui.add(btn).clicked() {
+                                    view = WorkspaceView::Tasks;
+                                }
+                            }
+                            WorkspaceView::Funnel => {
+                                let btn = egui::Button::new(
+                                    RichText::new("Abrir quadro kanban")
+                                        .size(13.0)
+                                        .strong()
+                                        .color(cp.on_accent),
+                                )
+                                .fill(cp.accent)
+                                .corner_radius(CornerRadius::same(8))
+                                .min_size(vec2(170.0, 34.0));
+                                if ui.add(btn).clicked() {
+                                    app.actions
+                                        .push(Action::ShowDialog(crate::model::Dialog::Kanban));
+                                }
+                            }
+                            _ => {}
+                        });
+
                         ScrollArea::vertical().auto_shrink([false, false]).show(
                             ui,
                             |ui| match view {
-                                WorkspaceView::Overview => overview(app, ui, &mut view),
+                                WorkspaceView::Overview => overview(app, ui, &mut view, &cp),
                                 WorkspaceView::Projects => {
-                                    projects(app, ui, &mut draft, &mut selected)
+                                    projects(app, ui, &mut draft, &mut selected, &cp)
                                 }
                                 WorkspaceView::Tasks => super::crm_tasks::show_workspace(app, ui),
-                                WorkspaceView::Timeline => timeline(app, ui),
+                                WorkspaceView::Timeline => timeline(app, ui, &cp),
                                 WorkspaceView::Calls => {
                                     super::crm_tasks::show_calls_workspace(app, ui)
                                 }
                                 WorkspaceView::Agenda => {
                                     super::crm_tasks::show_agenda_workspace(app, ui)
                                 }
-                                WorkspaceView::Funnel => funnel(app, ui),
+                                WorkspaceView::Funnel => funnel(app, ui, &cp),
                             },
                         );
                     });
@@ -310,135 +414,670 @@ fn workspace_widths(available: f32, gap: f32) -> (f32, f32) {
     (sidebar, content)
 }
 
-fn nav(
+fn nav_item(
     ui: &mut egui::Ui,
     view: &mut WorkspaceView,
     target: WorkspaceView,
     icon: Icon,
     label: &str,
+    palette: &CrmPalette,
 ) {
     let selected = *view == target;
-    let response = ui.add_sized([190.0, 40.0], egui::Button::new(label).selected(selected));
-    let _ = icon;
+    let width = ui.available_width();
+    let height = 38.0;
+    let (rect, response) = ui.allocate_exact_size(vec2(width, height), egui::Sense::click());
+
     if response.clicked() {
         *view = target;
     }
+
+    let is_hovered = response.hovered();
+    let bg = if selected {
+        palette.accent
+    } else if is_hovered {
+        palette.surface_hover
+    } else {
+        Color32::TRANSPARENT
+    };
+
+    if bg != Color32::TRANSPARENT {
+        ui.painter().rect_filled(rect, CornerRadius::same(8), bg);
+    }
+
+    let (icon_color, text_color) = if selected {
+        (palette.on_accent, palette.on_accent)
+    } else if is_hovered {
+        (palette.accent, palette.text)
+    } else {
+        (palette.dim, palette.secondary)
+    };
+
+    let icon_size = 18.0;
+    let icon_rect = egui::Rect::from_center_size(
+        egui::pos2(rect.left() + 20.0, rect.center().y),
+        Vec2::splat(icon_size),
+    );
+    icon.image(icon_color, icon_size).paint_at(ui, icon_rect);
+
+    let text_pos = egui::pos2(rect.left() + 38.0, rect.center().y - 8.5);
+    let galley = ui.painter().layout_no_wrap(
+        label.to_owned(),
+        if selected {
+            theme::bold(14.0)
+        } else {
+            theme::medium(13.5)
+        },
+        text_color,
+    );
+    ui.painter().galley(text_pos, galley, text_color);
+
     ui.add_space(3.0);
 }
 
-fn timeline(app: &mut App, ui: &mut egui::Ui) {
-    let p = app.palette;
-    let mut events: Vec<(i64, &'static str, String, String)> = Vec::new();
+fn crm_header<F>(
+    ui: &mut egui::Ui,
+    palette: &CrmPalette,
+    title: &str,
+    subtitle: &str,
+    render_controls: F,
+) where
+    F: FnOnce(&mut egui::Ui),
+{
+    ui.horizontal(|ui| {
+        ui.vertical(|ui| {
+            ui.label(RichText::new(title).size(24.0).strong().color(palette.text));
+            ui.add_space(2.0);
+            ui.label(RichText::new(subtitle).size(13.0).color(palette.secondary));
+        });
+
+        ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
+            render_controls(ui);
+        });
+    });
+    ui.add_space(10.0);
+    let cur = ui.cursor();
+    ui.painter().hline(
+        cur.left()..=(cur.left() + ui.available_width()),
+        cur.top(),
+        Stroke::new(1.0, palette.outline),
+    );
+    ui.add_space(12.0);
+}
+
+pub(crate) fn empty_state(
+    ui: &mut egui::Ui,
+    palette: &CrmPalette,
+    icon: Icon,
+    title: &str,
+    subtitle: &str,
+    action_label: Option<&str>,
+) -> bool {
+    let mut clicked = false;
+    Frame::new()
+        .fill(palette.surface)
+        .stroke(Stroke::new(1.0, palette.outline))
+        .corner_radius(CornerRadius::same(12))
+        .inner_margin(Margin::symmetric(24, 32))
+        .show(ui, |ui| {
+            ui.set_min_width((ui.available_width() - 48.0).max(320.0));
+            ui.vertical_centered(|ui| {
+                let (rect, _) = ui.allocate_exact_size(Vec2::splat(52.0), egui::Sense::hover());
+                ui.painter().circle_filled(
+                    rect.center(),
+                    26.0,
+                    palette.accent.gamma_multiply(0.12),
+                );
+                ui.painter().circle_stroke(
+                    rect.center(),
+                    26.0,
+                    Stroke::new(1.0, palette.accent.gamma_multiply(0.35)),
+                );
+                let icon_rect = egui::Rect::from_center_size(rect.center(), Vec2::splat(24.0));
+                icon.image(palette.accent, 24.0).paint_at(ui, icon_rect);
+
+                ui.add_space(12.0);
+                ui.label(RichText::new(title).size(18.0).strong().color(palette.text));
+                ui.add_space(4.0);
+                ui.label(RichText::new(subtitle).size(13.5).color(palette.secondary));
+
+                if let Some(label) = action_label {
+                    ui.add_space(16.0);
+                    let btn = egui::Button::new(
+                        RichText::new(label)
+                            .size(13.5)
+                            .strong()
+                            .color(palette.on_accent),
+                    )
+                    .fill(palette.accent)
+                    .corner_radius(CornerRadius::same(8))
+                    .min_size(vec2(160.0, 36.0));
+                    if ui.add(btn).clicked() {
+                        clicked = true;
+                    }
+                }
+            });
+        });
+    clicked
+}
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum TimelineKind {
+    MessageSent,
+    MessageReceived,
+    Call,
+    Task,
+    Note,
+}
+
+impl TimelineKind {
+    fn label(&self) -> &'static str {
+        match self {
+            Self::MessageSent => "Mensagem enviada",
+            Self::MessageReceived => "Mensagem recebida",
+            Self::Call => "Call de Venda",
+            Self::Task => "Tarefa",
+            Self::Note => "Anotação",
+        }
+    }
+
+    fn filter_category(&self) -> &'static str {
+        match self {
+            Self::MessageSent | Self::MessageReceived => "message",
+            Self::Call => "call",
+            Self::Task => "task",
+            Self::Note => "note",
+        }
+    }
+
+    fn icon(&self) -> Icon {
+        match self {
+            Self::MessageSent => Icon::Send,
+            Self::MessageReceived => Icon::MessageCircle,
+            Self::Call => Icon::Phone,
+            Self::Task => Icon::ListChecks,
+            Self::Note => Icon::Tag,
+        }
+    }
+
+    fn color(&self, cp: &CrmPalette) -> Color32 {
+        match self {
+            Self::MessageSent => Color32::from_rgb(56, 189, 248),
+            Self::MessageReceived => Color32::from_rgb(16, 185, 129),
+            Self::Call => Color32::from_rgb(129, 140, 248),
+            Self::Task => cp.accent,
+            Self::Note => Color32::from_rgb(245, 158, 11),
+        }
+    }
+}
+
+struct TimelineEvent {
+    timestamp: i64,
+    date: Date,
+    time_str: String,
+    kind: TimelineKind,
+    title: String,
+    entity: String,
+    summary: String,
+    status_badge: Option<(String, Color32)>,
+}
+
+fn format_day_header(date: Date, today: Date) -> String {
+    let days = today.since(date).map(|s| s.get_days()).unwrap_or(i32::MAX);
+    let month_name = match date.month() {
+        1 => "Janeiro",
+        2 => "Fevereiro",
+        3 => "Março",
+        4 => "Abril",
+        5 => "Maio",
+        6 => "Junho",
+        7 => "Julho",
+        8 => "Agosto",
+        9 => "Setembro",
+        10 => "Outubro",
+        11 => "Novembro",
+        12 => "Dezembro",
+        _ => "",
+    };
+    if days == 0 {
+        format!("Hoje • {:02} de {}", date.day(), month_name)
+    } else if days == 1 {
+        format!("Ontem • {:02} de {}", date.day(), month_name)
+    } else if date.year() == today.year() {
+        format!("{:02} de {}", date.day(), month_name)
+    } else {
+        format!("{:02} de {} de {}", date.day(), month_name, date.year())
+    }
+}
+
+fn timeline(app: &mut App, ui: &mut egui::Ui, cp: &CrmPalette) {
+    let account_id = app.id.as_str().to_owned();
+    let filter_type_id = ui.id().with(("crm-timeline-type", &account_id));
+    let search_id = ui.id().with(("crm-timeline-search", &account_id));
+
+    let mut type_filter = ui.data_mut(|d| {
+        d.get_temp::<String>(filter_type_id)
+            .unwrap_or_else(|| "all".into())
+    });
+    let mut search = ui.data_mut(|d| d.get_temp::<String>(search_id).unwrap_or_default());
+
+    // 1. Filter bar at top
+    ui.horizontal(|ui| {
+        let types = [
+            ("all", "Todos"),
+            ("message", "Mensagens"),
+            ("call", "Calls"),
+            ("task", "Tarefas"),
+            ("note", "Anotações"),
+        ];
+
+        for (val, label) in types {
+            let selected = type_filter == val;
+            let (fill, text_color) = if selected {
+                (cp.accent, cp.on_accent)
+            } else {
+                (cp.surface, cp.secondary)
+            };
+
+            let btn = egui::Button::new(RichText::new(label).size(12.5).strong().color(text_color))
+                .fill(fill)
+                .stroke(Stroke::new(
+                    1.0,
+                    if selected { cp.accent } else { cp.outline },
+                ))
+                .corner_radius(CornerRadius::same(7))
+                .min_size(vec2(72.0, 30.0));
+
+            if ui.add(btn).clicked() {
+                type_filter = val.into();
+            }
+        }
+
+        ui.add_space(8.0);
+
+        ui.add(
+            egui::TextEdit::singleline(&mut search)
+                .hint_text("Buscar por cliente, projeto, assunto...")
+                .desired_width(240.0),
+        );
+
+        if !search.is_empty() {
+            let clear_btn = egui::Button::new(RichText::new("✕").size(11.0).color(cp.dim))
+                .fill(cp.surface)
+                .corner_radius(CornerRadius::same(6))
+                .min_size(vec2(24.0, 24.0));
+            if ui.add(clear_btn).clicked() {
+                search.clear();
+            }
+        }
+    });
+
+    ui.add_space(14.0);
+
+    // 2. Gather events
+    let mut events: Vec<TimelineEvent> = Vec::new();
+
+    // 2a. Messages
     for (chat_id, conversation) in &app.conversations {
         let client = app
             .chat(chat_id)
             .map(|chat| app.chat_title(chat))
             .unwrap_or_else(|| "Conversa".into());
-        for message in conversation.messages.iter().rev().take(25) {
-            events.push((
-                message.timestamp,
-                if message.from_me {
-                    "Mensagem enviada"
-                } else {
-                    "Mensagem recebida"
-                },
-                client.clone(),
-                message.summary(),
-            ));
+        for message in conversation.messages.iter().rev().take(30) {
+            if let Some((date, hour, minute)) = crate::util::local_datetime(message.timestamp) {
+                events.push(TimelineEvent {
+                    timestamp: message.timestamp,
+                    date,
+                    time_str: format!("{:02}:{:02}", hour, minute),
+                    kind: if message.from_me {
+                        TimelineKind::MessageSent
+                    } else {
+                        TimelineKind::MessageReceived
+                    },
+                    title: client.clone(),
+                    entity: client.clone(),
+                    summary: message.summary(),
+                    status_badge: None,
+                });
+            }
         }
     }
+
+    // 2b. Tasks and Calls
     for task in &app.crm_tasks {
-        let project = task
-            .project_id
-            .as_ref()
-            .and_then(|id| app.crm_projects.iter().find(|project| &project.id == id))
-            .map_or_else(|| "Sem projeto".into(), |project| project.name.clone());
-        events.push((
-            task.updated_at,
-            if matches!(task.kind.as_str(), "call" | "conversation") {
-                "Call / reunião"
+        let ts = task.due_at.unwrap_or(task.updated_at);
+        if let Some((date, hour, minute)) = crate::util::local_datetime(ts) {
+            let client_name = task
+                .chat_id
+                .as_ref()
+                .and_then(|cid| app.chat(cid))
+                .map(|chat| app.chat_title(chat));
+            let project_name = task
+                .project_id
+                .as_ref()
+                .and_then(|id| app.crm_projects.iter().find(|p| &p.id == id))
+                .map(|p| p.name.clone());
+
+            let entity = match (client_name, project_name) {
+                (Some(c), Some(p)) => format!("{} • {}", c, p),
+                (Some(c), None) => c,
+                (None, Some(p)) => p,
+                (None, None) => "Geral".to_string(),
+            };
+
+            let is_call = matches!(task.kind.as_str(), "call" | "conversation");
+            if is_call {
+                let badge = match task.status.as_str() {
+                    "scheduled" => Some(("Agendada".into(), Color32::from_rgb(56, 189, 248))),
+                    "held" => Some(("Realizada".into(), Color32::from_rgb(16, 185, 129))),
+                    "closed" => Some(("Fechada".into(), cp.accent)),
+                    "no_show" => Some(("No-show".into(), Color32::from_rgb(245, 158, 11))),
+                    "cancelled" => Some(("Cancelada".into(), cp.danger)),
+                    _ => None,
+                };
+                let summary = if !task.call_result.trim().is_empty() {
+                    format!("Resultado: {} • {}", task.call_result, task.description)
+                } else if !task.description.trim().is_empty() {
+                    task.description.clone()
+                } else {
+                    "Reunião de alinhamento / vendas".to_string()
+                };
+                events.push(TimelineEvent {
+                    timestamp: ts,
+                    date,
+                    time_str: format!("{:02}:{:02}", hour, minute),
+                    kind: TimelineKind::Call,
+                    title: task.title.clone(),
+                    entity,
+                    summary,
+                    status_badge: badge,
+                });
             } else {
-                "Tarefa"
-            },
-            project,
-            task.title.clone(),
-        ));
+                let badge = match task.status.as_str() {
+                    "todo" => Some(("A fazer".into(), cp.dim)),
+                    "doing" => Some(("Em andamento".into(), Color32::from_rgb(56, 189, 248))),
+                    "review" => Some(("Revisão".into(), Color32::from_rgb(245, 158, 11))),
+                    "done" => Some(("Concluída".into(), cp.accent)),
+                    _ => None,
+                };
+                events.push(TimelineEvent {
+                    timestamp: ts,
+                    date,
+                    time_str: format!("{:02}:{:02}", hour, minute),
+                    kind: TimelineKind::Task,
+                    title: task.title.clone(),
+                    entity,
+                    summary: if task.description.trim().is_empty() {
+                        "Tarefa operacional".to_string()
+                    } else {
+                        task.description.clone()
+                    },
+                    status_badge: badge,
+                });
+            }
+        }
     }
+
+    // 2c. Notes from CRM Deals
     for deal in app
         .crm_deals
         .values()
         .filter(|deal| !deal.notes.trim().is_empty())
     {
-        let client = app
-            .chat(&deal.chat_id)
-            .map(|chat| app.chat_title(chat))
-            .unwrap_or_else(|| "Cliente".into());
-        events.push((deal.updated_at, "Anotação", client, deal.notes.clone()));
+        let ts = deal.updated_at;
+        if let Some((date, hour, minute)) = crate::util::local_datetime(ts) {
+            let client = app
+                .chat(&deal.chat_id)
+                .map(|chat| app.chat_title(chat))
+                .unwrap_or_else(|| "Cliente".into());
+            let stage_badge = if deal.value_cents > 0 {
+                Some((
+                    format!("R$ {:.2}", deal.value_cents as f64 / 100.0),
+                    cp.accent,
+                ))
+            } else if !deal.column_id.trim().is_empty() {
+                Some((deal.column_id.clone(), Color32::from_rgb(245, 158, 11)))
+            } else {
+                None
+            };
+            events.push(TimelineEvent {
+                timestamp: ts,
+                date,
+                time_str: format!("{:02}:{:02}", hour, minute),
+                kind: TimelineKind::Note,
+                title: format!("Anotação: {}", client),
+                entity: client,
+                summary: deal.notes.clone(),
+                status_badge: stage_badge,
+            });
+        }
     }
-    events.sort_by_key(|event| std::cmp::Reverse(event.0));
-    if events.is_empty() {
-        empty_panel(
+
+    // 2d. Follow-up reminders
+    for followup in &app.crm_followups {
+        let ts = followup.remind_at;
+        if let Some((date, hour, minute)) = crate::util::local_datetime(ts) {
+            let client = app
+                .chat(&followup.chat_id)
+                .map(|chat| app.chat_title(chat))
+                .unwrap_or_else(|| "Contato".into());
+            let badge = if followup.done {
+                Some(("Follow-up concluído".into(), cp.accent))
+            } else {
+                Some(("Lembrete pendente".into(), Color32::from_rgb(245, 158, 11)))
+            };
+            events.push(TimelineEvent {
+                timestamp: ts,
+                date,
+                time_str: format!("{:02}:{:02}", hour, minute),
+                kind: TimelineKind::Note,
+                title: followup.title.clone(),
+                entity: client,
+                summary: "Lembrete de follow-up cadastrado".to_string(),
+                status_badge: badge,
+            });
+        }
+    }
+
+    // Sort descending by timestamp
+    events.sort_by_key(|e| std::cmp::Reverse(e.timestamp));
+
+    // 3. Filter events
+    let search_lower = search.trim().to_lowercase();
+    let filtered: Vec<_> = events
+        .into_iter()
+        .filter(|e| {
+            let matches_type = match type_filter.as_str() {
+                "all" => true,
+                other => e.kind.filter_category() == other,
+            };
+            let matches_search = search_lower.is_empty()
+                || e.entity.to_lowercase().contains(&search_lower)
+                || e.title.to_lowercase().contains(&search_lower)
+                || e.summary.to_lowercase().contains(&search_lower);
+            matches_type && matches_search
+        })
+        .collect();
+
+    if filtered.is_empty() {
+        if empty_state(
             ui,
+            cp,
             Icon::Clock,
-            "Nenhum evento",
-            "Mensagens, calls, anotações e tarefas aparecerão aqui.",
-        );
+            "Nenhum evento encontrado",
+            "Não foram encontrados registros para os filtros selecionados.",
+            Some("Limpar filtros"),
+        ) {
+            type_filter = "all".into();
+            search.clear();
+        }
+        ui.data_mut(|d| {
+            d.insert_temp(filter_type_id, type_filter);
+            d.insert_temp(search_id, search);
+        });
         return;
     }
-    for (at, kind, owner, detail) in events.into_iter().take(120) {
-        Frame::new()
-            .fill(p.surface)
-            .stroke(Stroke::new(1.0, p.outline))
-            .corner_radius(CornerRadius::same(9))
-            .inner_margin(Margin::symmetric(12, 9))
-            .show(ui, |ui| {
-                ui.horizontal_wrapped(|ui| {
-                    ui.label(RichText::new(kind).strong().color(p.accent));
-                    ui.label(RichText::new(owner).strong());
-                    ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-                        ui.label(RichText::new(format_event_time(at)).small().color(p.dim));
-                    });
-                });
-                ui.label(RichText::new(detail).color(p.secondary));
-            });
-        ui.add_space(6.0);
-    }
-}
 
-fn format_event_time(timestamp: i64) -> String {
-    crate::util::local_datetime(timestamp)
-        .map(|(date, hour, minute)| {
-            format!(
-                "{:02}/{:02}/{} {:02}:{:02}",
-                date.day(),
-                date.month(),
-                date.year(),
-                hour,
-                minute
-            )
-        })
-        .unwrap_or_else(|| "Data indisponível".into())
-}
-
-fn funnel(app: &mut App, ui: &mut egui::Ui) {
-    empty_panel(
-        ui,
-        Icon::Tag,
-        "Acompanhe seus negócios por etapa",
-        "Abra o quadro para mover contatos, registrar valores e consultar métricas.",
-    );
-    ui.vertical_centered(|ui| {
-        if ui
-            .add_sized([220.0, 38.0], egui::Button::new("Abrir quadro comercial"))
-            .clicked()
-        {
-            app.actions
-                .push(Action::ShowDialog(crate::model::Dialog::Kanban));
+    // 4. Group by Day
+    let today = crate::util::today();
+    let mut grouped: Vec<(Date, Vec<TimelineEvent>)> = Vec::new();
+    for event in filtered.into_iter().take(150) {
+        if let Some(last) = grouped.last_mut() {
+            if last.0 == event.date {
+                last.1.push(event);
+                continue;
+            }
         }
+        grouped.push((event.date, vec![event]));
+    }
+
+    // 5. Render grouped timeline
+    for (date, day_events) in grouped {
+        // Day Separator Header
+        ui.horizontal(|ui| {
+            ui.label(RichText::new("●").size(10.0).color(cp.accent));
+            ui.add_space(2.0);
+            ui.label(
+                RichText::new(format_day_header(date, today))
+                    .size(15.0)
+                    .strong()
+                    .color(cp.text),
+            );
+            Frame::new()
+                .fill(cp.surface)
+                .corner_radius(CornerRadius::same(10))
+                .inner_margin(Margin::symmetric(8, 2))
+                .show(ui, |ui| {
+                    ui.label(
+                        RichText::new(format!("{} eventos", day_events.len()))
+                            .size(11.0)
+                            .color(cp.dim),
+                    );
+                });
+        });
+
+        ui.add_space(6.0);
+
+        // Render each event in this day
+        for event in day_events {
+            let kind_color = event.kind.color(cp);
+
+            ui.horizontal(|ui| {
+                // Left Icon Node
+                let (rect, _) = ui.allocate_exact_size(vec2(32.0, 32.0), egui::Sense::hover());
+                ui.painter().rect(
+                    rect,
+                    CornerRadius::same(8),
+                    kind_color.gamma_multiply(0.16),
+                    Stroke::new(1.0, kind_color.gamma_multiply(0.45)),
+                    egui::epaint::StrokeKind::Inside,
+                );
+                theme::paint_icon(ui, event.kind.icon(), rect, 16.0, kind_color);
+
+                ui.add_space(4.0);
+
+                // Right Card Content
+                Frame::new()
+                    .fill(cp.surface)
+                    .stroke(Stroke::new(1.0, cp.outline))
+                    .corner_radius(CornerRadius::same(10))
+                    .inner_margin(Margin::symmetric(14, 10))
+                    .show(ui, |ui| {
+                        ui.set_width(ui.available_width() - 8.0);
+
+                        // Card Header
+                        ui.horizontal(|ui| {
+                            // Kind pill
+                            Frame::new()
+                                .fill(kind_color.gamma_multiply(0.14))
+                                .corner_radius(CornerRadius::same(5))
+                                .inner_margin(Margin::symmetric(7, 2))
+                                .show(ui, |ui| {
+                                    ui.label(
+                                        RichText::new(event.kind.label())
+                                            .size(11.0)
+                                            .strong()
+                                            .color(kind_color),
+                                    );
+                                });
+
+                            // Entity pill
+                            if !event.entity.is_empty() {
+                                ui.label(
+                                    RichText::new(&event.entity)
+                                        .size(12.5)
+                                        .strong()
+                                        .color(cp.text),
+                                );
+                            }
+
+                            // Status badge
+                            if let Some((badge_text, badge_color)) = &event.status_badge {
+                                Frame::new()
+                                    .fill(badge_color.gamma_multiply(0.14))
+                                    .corner_radius(CornerRadius::same(5))
+                                    .inner_margin(Margin::symmetric(7, 2))
+                                    .show(ui, |ui| {
+                                        ui.label(
+                                            RichText::new(badge_text)
+                                                .size(11.0)
+                                                .strong()
+                                                .color(*badge_color),
+                                        );
+                                    });
+                            }
+
+                            // Right-aligned time
+                            ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
+                                ui.label(RichText::new(&event.time_str).size(12.0).color(cp.dim));
+                            });
+                        });
+
+                        // Title if different from entity
+                        if !event.title.is_empty() && event.title != event.entity {
+                            ui.add_space(2.0);
+                            ui.label(
+                                RichText::new(&event.title)
+                                    .size(13.5)
+                                    .strong()
+                                    .color(cp.text),
+                            );
+                        }
+
+                        // Summary
+                        if !event.summary.is_empty() {
+                            ui.add_space(2.0);
+                            ui.label(RichText::new(&event.summary).size(12.5).color(cp.secondary));
+                        }
+                    });
+            });
+
+            ui.add_space(6.0);
+        }
+
+        ui.add_space(10.0);
+    }
+
+    ui.data_mut(|d| {
+        d.insert_temp(filter_type_id, type_filter);
+        d.insert_temp(search_id, search);
     });
 }
 
-fn overview(app: &mut App, ui: &mut egui::Ui, view: &mut WorkspaceView) {
+fn funnel(app: &mut App, ui: &mut egui::Ui, cp: &CrmPalette) {
+    if empty_state(
+        ui,
+        cp,
+        Icon::Tag,
+        "Acompanhe seus negócios por etapa",
+        "Abra o quadro comercial para mover contatos, registrar valores e consultar métricas de conversão.",
+        Some("Abrir quadro comercial"),
+    ) {
+        app.actions
+            .push(Action::ShowDialog(crate::model::Dialog::Kanban));
+    }
+}
+
+fn overview(app: &mut App, ui: &mut egui::Ui, view: &mut WorkspaceView, cp: &CrmPalette) {
     let now = crate::util::now();
     let active_projects = app
         .crm_projects
@@ -456,6 +1095,7 @@ fn overview(app: &mut App, ui: &mut egui::Ui, view: &mut WorkspaceView) {
     ui.horizontal_wrapped(|ui| {
         metric(
             ui,
+            cp,
             Icon::Users,
             "Projetos ativos",
             active_projects,
@@ -463,81 +1103,172 @@ fn overview(app: &mut App, ui: &mut egui::Ui, view: &mut WorkspaceView) {
         );
         metric(
             ui,
+            cp,
             Icon::ListChecks,
             "Tarefas abertas",
             open_tasks,
             metric_width,
         );
-        metric(ui, Icon::CircleAlert, "Atrasadas", late, metric_width);
-        metric(ui, Icon::Bell, "Follow-ups", followups, metric_width);
+        metric(ui, cp, Icon::CircleAlert, "Atrasadas", late, metric_width);
+        metric(ui, cp, Icon::Bell, "Follow-ups", followups, metric_width);
     });
-    ui.add_space(20.0);
+    ui.add_space(22.0);
     ui.horizontal(|ui| {
-        ui.label(RichText::new("Próximas ações").size(17.0).strong());
+        ui.label(
+            RichText::new("Próximas ações")
+                .size(18.0)
+                .strong()
+                .color(cp.text),
+        );
         ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-            if ui.small_button("Ver todas as tarefas →").clicked() {
+            let see_all = egui::Button::new(
+                RichText::new("Ver todas as tarefas →")
+                    .size(13.0)
+                    .strong()
+                    .color(cp.accent),
+            )
+            .fill(cp.surface)
+            .stroke(Stroke::new(1.0, cp.outline))
+            .corner_radius(CornerRadius::same(6));
+            if ui.add(see_all).clicked() {
                 *view = WorkspaceView::Tasks;
             }
         });
     });
+    ui.add_space(10.0);
     let mut tasks: Vec<_> = app
         .crm_tasks
         .iter()
         .filter(|t| t.status != "done")
+        .cloned()
         .collect();
     tasks.sort_by_key(|t| t.due_at.unwrap_or(i64::MAX));
     if tasks.is_empty() {
-        empty_panel(
+        if empty_state(
             ui,
+            cp,
             Icon::CircleCheck,
-            "Tudo em dia",
-            "Crie uma tarefa ou um projeto para começar a organizar o trabalho.",
-        );
+            "Tudo em dia!",
+            "Você não possui tarefas pendentes no momento. Crie uma nova tarefa para organizar suas próximas entregas.",
+            Some("+ Nova tarefa"),
+        ) {
+            *view = WorkspaceView::Tasks;
+        }
+        return;
     }
+    let mut to_complete: Option<CrmTask> = None;
     for task in tasks.into_iter().take(8) {
-        let project = task
+        let is_late = task.due_at.is_some_and(|d| d < now);
+        let project_name = task
             .project_id
             .as_ref()
-            .and_then(|id| app.crm_projects.iter().find(|p| &p.id == id));
-        ui.horizontal(|ui| {
-            ui.label("□");
-            ui.label(RichText::new(&task.title).strong());
-            if let Some(project) = project {
-                ui.label(RichText::new(&project.name).small().weak());
-            }
-        });
+            .and_then(|id| app.crm_projects.iter().find(|p| &p.id == id))
+            .map(|p| p.name.clone());
+        Frame::new()
+            .fill(cp.surface)
+            .stroke(Stroke::new(
+                1.0,
+                if is_late { cp.danger } else { cp.outline },
+            ))
+            .corner_radius(CornerRadius::same(10))
+            .inner_margin(Margin::symmetric(16, 12))
+            .show(ui, |ui| {
+                ui.horizontal(|ui| {
+                    // Checkbox button to complete
+                    let check_btn =
+                        egui::Button::new(RichText::new("□").size(15.0).color(if is_late {
+                            cp.danger
+                        } else {
+                            cp.accent
+                        }))
+                        .fill(cp.surface_hover)
+                        .corner_radius(CornerRadius::same(5))
+                        .min_size(vec2(26.0, 26.0));
+                    if ui.add(check_btn).on_hover_text("Concluir tarefa").clicked() {
+                        let mut updated = task.clone();
+                        updated.status = "done".into();
+                        updated.completed_at = Some(now);
+                        updated.updated_at = now;
+                        to_complete = Some(updated);
+                    }
+                    ui.add_space(6.0);
+                    ui.vertical(|ui| {
+                        ui.label(
+                            RichText::new(&task.title)
+                                .size(14.0)
+                                .strong()
+                                .color(cp.text),
+                        );
+                        if let Some(p_name) = &project_name {
+                            ui.label(
+                                RichText::new(format!("📁 {}", p_name))
+                                    .size(12.0)
+                                    .color(cp.secondary),
+                            );
+                        }
+                    });
+
+                    ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
+                        if is_late {
+                            Frame::new()
+                                .fill(cp.danger.gamma_multiply(0.15))
+                                .corner_radius(CornerRadius::same(6))
+                                .inner_margin(Margin::symmetric(8, 3))
+                                .show(ui, |ui| {
+                                    ui.label(
+                                        RichText::new("Atrasada")
+                                            .size(11.0)
+                                            .strong()
+                                            .color(cp.danger),
+                                    );
+                                });
+                        }
+                        if let Some(due) = task.due_at {
+                            if let Some((date, _, _)) = crate::util::local_datetime(due) {
+                                ui.label(
+                                    RichText::new(format!("{:02}/{:02}", date.day(), date.month()))
+                                        .size(12.0)
+                                        .color(if is_late { cp.danger } else { cp.dim }),
+                                );
+                            }
+                        }
+                    });
+                });
+            });
+        ui.add_space(8.0);
+    }
+    if let Some(t) = to_complete {
+        app.actions.push(Action::SaveCrmTask(t));
     }
 }
 
-fn metric(ui: &mut egui::Ui, icon: Icon, title: &str, value: usize, width: f32) {
+fn metric(
+    ui: &mut egui::Ui,
+    palette: &CrmPalette,
+    icon: Icon,
+    title: &str,
+    value: usize,
+    width: f32,
+) {
     Frame::new()
-        .fill(ui.visuals().faint_bg_color)
-        .stroke(ui.visuals().widgets.noninteractive.bg_stroke)
+        .fill(palette.surface)
+        .stroke(Stroke::new(1.0, palette.outline))
         .corner_radius(CornerRadius::same(10))
         .inner_margin(Margin::symmetric(16, 14))
         .show(ui, |ui| {
             ui.set_width(width - 32.0);
             ui.horizontal(|ui| {
-                theme::icon(ui, icon, 18.0, ui.visuals().hyperlink_color);
-                ui.label(RichText::new(title).small());
+                theme::icon(ui, icon, 18.0, palette.accent);
+                ui.add_space(2.0);
+                ui.label(RichText::new(title).size(12.5).color(palette.secondary));
             });
-            ui.label(RichText::new(value.to_string()).size(26.0).strong());
-        });
-}
-
-fn empty_panel(ui: &mut egui::Ui, icon: Icon, title: &str, subtitle: &str) {
-    Frame::new()
-        .fill(ui.visuals().faint_bg_color)
-        .corner_radius(CornerRadius::same(10))
-        .inner_margin(Margin::same(24))
-        .show(ui, |ui| {
-            ui.set_min_width((ui.available_width() - 48.0).max(320.0));
-            ui.vertical_centered(|ui| {
-                theme::icon(ui, icon, 30.0, ui.visuals().hyperlink_color);
-                ui.add_space(6.0);
-                ui.label(RichText::new(title).size(16.0).strong());
-                ui.label(RichText::new(subtitle).color(ui.visuals().weak_text_color()));
-            });
+            ui.add_space(6.0);
+            ui.label(
+                RichText::new(value.to_string())
+                    .size(28.0)
+                    .strong()
+                    .color(palette.text),
+            );
         });
 }
 
@@ -546,10 +1277,11 @@ fn projects(
     ui: &mut egui::Ui,
     draft: &mut ProjectDraft,
     selected: &mut Option<String>,
+    cp: &CrmPalette,
 ) {
     if let Some(id) = selected.clone() {
         if let Some(project) = app.crm_projects.iter().find(|p| p.id == id).cloned() {
-            project_detail(app, ui, project, selected);
+            project_detail(app, ui, project, selected, cp);
             return;
         }
         *selected = None;
@@ -560,19 +1292,18 @@ fn projects(
     let form_id = ui.id().with(("crm-project-form-open", &account_id));
     let search_id = ui.id().with(("crm-project-search", &account_id));
     let status_id = ui.id().with(("crm-project-status-filter", &account_id));
-    let mut show_form = ui.data_mut(|d| {
-        d.get_temp::<bool>(form_id)
-            .unwrap_or(app.crm_projects.is_empty())
-    });
+    let mut show_form = ui.data_mut(|d| d.get_temp::<bool>(form_id).unwrap_or(false));
     let mut search = ui.data_mut(|d| d.get_temp::<String>(search_id).unwrap_or_default());
     let mut status = ui.data_mut(|d| {
         d.get_temp::<String>(status_id)
             .unwrap_or_else(|| "all".into())
     });
+
     ui.horizontal(|ui| {
-        ui.add_sized(
-            [320.0, 34.0],
-            egui::TextEdit::singleline(&mut search).hint_text("Buscar projeto…"),
+        ui.add(
+            egui::TextEdit::singleline(&mut search)
+                .hint_text("Buscar projeto…")
+                .desired_width(280.0),
         );
         egui::ComboBox::from_id_salt(("project-filter", &account_id))
             .selected_text(match status.as_str() {
@@ -588,99 +1319,543 @@ fn projects(
                 ui.selectable_value(&mut status, "completed".into(), "Concluídos");
             });
         ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-            if ui
-                .add_sized(
-                    [130.0, 34.0],
-                    egui::Button::new(if show_form {
-                        "Fechar"
-                    } else {
-                        "+ Novo projeto"
-                    }),
-                )
-                .clicked()
-            {
-                show_form = !show_form;
+            let btn = egui::Button::new(
+                RichText::new("+ Novo projeto")
+                    .size(13.5)
+                    .strong()
+                    .color(cp.on_accent),
+            )
+            .fill(cp.accent)
+            .corner_radius(CornerRadius::same(8))
+            .min_size(vec2(140.0, 36.0));
+
+            if ui.add(btn).clicked() {
+                show_form = true;
             }
         });
     });
-    ui.add_space(10.0);
+
+    ui.add_space(14.0);
+
+    // Floating Modal Window for New Project
     if show_form {
-        Frame::new()
-            .fill(app.palette.surface)
-            .stroke(Stroke::new(1.0, app.palette.outline))
-            .corner_radius(CornerRadius::same(8))
-            .inner_margin(Margin::same(12))
-            .show(ui, |ui| {
-                ui.label(RichText::new("Novo projeto").strong());
-                if draft.name.is_empty() {
-                    if let Some(chat) = &current {
-                        draft.name = app.chat_title(chat);
-                    }
-                }
-                ui.horizontal_wrapped(|ui| {
-                    ui.add_sized(
-                        [280.0, 28.0],
-                        egui::TextEdit::singleline(&mut draft.name).hint_text("Nome do projeto"),
-                    );
-                    egui::ComboBox::from_id_salt("crm-project-kind")
-                        .selected_text(if draft.kind == "internal" {
-                            "Interno"
-                        } else {
-                            "Cliente"
-                        })
-                        .show_ui(ui, |ui| {
-                            ui.selectable_value(&mut draft.kind, "client".into(), "Cliente");
-                            ui.selectable_value(&mut draft.kind, "internal".into(), "Interno");
+        let mut is_open = true;
+        egui::Window::new("Novo Projeto")
+            .id(ui.id().with("crm-project-floating-modal"))
+            .open(&mut is_open)
+            .collapsible(false)
+            .resizable(false)
+            .fixed_size(vec2(480.0, 520.0))
+            .anchor(egui::Align2::CENTER_CENTER, vec2(0.0, 0.0))
+            .frame(
+                Frame::new()
+                    .fill(cp.panel)
+                    .stroke(Stroke::new(1.0, cp.outline))
+                    .corner_radius(CornerRadius::same(12))
+                    .inner_margin(Margin::same(18)),
+            )
+            .show(ui.ctx(), |ui| {
+                render_project_form_modal(app, ui, cp, draft, &current, &mut show_form);
+            });
+        if !is_open {
+            show_form = false;
+            *draft = ProjectDraft::default();
+        }
+    }
+
+    ui.data_mut(|d| {
+        d.insert_temp(form_id, show_form);
+        d.insert_temp(search_id, search.clone());
+        d.insert_temp(status_id, status.clone());
+    });
+
+    let needle = search.trim().to_lowercase();
+    let filtered_projects: Vec<_> = app
+        .crm_projects
+        .iter()
+        .filter(|project| {
+            (status == "all" || project.status == status)
+                && (needle.is_empty()
+                    || project.name.to_lowercase().contains(&needle)
+                    || project.description.to_lowercase().contains(&needle)
+                    || project.client_name.to_lowercase().contains(&needle)
+                    || project.assignee.to_lowercase().contains(&needle))
+        })
+        .cloned()
+        .collect();
+
+    if app.crm_projects.is_empty() {
+        if empty_state(
+            ui,
+            cp,
+            Icon::Users,
+            "Nenhum projeto cadastrado",
+            "Crie seu primeiro projeto para gerenciar tarefas, prazos e conversas vinculadas.",
+            Some("+ Novo projeto"),
+        ) {
+            ui.data_mut(|d| d.insert_temp(form_id, true));
+        }
+        return;
+    }
+
+    if filtered_projects.is_empty() {
+        ui.add_space(20.0);
+        ui.vertical_centered(|ui| {
+            ui.label(
+                RichText::new("Nenhum projeto encontrado para esta busca.")
+                    .size(14.0)
+                    .color(cp.dim),
+            );
+        });
+        return;
+    }
+
+    // Grid of cards
+    let avail_w = ui.available_width();
+    let num_cols = if avail_w > 940.0 {
+        3
+    } else if avail_w > 560.0 {
+        2
+    } else {
+        1
+    };
+    let gap = 14.0;
+    let card_w = ((avail_w - (num_cols as f32 - 1.0) * gap) / num_cols as f32).max(240.0);
+
+    for row_projects in filtered_projects.chunks(num_cols) {
+        ui.horizontal(|ui| {
+            ui.spacing_mut().item_spacing.x = gap;
+            for project in row_projects {
+                render_project_card(app, ui, cp, project, card_w, selected);
+            }
+        });
+        ui.add_space(gap);
+    }
+}
+
+fn render_project_card(
+    app: &App,
+    ui: &mut egui::Ui,
+    cp: &CrmPalette,
+    project: &CrmProject,
+    width: f32,
+    selected: &mut Option<String>,
+) {
+    let total = app
+        .crm_tasks
+        .iter()
+        .filter(|t| t.project_id.as_deref() == Some(&project.id))
+        .count();
+    let done = app
+        .crm_tasks
+        .iter()
+        .filter(|t| t.project_id.as_deref() == Some(&project.id) && t.status == "done")
+        .count();
+    let progress = if total == 0 {
+        0.0
+    } else {
+        done as f32 / total as f32
+    };
+
+    Frame::new()
+        .fill(cp.surface)
+        .stroke(Stroke::new(1.0, cp.outline))
+        .corner_radius(CornerRadius::same(10))
+        .inner_margin(Margin::same(14))
+        .show(ui, |ui| {
+            ui.set_width(width - 28.0);
+            ui.vertical(|ui| {
+                // Top row: Project status pill + Kind badge + Open button
+                ui.horizontal(|ui| {
+                    let (status_bg, status_fg, status_txt) = match project.status.as_str() {
+                        "active" => (cp.accent.gamma_multiply(0.15), cp.accent, "Ativo"),
+                        "paused" => (cp.warning.gamma_multiply(0.15), cp.warning, "Pausado"),
+                        "completed" => (
+                            Color32::from_rgb(0x1a, 0x2e, 0x3d),
+                            Color32::from_rgb(0x5c, 0xa7, 0xdb),
+                            "Concluído",
+                        ),
+                        _ => (cp.surface_hover, cp.dim, "Arquivado"),
+                    };
+                    Frame::new()
+                        .fill(status_bg)
+                        .corner_radius(CornerRadius::same(4))
+                        .inner_margin(Margin::symmetric(6, 2))
+                        .show(ui, |ui| {
+                            ui.label(
+                                RichText::new(status_txt)
+                                    .size(11.0)
+                                    .strong()
+                                    .color(status_fg),
+                            );
                         });
-                    if current.is_some() {
-                        ui.checkbox(
-                            &mut draft.link_current_chat,
-                            "Vincular conversa/grupo aberto",
-                        );
+
+                    if project.kind == "internal" {
+                        Frame::new()
+                            .fill(cp.surface_hover)
+                            .corner_radius(CornerRadius::same(4))
+                            .inner_margin(Margin::symmetric(6, 2))
+                            .show(ui, |ui| {
+                                ui.label(RichText::new("Interno").size(11.0).color(cp.secondary));
+                            });
                     }
+
+                    ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
+                        let btn = egui::Button::new(
+                            RichText::new("Abrir →")
+                                .size(12.0)
+                                .strong()
+                                .color(cp.accent),
+                        )
+                        .fill(cp.surface_hover)
+                        .corner_radius(CornerRadius::same(6));
+                        if ui.add(btn).clicked() {
+                            *selected = Some(project.id.clone());
+                        }
+                    });
                 });
+
+                ui.add_space(8.0);
+
+                // Project Title
+                ui.label(
+                    RichText::new(&project.name)
+                        .size(16.0)
+                        .strong()
+                        .color(cp.text),
+                );
+
+                // Description
+                if !project.description.is_empty() {
+                    ui.add_space(2.0);
+                    let snippet = if project.description.chars().count() > 70 {
+                        format!(
+                            "{}...",
+                            project.description.chars().take(70).collect::<String>()
+                        )
+                    } else {
+                        project.description.clone()
+                    };
+                    ui.label(RichText::new(snippet).size(12.0).color(cp.secondary));
+                }
+
+                ui.add_space(10.0);
+
+                // Client & Assignee
+                if !project.client_name.is_empty() {
+                    ui.horizontal(|ui| {
+                        theme::icon(ui, Icon::Users, 13.0, cp.dim);
+                        ui.label(
+                            RichText::new(format!("Cliente: {}", project.client_name))
+                                .size(11.5)
+                                .color(cp.secondary),
+                        );
+                    });
+                }
+                if !project.assignee.is_empty() {
+                    ui.horizontal(|ui| {
+                        theme::icon(ui, Icon::User, 13.0, cp.dim);
+                        ui.label(
+                            RichText::new(format!("Responsável: {}", project.assignee))
+                                .size(11.5)
+                                .color(cp.dim),
+                        );
+                    });
+                }
+
+                // Due Date
+                if let Some((date, _, _)) = project.due_at.and_then(crate::util::local_datetime) {
+                    ui.horizontal(|ui| {
+                        theme::icon(ui, Icon::Clock, 13.0, cp.dim);
+                        ui.label(
+                            RichText::new(format!(
+                                "Prazo: {}",
+                                crate::util::long_date(app.locale, date)
+                            ))
+                            .size(11.5)
+                            .color(cp.dim),
+                        );
+                    });
+                }
+
+                ui.add_space(10.0);
+
+                // Progress Bar & Task Count
+                ui.horizontal(|ui| {
+                    ui.label(
+                        RichText::new(format!("{done}/{total} tarefas ({:.0}%)", progress * 100.0))
+                            .size(11.5)
+                            .color(cp.secondary),
+                    );
+                });
+                ui.add_space(4.0);
                 ui.add_sized(
-                    [ui.available_width(), 42.0],
-                    egui::TextEdit::multiline(&mut draft.description)
-                        .hint_text("Descrição e objetivo"),
+                    [ui.available_width(), 6.0],
+                    egui::ProgressBar::new(progress)
+                        .fill(cp.accent)
+                        .animate(false),
                 );
-                ui.horizontal_wrapped(|ui| {
-                    ui.add_sized(
-                        [220.0, 28.0],
-                        egui::TextEdit::singleline(&mut draft.assignee)
-                            .hint_text("Responsável pelo projeto"),
-                    );
-                    ui.add_sized(
-                        [220.0, 28.0],
-                        egui::TextEdit::singleline(&mut draft.client_name)
-                            .hint_text("Nome do cliente"),
-                    );
-                    ui.add_sized(
-                        [180.0, 28.0],
-                        egui::TextEdit::singleline(&mut draft.client_phone).hint_text("Telefone"),
-                    );
-                    ui.add_sized(
-                        [240.0, 28.0],
-                        egui::TextEdit::singleline(&mut draft.client_email).hint_text("E-mail"),
+            });
+        });
+}
+
+fn render_project_form_modal(
+    app: &mut App,
+    ui: &mut egui::Ui,
+    cp: &CrmPalette,
+    draft: &mut ProjectDraft,
+    current: &Option<crate::model::Chat>,
+    show_form: &mut bool,
+) {
+    let err_id = ui.id().with("crm-project-modal-err");
+    let show_err = ui.data_mut(|d| d.get_temp::<bool>(err_id).unwrap_or(false));
+
+    ui.vertical(|ui| {
+        ui.label(
+            RichText::new("Nome do projeto *")
+                .size(12.0)
+                .strong()
+                .color(cp.secondary),
+        );
+        ui.add_space(2.0);
+        let name_stroke = if show_err && draft.name.trim().is_empty() {
+            Stroke::new(1.0, cp.danger)
+        } else {
+            Stroke::new(1.0, cp.outline)
+        };
+        Frame::new()
+            .fill(cp.surface)
+            .stroke(name_stroke)
+            .corner_radius(CornerRadius::same(6))
+            .inner_margin(Margin::symmetric(8, 6))
+            .show(ui, |ui| {
+                ui.add(
+                    egui::TextEdit::singleline(&mut draft.name)
+                        .hint_text("Ex.: Redesenho Central de Atendimento")
+                        .desired_width(ui.available_width())
+                        .frame(Frame::NONE),
+                );
+            });
+        if show_err && draft.name.trim().is_empty() {
+            ui.label(
+                RichText::new("O nome do projeto é obrigatório")
+                    .size(11.0)
+                    .color(cp.danger),
+            );
+        }
+
+        ui.add_space(10.0);
+
+        ui.columns(2, |uis| {
+            uis[0].vertical(|ui| {
+                ui.label(
+                    RichText::new("Tipo de projeto")
+                        .size(12.0)
+                        .strong()
+                        .color(cp.secondary),
+                );
+                ui.add_space(2.0);
+                egui::ComboBox::from_id_salt("modal-proj-kind")
+                    .selected_text(if draft.kind == "internal" {
+                        "Interno"
+                    } else {
+                        "Cliente"
+                    })
+                    .width(ui.available_width() - 8.0)
+                    .show_ui(ui, |ui| {
+                        ui.selectable_value(&mut draft.kind, "client".into(), "Cliente");
+                        ui.selectable_value(&mut draft.kind, "internal".into(), "Interno");
+                    });
+            });
+
+            uis[1].vertical(|ui| {
+                ui.label(
+                    RichText::new("Responsável")
+                        .size(12.0)
+                        .strong()
+                        .color(cp.secondary),
+                );
+                ui.add_space(2.0);
+                Frame::new()
+                    .fill(cp.surface)
+                    .stroke(Stroke::new(1.0, cp.outline))
+                    .corner_radius(CornerRadius::same(6))
+                    .inner_margin(Margin::symmetric(8, 6))
+                    .show(ui, |ui| {
+                        ui.add(
+                            egui::TextEdit::singleline(&mut draft.assignee)
+                                .hint_text("Nome do responsável")
+                                .desired_width(ui.available_width())
+                                .frame(Frame::NONE),
+                        );
+                    });
+            });
+        });
+
+        ui.add_space(10.0);
+
+        ui.columns(2, |uis| {
+            uis[0].vertical(|ui| {
+                ui.label(
+                    RichText::new("Nome do cliente")
+                        .size(12.0)
+                        .strong()
+                        .color(cp.secondary),
+                );
+                ui.add_space(2.0);
+                Frame::new()
+                    .fill(cp.surface)
+                    .stroke(Stroke::new(1.0, cp.outline))
+                    .corner_radius(CornerRadius::same(6))
+                    .inner_margin(Margin::symmetric(8, 6))
+                    .show(ui, |ui| {
+                        ui.add(
+                            egui::TextEdit::singleline(&mut draft.client_name)
+                                .hint_text("Empresa ou Contato")
+                                .desired_width(ui.available_width())
+                                .frame(Frame::NONE),
+                        );
+                    });
+            });
+
+            uis[1].vertical(|ui| {
+                ui.label(
+                    RichText::new("Telefone")
+                        .size(12.0)
+                        .strong()
+                        .color(cp.secondary),
+                );
+                ui.add_space(2.0);
+                Frame::new()
+                    .fill(cp.surface)
+                    .stroke(Stroke::new(1.0, cp.outline))
+                    .corner_radius(CornerRadius::same(6))
+                    .inner_margin(Margin::symmetric(8, 6))
+                    .show(ui, |ui| {
+                        ui.add(
+                            egui::TextEdit::singleline(&mut draft.client_phone)
+                                .hint_text("+55...")
+                                .desired_width(ui.available_width())
+                                .frame(Frame::NONE),
+                        );
+                    });
+            });
+        });
+
+        ui.add_space(10.0);
+
+        ui.label(
+            RichText::new("Descrição e objetivo")
+                .size(12.0)
+                .strong()
+                .color(cp.secondary),
+        );
+        ui.add_space(2.0);
+        Frame::new()
+            .fill(cp.surface)
+            .stroke(Stroke::new(1.0, cp.outline))
+            .corner_radius(CornerRadius::same(6))
+            .inner_margin(Margin::symmetric(8, 6))
+            .show(ui, |ui| {
+                ui.add(
+                    egui::TextEdit::multiline(&mut draft.description)
+                        .hint_text("Resumo do escopo e metas do projeto...")
+                        .desired_width(ui.available_width())
+                        .desired_rows(3)
+                        .frame(Frame::NONE),
+                );
+            });
+
+        ui.add_space(10.0);
+
+        ui.label(
+            RichText::new("Data de início")
+                .size(12.0)
+                .strong()
+                .color(cp.secondary),
+        );
+        ui.add_space(2.0);
+        let cal_open_id = ui.id().with("modal-proj-cal-open");
+        let mut cal_open = ui.data_mut(|d| d.get_temp::<bool>(cal_open_id).unwrap_or(false));
+        let date_str = format!(
+            "📅 {:02}/{:02}/{} às {:02}:{:02}",
+            draft.start_date.day(),
+            draft.start_date.month(),
+            draft.start_date.year(),
+            draft.start_hour,
+            draft.start_minute
+        );
+        if ui
+            .button(RichText::new(date_str).color(cp.accent))
+            .clicked()
+        {
+            cal_open = !cal_open;
+        }
+
+        if cal_open {
+            ui.add_space(4.0);
+            Frame::new()
+                .fill(cp.surface)
+                .stroke(Stroke::new(1.0, cp.outline))
+                .corner_radius(CornerRadius::same(8))
+                .inner_margin(Margin::same(8))
+                .show(ui, |ui| {
+                    super::dialogs::date_time_picker(
+                        ui,
+                        app.locale,
+                        &app.palette,
+                        "project-modal-start-date",
+                        &mut draft.start_date,
+                        &mut draft.start_hour,
+                        &mut draft.start_minute,
                     );
                 });
-                ui.label("Data de início");
-                super::dialogs::date_time_picker(
-                    ui,
-                    app.locale,
-                    &app.palette,
-                    "project-start-date",
-                    &mut draft.start_date,
-                    &mut draft.start_hour,
-                    &mut draft.start_minute,
-                );
-                if ui
-                    .add_enabled(
-                        !draft.name.trim().is_empty(),
-                        egui::Button::new("Criar projeto"),
-                    )
-                    .clicked()
-                {
+        }
+        ui.data_mut(|d| d.insert_temp(cal_open_id, cal_open));
+
+        ui.add_space(8.0);
+
+        if current.is_some() {
+            ui.checkbox(
+                &mut draft.link_current_chat,
+                "Vincular conversa/grupo aberto",
+            );
+        }
+
+        ui.add_space(14.0);
+
+        ui.horizontal(|ui| {
+            if ui
+                .add(
+                    egui::Button::new(RichText::new("Cancelar").size(13.0).color(cp.secondary))
+                        .fill(cp.surface)
+                        .corner_radius(CornerRadius::same(8))
+                        .min_size(vec2(100.0, 36.0)),
+                )
+                .clicked()
+            {
+                *show_form = false;
+                *draft = ProjectDraft::default();
+                ui.data_mut(|d| d.insert_temp(err_id, false));
+            }
+
+            ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
+                let save_btn = egui::Button::new(
+                    RichText::new("Criar projeto")
+                        .size(13.0)
+                        .strong()
+                        .color(cp.on_accent),
+                )
+                .fill(cp.accent)
+                .corner_radius(CornerRadius::same(8))
+                .min_size(vec2(140.0, 36.0));
+
+                if ui.add(save_btn).clicked() {
+                    if draft.name.trim().is_empty() {
+                        ui.data_mut(|d| d.insert_temp(err_id, true));
+                        return;
+                    }
+
                     let now = crate::util::now();
                     let nonce = std::time::SystemTime::now()
                         .duration_since(std::time::UNIX_EPOCH)
@@ -695,13 +1870,14 @@ fn projects(
                     } else {
                         Vec::new()
                     };
+
                     app.actions.push(Action::SaveCrmProject(CrmProject {
                         id,
                         name: draft.name.trim().into(),
                         description: draft.description.trim().into(),
                         kind: draft.kind.clone(),
                         status: "active".into(),
-                        color: "#00a884".into(),
+                        color: "#00e699".into(),
                         icon: "briefcase".into(),
                         start_at: crate::util::to_unix_seconds(
                             draft.start_date,
@@ -717,106 +1893,13 @@ fn projects(
                         client_email: draft.client_email.trim().into(),
                         chat_ids,
                     }));
+
                     *draft = ProjectDraft::default();
-                    show_form = false;
+                    *show_form = false;
+                    ui.data_mut(|d| d.insert_temp(err_id, false));
                 }
             });
-    }
-    ui.data_mut(|d| {
-        d.insert_temp(form_id, show_form);
-        d.insert_temp(search_id, search.clone());
-        d.insert_temp(status_id, status.clone());
-    });
-    ui.add_space(12.0);
-    ui.horizontal(|ui| {
-        ui.heading("Projetos");
-        ui.label(format!("{} nesta conta", app.crm_projects.len()));
-    });
-    ScrollArea::vertical().show(ui, |ui| {
-        if app.crm_projects.is_empty() {
-            ui.label("Crie o primeiro projeto ou abra um grupo e vincule-o acima.");
-        }
-        let needle = search.trim().to_lowercase();
-        for project in app.crm_projects.clone().into_iter().filter(|project| {
-            (status == "all" || project.status == status)
-                && (needle.is_empty()
-                    || project.name.to_lowercase().contains(&needle)
-                    || project.description.to_lowercase().contains(&needle))
-        }) {
-            let total = app
-                .crm_tasks
-                .iter()
-                .filter(|t| t.project_id.as_deref() == Some(&project.id))
-                .count();
-            let done = app
-                .crm_tasks
-                .iter()
-                .filter(|t| t.project_id.as_deref() == Some(&project.id) && t.status == "done")
-                .count();
-            let linked_chat = project
-                .chat_ids
-                .first()
-                .and_then(|id| app.chat(id))
-                .cloned();
-            let linked_title = linked_chat.as_ref().map(|chat| app.chat_title(chat));
-            Frame::new()
-                .fill(app.palette.surface)
-                .corner_radius(CornerRadius::same(8))
-                .inner_margin(Margin::same(12))
-                .show(ui, |ui| {
-                    ui.horizontal(|ui| {
-                        if let Some(chat) = &linked_chat {
-                            let picture = app.avatar(&chat.id);
-                            super::widgets::avatar(
-                                ui,
-                                &app.palette,
-                                linked_title.as_deref().unwrap_or(&chat.name),
-                                &chat.id,
-                                36.0,
-                                picture.as_deref(),
-                            );
-                        }
-                        ui.vertical(|ui| {
-                            ui.horizontal(|ui| {
-                                ui.label(RichText::new(&project.name).strong().size(15.0));
-                                ui.label(
-                                    RichText::new(project_status(&project.status))
-                                        .small()
-                                        .color(app.palette.accent),
-                                );
-                            });
-                            ui.label(format!(
-                                "{} conversa(s) • {done}/{total} tarefas concluídas",
-                                project.chat_ids.len()
-                            ));
-                            if let Some((date, _, _)) =
-                                project.due_at.and_then(crate::util::local_datetime)
-                            {
-                                ui.label(
-                                    RichText::new(format!(
-                                        "Prazo: {}",
-                                        crate::util::long_date(app.locale, date)
-                                    ))
-                                    .small()
-                                    .color(app.palette.dim),
-                                );
-                            }
-                            let progress = if total == 0 {
-                                0.0
-                            } else {
-                                done as f32 / total as f32
-                            };
-                            ui.add_sized([260.0, 8.0], egui::ProgressBar::new(progress));
-                        });
-                        ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-                            if ui.button("Abrir").clicked() {
-                                *selected = Some(project.id.clone());
-                            }
-                        });
-                    });
-                });
-            ui.add_space(6.0);
-        }
+        });
     });
 }
 
@@ -825,6 +1908,7 @@ fn project_detail(
     ui: &mut egui::Ui,
     mut project: CrmProject,
     selected: &mut Option<String>,
+    _cp: &CrmPalette,
 ) {
     let confirm_id = ui.id().with(("crm-delete-project", &project.id));
     let edit_id = ui.id().with(("crm-edit-project", &project.id));

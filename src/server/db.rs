@@ -2,11 +2,11 @@
 //!
 //! Stores users, password hashes, sessions, WhatsApp instances, and user permissions.
 
-use std::path::Path;
-use std::sync::{Arc, Mutex};
-use rusqlite::{params, Connection, Result};
+use rusqlite::{Connection, Result, params};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
+use std::path::Path;
+use std::sync::{Arc, Mutex};
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct User {
@@ -67,7 +67,7 @@ impl ServerDb {
                  user_id TEXT NOT NULL,
                  expires_at INTEGER NOT NULL,
                  FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE
-             );"
+             );",
         )?;
 
         let db = Self {
@@ -106,7 +106,7 @@ impl ServerDb {
                  token TEXT PRIMARY KEY,
                  user_id TEXT NOT NULL,
                  expires_at INTEGER NOT NULL
-             );"
+             );",
         )?;
         let db = Self {
             conn: Arc::new(Mutex::new(conn)),
@@ -128,7 +128,9 @@ impl ServerDb {
                  VALUES (?1, ?2, ?3, ?4, 'admin', ?5)",
                 params![id, "admin", hash, salt, now],
             )?;
-            log::info!("Created default administrator account: username='admin', password='admin123'");
+            log::info!(
+                "Created default administrator account: username='admin', password='admin123'"
+            );
         }
         Ok(())
     }
@@ -188,7 +190,8 @@ impl ServerDb {
 
     pub fn list_users(&self) -> Result<Vec<User>> {
         let conn = self.conn.lock().unwrap();
-        let mut stmt = conn.prepare("SELECT id, username, role, created_at FROM users ORDER BY username ASC")?;
+        let mut stmt =
+            conn.prepare("SELECT id, username, role, created_at FROM users ORDER BY username ASC")?;
         let rows = stmt.query_map([], |row| {
             Ok(User {
                 id: row.get(0)?,
@@ -231,7 +234,13 @@ impl ServerDb {
         Ok(list)
     }
 
-    pub fn upsert_whatsapp_instance(&self, id: &str, name: &str, phone: Option<&str>, status: &str) -> Result<()> {
+    pub fn upsert_whatsapp_instance(
+        &self,
+        id: &str,
+        name: &str,
+        phone: Option<&str>,
+        status: &str,
+    ) -> Result<()> {
         let conn = self.conn.lock().unwrap();
         let now = crate::util::now();
         conn.execute(
@@ -252,8 +261,14 @@ impl ServerDb {
     pub fn get_user_permissions(&self, user_id: &str) -> Result<Vec<String>> {
         let conn = self.conn.lock().unwrap();
         // Check role first: admin has access to all instances
-        let role: Result<String> = conn.query_row("SELECT role FROM users WHERE id = ?1", params![user_id], |r| r.get(0));
-        if let Ok(role) = role && role == "admin" {
+        let role: Result<String> = conn.query_row(
+            "SELECT role FROM users WHERE id = ?1",
+            params![user_id],
+            |r| r.get(0),
+        );
+        if let Ok(role) = role
+            && role == "admin"
+        {
             let mut stmt = conn.prepare("SELECT id FROM whatsapp_instances")?;
             let rows = stmt.query_map([], |r| r.get(0))?;
             let mut all = Vec::new();
@@ -263,7 +278,8 @@ impl ServerDb {
             return Ok(all);
         }
 
-        let mut stmt = conn.prepare("SELECT account_id FROM user_permissions WHERE user_id = ?1")?;
+        let mut stmt =
+            conn.prepare("SELECT account_id FROM user_permissions WHERE user_id = ?1")?;
         let rows = stmt.query_map(params![user_id], |r| r.get(0))?;
         let mut allowed = Vec::new();
         for r in rows {
@@ -275,7 +291,10 @@ impl ServerDb {
     pub fn set_user_permissions(&self, user_id: &str, account_ids: &[String]) -> Result<()> {
         let mut conn = self.conn.lock().unwrap();
         let tx = conn.transaction()?;
-        tx.execute("DELETE FROM user_permissions WHERE user_id = ?1", params![user_id])?;
+        tx.execute(
+            "DELETE FROM user_permissions WHERE user_id = ?1",
+            params![user_id],
+        )?;
         for acc in account_ids {
             tx.execute(
                 "INSERT OR IGNORE INTO user_permissions (user_id, account_id) VALUES (?1, ?2)",
@@ -305,7 +324,7 @@ impl ServerDb {
             "SELECT u.id, u.username, u.role, u.created_at
              FROM sessions s
              JOIN users u ON u.id = s.user_id
-             WHERE s.token = ?1 AND s.expires_at > ?2"
+             WHERE s.token = ?1 AND s.expires_at > ?2",
         )?;
         let user_opt = stmt.query_row(params![token, now], |row| {
             Ok(User {

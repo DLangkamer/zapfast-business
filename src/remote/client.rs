@@ -3,9 +3,9 @@
 //! Connects to a ZapFast Server running in Docker or on the local network,
 //! authenticates with user credentials, and forwards events to the desktop UI.
 
-use std::sync::{Arc, Mutex};
 use futures_util::{SinkExt, StreamExt};
 use serde::{Deserialize, Serialize};
+use std::sync::{Arc, Mutex};
 use tokio::sync::mpsc;
 use tokio_websockets::{ClientBuilder, Message};
 
@@ -55,12 +55,7 @@ impl RemoteClient {
         matches!(*self.state.lock().unwrap(), RemoteState::Connected { .. })
     }
 
-    pub fn connect(
-        &mut self,
-        server_address: String,
-        username: String,
-        password: String,
-    ) {
+    pub fn connect(&mut self, server_address: String, username: String, password: String) {
         self.disconnect();
 
         let (cmd_tx, mut cmd_rx) = mpsc::unbounded_channel::<ClientWsMessage>();
@@ -72,11 +67,12 @@ impl RemoteClient {
         self.stop_tx = Some(stop_tx);
 
         tokio::spawn(async move {
-            let ws_url = if server_address.starts_with("ws://") || server_address.starts_with("wss://") {
-                format!("{}/api/ws", server_address.trim_end_matches('/'))
-            } else {
-                format!("ws://{}/api/ws", server_address.trim_end_matches('/'))
-            };
+            let ws_url =
+                if server_address.starts_with("ws://") || server_address.starts_with("wss://") {
+                    format!("{}/api/ws", server_address.trim_end_matches('/'))
+                } else {
+                    format!("ws://{}/api/ws", server_address.trim_end_matches('/'))
+                };
 
             let uri = match ws_url.parse::<http::Uri>() {
                 Ok(u) => u,
@@ -91,7 +87,8 @@ impl RemoteClient {
                 Ok((stream, _resp)) => stream,
                 Err(e) => {
                     log::warn!("Failed to connect to ZapFast Server: {e}");
-                    *state_clone.lock().unwrap() = RemoteState::Error(format!("Falha na conexão: {e}"));
+                    *state_clone.lock().unwrap() =
+                        RemoteState::Error(format!("Falha na conexão: {e}"));
                     return;
                 }
             };
@@ -103,10 +100,12 @@ impl RemoteClient {
                 token: None,
                 username: Some(username),
                 password: Some(password),
-            }).unwrap();
+            })
+            .unwrap();
 
             if let Err(e) = ws_sink.send(Message::text(auth_msg)).await {
-                *state_clone.lock().unwrap() = RemoteState::Error(format!("Erro ao autenticar: {e}"));
+                *state_clone.lock().unwrap() =
+                    RemoteState::Error(format!("Erro ao autenticar: {e}"));
                 return;
             }
 
@@ -118,15 +117,33 @@ impl RemoteClient {
                             if val.get("type").and_then(|v| v.as_str()) == Some("auth_ok") {
                                 let u_val = val.get("user").cloned().unwrap_or_default();
                                 let user = RemoteUser {
-                                    id: u_val.get("id").and_then(|v| v.as_str()).unwrap_or("").to_string(),
-                                    username: u_val.get("username").and_then(|v| v.as_str()).unwrap_or("").to_string(),
-                                    role: u_val.get("role").and_then(|v| v.as_str()).unwrap_or("").to_string(),
+                                    id: u_val
+                                        .get("id")
+                                        .and_then(|v| v.as_str())
+                                        .unwrap_or("")
+                                        .to_string(),
+                                    username: u_val
+                                        .get("username")
+                                        .and_then(|v| v.as_str())
+                                        .unwrap_or("")
+                                        .to_string(),
+                                    role: u_val
+                                        .get("role")
+                                        .and_then(|v| v.as_str())
+                                        .unwrap_or("")
+                                        .to_string(),
                                 };
-                                let allowed: Vec<String> = val.get("allowed_instances")
+                                let allowed: Vec<String> = val
+                                    .get("allowed_instances")
                                     .and_then(|v| v.as_array())
-                                    .map(|arr| arr.iter().filter_map(|x| x.as_str().map(|s| s.to_string())).collect())
+                                    .map(|arr| {
+                                        arr.iter()
+                                            .filter_map(|x| x.as_str().map(|s| s.to_string()))
+                                            .collect()
+                                    })
                                     .unwrap_or_default();
-                                let instances: Vec<InstanceInfo> = val.get("all_instances")
+                                let instances: Vec<InstanceInfo> = val
+                                    .get("all_instances")
                                     .and_then(|v| serde_json::from_value(v.clone()).ok())
                                     .unwrap_or_default();
 
@@ -137,8 +154,12 @@ impl RemoteClient {
                                 };
                                 true
                             } else {
-                                let err = val.get("error").and_then(|v| v.as_str()).unwrap_or("Erro de autenticação");
-                                *state_clone.lock().unwrap() = RemoteState::AuthFailed(err.to_string());
+                                let err = val
+                                    .get("error")
+                                    .and_then(|v| v.as_str())
+                                    .unwrap_or("Erro de autenticação");
+                                *state_clone.lock().unwrap() =
+                                    RemoteState::AuthFailed(err.to_string());
                                 false
                             }
                         } else {

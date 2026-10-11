@@ -1,11 +1,14 @@
 //! ZapFast Server binary for Docker / server deployment.
 
-use std::path::PathBuf;
 use clap::Parser;
-use zapfast::server::{run_server_main, ServerConfig};
+use std::path::PathBuf;
+use zapfast::server::{ServerConfig, run_server_main};
 
 #[derive(Parser, Debug)]
-#[command(name = "zapfast-server", about = "ZapFast Multi-Account Docker/Headless Server")]
+#[command(
+    name = "zapfast-server",
+    about = "ZapFast Multi-Account Docker/Headless Server"
+)]
 struct Cli {
     /// HTTP and WebSocket port to listen on
     #[arg(short, long, default_value_t = 8080)]

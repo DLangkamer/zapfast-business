@@ -31,7 +31,9 @@ impl DiscoveryBeacon {
                     s
                 }
                 Err(e) => {
-                    log::warn!("Could not bind UDP discovery socket on {addr}: {e}. (Port may be in use)");
+                    log::warn!(
+                        "Could not bind UDP discovery socket on {addr}: {e}. (Port may be in use)"
+                    );
                     return;
                 }
             };

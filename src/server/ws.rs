@@ -21,9 +21,7 @@ pub enum ClientWsMessage {
         password: Option<String>,
     },
     #[serde(rename = "subscribe")]
-    Subscribe {
-        instance_id: String,
-    },
+    Subscribe { instance_id: String },
     #[serde(rename = "send_text")]
     SendText {
         instance_id: String,
@@ -32,10 +30,7 @@ pub enum ClientWsMessage {
         quoting: Option<String>,
     },
     #[serde(rename = "mark_read")]
-    MarkRead {
-        instance_id: String,
-        chat: String,
-    },
+    MarkRead { instance_id: String, chat: String },
     #[serde(rename = "delete_for_everyone")]
     DeleteForEveryone {
         instance_id: String,

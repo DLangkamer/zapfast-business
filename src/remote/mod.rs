@@ -7,4 +7,4 @@ pub mod client;
 pub mod discovery;
 
 pub use client::{RemoteClient, RemoteState, RemoteUser};
-pub use discovery::{discover_local_servers, DiscoveredServer};
+pub use discovery::{DiscoveredServer, discover_local_servers};

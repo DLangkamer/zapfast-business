@@ -373,11 +373,7 @@ pub fn mono(size: f32) -> egui::FontId {
     egui::FontId::monospace(size)
 }
 
-pub fn rich_text(
-    text: impl Into<String>,
-    font: egui::FontId,
-    color: Color32,
-) -> egui::RichText {
+pub fn rich_text(text: impl Into<String>, font: egui::FontId, color: Color32) -> egui::RichText {
     egui::RichText::new(text).font(font).color(color)
 }
 

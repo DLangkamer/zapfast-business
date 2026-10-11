@@ -92,7 +92,9 @@ async fn handle_connection(
     let body = &req_buf[status..];
 
     // Extract Bearer token if present
-    let auth_token = req.headers.iter()
+    let auth_token = req
+        .headers
+        .iter()
         .find(|h| h.name.eq_ignore_ascii_case("authorization"))
         .and_then(|h| std::str::from_utf8(h.value).ok())
         .and_then(|v| {
@@ -103,17 +105,11 @@ async fn handle_connection(
             }
         });
 
-    let current_user: Option<User> = auth_token.as_deref().and_then(|t| db.validate_session(t).ok().flatten());
+    let current_user: Option<User> = auth_token
+        .as_deref()
+        .and_then(|t| db.validate_session(t).ok().flatten());
 
-    route_http(
-        &mut stream,
-        method,
-        path,
-        body,
-        current_user,
-        &db,
-        &manager,
-    ).await;
+    route_http(&mut stream, method, path, body, current_user, &db, &manager).await;
 }
 
 async fn route_http(
@@ -126,7 +122,13 @@ async fn route_http(
     manager: &InstanceManager,
 ) {
     if method == "GET" && (path == "/" || path == "/index.html") {
-        let _ = send_response(stream, 200, "text/html; charset=utf-8", INDEX_HTML.as_bytes()).await;
+        let _ = send_response(
+            stream,
+            200,
+            "text/html; charset=utf-8",
+            INDEX_HTML.as_bytes(),
+        )
+        .await;
         return;
     }
 
@@ -140,18 +142,32 @@ async fn route_http(
                         "token": tok,
                         "user": authed,
                     });
-                    let _ = send_response(stream, 200, "application/json", resp.to_string().as_bytes()).await;
+                    let _ =
+                        send_response(stream, 200, "application/json", resp.to_string().as_bytes())
+                            .await;
                     return;
                 }
             }
         }
-        let _ = send_response(stream, 401, "application/json", r#"{"error":"Credenciais inválidas"}"#.as_bytes()).await;
+        let _ = send_response(
+            stream,
+            401,
+            "application/json",
+            r#"{"error":"Credenciais inválidas"}"#.as_bytes(),
+        )
+        .await;
         return;
     }
 
     // Protected endpoints
     let Some(user) = user else {
-        let _ = send_response(stream, 401, "application/json", r#"{"error":"Não autenticado"}"#.as_bytes()).await;
+        let _ = send_response(
+            stream,
+            401,
+            "application/json",
+            r#"{"error":"Não autenticado"}"#.as_bytes(),
+        )
+        .await;
         return;
     };
 
@@ -176,7 +192,13 @@ async fn route_http(
 
     if method == "POST" && path == "/api/instances" {
         if user.role != "admin" {
-            let _ = send_response(stream, 403, "application/json", br#"{"error":"Requer perfil administrador"}"#).await;
+            let _ = send_response(
+                stream,
+                403,
+                "application/json",
+                br#"{"error":"Requer perfil administrador"}"#,
+            )
+            .await;
             return;
         }
         if let Ok(val) = serde_json::from_slice::<serde_json::Value>(body) {
@@ -188,13 +210,25 @@ async fn route_http(
                 return;
             }
         }
-        let _ = send_response(stream, 400, "application/json", r#"{"error":"ID inválido"}"#.as_bytes()).await;
+        let _ = send_response(
+            stream,
+            400,
+            "application/json",
+            r#"{"error":"ID inválido"}"#.as_bytes(),
+        )
+        .await;
         return;
     }
 
     if method == "DELETE" && path.starts_with("/api/instances/") {
         if user.role != "admin" {
-            let _ = send_response(stream, 403, "application/json", br#"{"error":"Requer perfil administrador"}"#).await;
+            let _ = send_response(
+                stream,
+                403,
+                "application/json",
+                br#"{"error":"Requer perfil administrador"}"#,
+            )
+            .await;
             return;
         }
         let id = &path["/api/instances/".len()..];
@@ -220,19 +254,34 @@ async fn route_http(
             let _ = send_response(stream, 200, "application/json", resp.as_bytes()).await;
             return;
         }
-        let _ = send_response(stream, 500, "application/json", r#"{"error":"Erro ao listar usuários"}"#.as_bytes()).await;
+        let _ = send_response(
+            stream,
+            500,
+            "application/json",
+            r#"{"error":"Erro ao listar usuários"}"#.as_bytes(),
+        )
+        .await;
         return;
     }
 
     if method == "POST" && path == "/api/users" {
         if user.role != "admin" {
-            let _ = send_response(stream, 403, "application/json", br#"{"error":"Requer perfil administrador"}"#).await;
+            let _ = send_response(
+                stream,
+                403,
+                "application/json",
+                br#"{"error":"Requer perfil administrador"}"#,
+            )
+            .await;
             return;
         }
         if let Ok(val) = serde_json::from_slice::<serde_json::Value>(body) {
             let uname = val.get("username").and_then(|v| v.as_str()).unwrap_or("");
             let pwd = val.get("password").and_then(|v| v.as_str()).unwrap_or("");
-            let role = val.get("role").and_then(|v| v.as_str()).unwrap_or("operator");
+            let role = val
+                .get("role")
+                .and_then(|v| v.as_str())
+                .unwrap_or("operator");
             if !uname.is_empty() && !pwd.is_empty() {
                 if let Ok(created) = db.create_user(uname, pwd, role) {
                     let resp = serde_json::to_string(&created).unwrap_or_default();
@@ -241,13 +290,25 @@ async fn route_http(
                 }
             }
         }
-        let _ = send_response(stream, 400, "application/json", r#"{"error":"Dados inválidos"}"#.as_bytes()).await;
+        let _ = send_response(
+            stream,
+            400,
+            "application/json",
+            r#"{"error":"Dados inválidos"}"#.as_bytes(),
+        )
+        .await;
         return;
     }
 
     if method == "DELETE" && path.starts_with("/api/users/") {
         if user.role != "admin" {
-            let _ = send_response(stream, 403, "application/json", br#"{"error":"Requer perfil administrador"}"#).await;
+            let _ = send_response(
+                stream,
+                403,
+                "application/json",
+                br#"{"error":"Requer perfil administrador"}"#,
+            )
+            .await;
             return;
         }
         let id = &path["/api/users/".len()..];
@@ -258,7 +319,13 @@ async fn route_http(
 
     if method == "PUT" && path.starts_with("/api/users/") && path.ends_with("/permissions") {
         if user.role != "admin" {
-            let _ = send_response(stream, 403, "application/json", br#"{"error":"Requer perfil administrador"}"#).await;
+            let _ = send_response(
+                stream,
+                403,
+                "application/json",
+                br#"{"error":"Requer perfil administrador"}"#,
+            )
+            .await;
             return;
         }
         let prefix = "/api/users/";
@@ -266,13 +333,22 @@ async fn route_http(
         let user_id = &path[prefix.len()..path.len() - suffix.len()];
         if let Ok(val) = serde_json::from_slice::<serde_json::Value>(body) {
             if let Some(arr) = val.get("account_ids").and_then(|v| v.as_array()) {
-                let ids: Vec<String> = arr.iter().filter_map(|x| x.as_str().map(|s| s.to_string())).collect();
+                let ids: Vec<String> = arr
+                    .iter()
+                    .filter_map(|x| x.as_str().map(|s| s.to_string()))
+                    .collect();
                 let _ = db.set_user_permissions(user_id, &ids);
                 let _ = send_response(stream, 200, "application/json", br#"{"ok":true}"#).await;
                 return;
             }
         }
-        let _ = send_response(stream, 400, "application/json", r#"{"error":"Formato inválido"}"#.as_bytes()).await;
+        let _ = send_response(
+            stream,
+            400,
+            "application/json",
+            r#"{"error":"Formato inválido"}"#.as_bytes(),
+        )
+        .await;
         return;
     }
 

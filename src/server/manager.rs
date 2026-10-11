@@ -221,7 +221,8 @@ impl InstanceManager {
                     }
                 }
                 let current_phone = phone.lock().unwrap().clone();
-                let _ = db.upsert_whatsapp_instance(inst_id, inst_name, current_phone.as_deref(), &s);
+                let _ =
+                    db.upsert_whatsapp_instance(inst_id, inst_name, current_phone.as_deref(), &s);
                 let _ = bcast.send(BroadcastMessage {
                     instance_id: inst_id.to_string(),
                     event_type: "link_status".to_string(),
@@ -232,13 +233,22 @@ impl InstanceManager {
                     }),
                 });
             }
-            Event::Me { id: my_id, name: my_name, .. } => {
+            Event::Me {
+                id: my_id,
+                name: my_name,
+                ..
+            } => {
                 let mut p = phone.lock().unwrap();
                 let phone_num = my_id.split('@').next().unwrap_or(my_id).to_string();
                 *p = Some(phone_num.clone());
                 let cur_status = status.lock().unwrap().clone();
                 let display_name = my_name.clone().unwrap_or_else(|| inst_name.to_string());
-                let _ = db.upsert_whatsapp_instance(inst_id, &display_name, Some(&phone_num), &cur_status);
+                let _ = db.upsert_whatsapp_instance(
+                    inst_id,
+                    &display_name,
+                    Some(&phone_num),
+                    &cur_status,
+                );
                 let _ = bcast.send(BroadcastMessage {
                     instance_id: inst_id.to_string(),
                     event_type: "me".to_string(),

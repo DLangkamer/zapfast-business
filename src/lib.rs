@@ -52,4 +52,3 @@ pub mod server;
 
 /// Identity of this independent installation.
 pub mod identity;
-
