@@ -116,6 +116,7 @@ fn parse(verb: &str) -> Option<ControlCommand> {
 mod tests {
     use super::*;
     use std::io::{Read, Write};
+    #[cfg(not(unix))]
     use std::net::{Ipv4Addr, TcpStream};
 
     #[test]
