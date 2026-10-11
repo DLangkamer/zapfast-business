@@ -115,8 +115,14 @@
 
             # The GUI dlopens its Wayland, X11 and GL libraries at run time.
             postFixup = ''
-              wrapProgram $out/bin/zapfast \
-                --prefix LD_LIBRARY_PATH : ${pkgs.lib.makeLibraryPath runtimeLibs}
+              if [ -f $out/bin/zapfast-business ]; then
+                wrapProgram $out/bin/zapfast-business \
+                  --prefix LD_LIBRARY_PATH : ${pkgs.lib.makeLibraryPath runtimeLibs}
+                ln -sf $out/bin/zapfast-business $out/bin/zapfast
+              elif [ -f $out/bin/zapfast ]; then
+                wrapProgram $out/bin/zapfast \
+                  --prefix LD_LIBRARY_PATH : ${pkgs.lib.makeLibraryPath runtimeLibs}
+              fi
             '';
 
             postInstall = ''
@@ -134,7 +140,7 @@
               description = "Fast native WhatsApp client";
               homepage = "https://zapfast.rocks";
               license = with pkgs.lib.licenses; [ mit gpl2Only ];
-              mainProgram = "zapfast";
+              mainProgram = "zapfast-business";
               platforms = pkgs.lib.platforms.linux;
             };
           };
