@@ -2259,7 +2259,7 @@ fn new_contact(app: &mut App, ui: &mut egui::Ui) {
 }
 
 fn chat_info(app: &mut App, ui: &mut egui::Ui, id: &str) {
-    let palette = app.palette;
+    let palette = crate::ui::crm_sidecar::crm_palette(&app.palette);
     // Group members may not have an existing chat.
     let chat = app
         .chat(id)
@@ -2598,6 +2598,136 @@ fn chat_info(app: &mut App, ui: &mut egui::Ui, id: &str) {
         );
     }
     ui.add_space(4.0);
+
+    // CRM Contact Overview Card
+    let deal = app.crm_deals.get(id).cloned();
+    let linked_project_names: Vec<String> = app
+        .crm_projects
+        .iter()
+        .filter(|p| p.chat_ids.iter().any(|cid| cid == id))
+        .map(|p| p.name.clone())
+        .collect();
+    let columns = if app.crm_columns.is_empty() {
+        crate::ui::kanban::default_columns()
+    } else {
+        app.crm_columns.clone()
+    };
+    let mut open_crm = false;
+
+    Frame::new()
+        .fill(egui::Color32::from_rgb(0x13, 0x1B, 0x21))
+        .stroke(Stroke::new(1.0, egui::Color32::from_rgb(0x20, 0x2C, 0x36)))
+        .corner_radius(CornerRadius::same(10))
+        .inner_margin(Margin::same(10))
+        .show(ui, |ui| {
+            ui.horizontal(|ui| {
+                theme::icon(
+                    ui,
+                    Icon::ListChecks,
+                    14.0,
+                    egui::Color32::from_rgb(0x00, 0xE6, 0x99),
+                );
+                theme::text(
+                    ui,
+                    "Central de Operações / CRM",
+                    theme::semibold(12.5),
+                    egui::Color32::from_rgb(0xF0, 0xF4, 0xF8),
+                );
+                ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
+                    if ui.small_button("Abrir no CRM").clicked() {
+                        open_crm = true;
+                    }
+                });
+            });
+
+            ui.add_space(4.0);
+
+            if let Some(deal) = deal {
+                let col_title = columns
+                    .iter()
+                    .find(|c| c.id == deal.column_id)
+                    .map(|c| c.title.as_str())
+                    .unwrap_or("Lead");
+
+                ui.horizontal_wrapped(|ui| {
+                    Frame::new()
+                        .fill(egui::Color32::from_rgb(0x00, 0xE6, 0x99).gamma_multiply(0.18))
+                        .stroke(Stroke::new(1.0, egui::Color32::from_rgb(0x00, 0xE6, 0x99)))
+                        .corner_radius(CornerRadius::same(6))
+                        .inner_margin(Margin::symmetric(6, 2))
+                        .show(ui, |ui| {
+                            ui.label(
+                                egui::RichText::new(format!("Funil: {col_title}"))
+                                    .font(theme::semibold(11.0))
+                                    .color(egui::Color32::from_rgb(0x00, 0xE6, 0x99)),
+                            );
+                        });
+
+                    if deal.value_cents > 0 {
+                        ui.label(
+                            egui::RichText::new(crate::ui::crm_sidecar::format_currency(
+                                deal.value_cents,
+                            ))
+                            .font(theme::bold(12.5))
+                            .color(egui::Color32::from_rgb(0x00, 0xE6, 0x99)),
+                        );
+                    }
+                });
+
+                if !deal.tags.is_empty() {
+                    ui.horizontal_wrapped(|ui| {
+                        for tag in &deal.tags {
+                            Frame::new()
+                                .fill(egui::Color32::from_rgb(0x1A, 0x24, 0x2C))
+                                .corner_radius(CornerRadius::same(4))
+                                .inner_margin(Margin::symmetric(5, 2))
+                                .show(ui, |ui| {
+                                    ui.label(
+                                        egui::RichText::new(tag)
+                                            .font(theme::regular(10.5))
+                                            .color(egui::Color32::from_rgb(0xF0, 0xF4, 0xF8)),
+                                    );
+                                });
+                        }
+                    });
+                }
+            } else {
+                ui.horizontal(|ui| {
+                    ui.label(
+                        egui::RichText::new("Nenhum negócio ativo no funil.")
+                            .font(theme::regular(11.0))
+                            .color(egui::Color32::from_rgb(0x8A, 0x9B, 0xA8)),
+                    );
+                });
+            }
+
+            if !linked_project_names.is_empty() {
+                ui.add_space(2.0);
+                ui.horizontal_wrapped(|ui| {
+                    ui.label(
+                        egui::RichText::new(format!(
+                            "📁 {} projeto(s) vinculado(s):",
+                            linked_project_names.len()
+                        ))
+                        .font(theme::medium(11.0))
+                        .color(egui::Color32::from_rgb(0x8A, 0x9B, 0xA8)),
+                    );
+                    for proj in &linked_project_names {
+                        ui.label(
+                            egui::RichText::new(proj)
+                                .font(theme::semibold(11.0))
+                                .color(egui::Color32::from_rgb(0xF0, 0xF4, 0xF8)),
+                        );
+                    }
+                });
+            }
+        });
+    if open_crm {
+        app.actions.push(Action::Open(crate::model::Page::Crm));
+        app.actions.push(Action::CloseDialog);
+    }
+    ui.add_space(4.0);
+
     // Center the available actions below the picture.
     let mut buttons: Vec<(Icon, &str, Vec<Action>)> = Vec::new();
     if !chat.is_group() && !mine {

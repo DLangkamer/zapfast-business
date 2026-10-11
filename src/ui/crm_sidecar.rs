@@ -11,9 +11,24 @@ use crate::theme::{self, Icon, Palette};
 pub const MIN_WIDTH: f32 = 240.0;
 pub const MAX_WIDTH: f32 = 560.0;
 
+/// Returns a palette tuned to the Pitch-Black and Neon Green CRM design system.
+pub fn crm_palette(base: &Palette) -> Palette {
+    let mut p = *base;
+    p.panel = Color32::from_rgb(0x0C, 0x12, 0x16);
+    p.surface = Color32::from_rgb(0x13, 0x1B, 0x21);
+    p.surface_hover = Color32::from_rgb(0x1A, 0x24, 0x2C);
+    p.outline = Color32::from_rgb(0x20, 0x2C, 0x36);
+    p.accent = Color32::from_rgb(0x00, 0xE6, 0x99);
+    p.secondary = Color32::from_rgb(0x00, 0xE6, 0x99);
+    p.text = Color32::from_rgb(0xF0, 0xF4, 0xF8);
+    p.dim = Color32::from_rgb(0x8A, 0x9B, 0xA8);
+    p
+}
+
 #[derive(Clone)]
 struct QuickWorkDraft {
     open: bool,
+    cal_open: bool,
     kind: String,
     title: String,
     project_id: Option<String>,
@@ -28,6 +43,7 @@ impl Default for QuickWorkDraft {
     fn default() -> Self {
         Self {
             open: false,
+            cal_open: false,
             kind: "task".into(),
             title: String::new(),
             project_id: None,
@@ -46,7 +62,7 @@ impl Default for QuickWorkDraft {
 /// Allows the user to freely resize its width, adapts to any window size,
 /// persists the chosen width in settings, and never clips content.
 pub fn show(app: &mut App, ui: &mut egui::Ui, chat: &Chat) {
-    let palette = app.palette;
+    let palette = crm_palette(&app.palette);
     let avail = ui.available_width();
     let min = MIN_WIDTH.min(avail * 0.5);
     let max = (avail - 80.0).max(min).min(MAX_WIDTH);
@@ -81,7 +97,7 @@ pub fn show(app: &mut App, ui: &mut egui::Ui, chat: &Chat) {
 }
 
 fn render_content(app: &mut App, ui: &mut egui::Ui, chat: &Chat) {
-    let palette = app.palette;
+    let palette = crm_palette(&app.palette);
     let existing_deal = app.crm_deals.get(&chat.id).cloned();
 
     Frame::new()
@@ -152,8 +168,8 @@ fn render_operations(
 
     Frame::new()
         .fill(palette.surface)
-        .stroke(Stroke::new(1.0, palette.surface_hover))
-        .corner_radius(CornerRadius::same(8))
+        .stroke(Stroke::new(1.0, palette.outline))
+        .corner_radius(CornerRadius::same(10))
         .inner_margin(Margin::same(10))
         .show(ui, |ui| {
             ui.horizontal(|ui| {
@@ -273,15 +289,41 @@ fn render_operations(
                         });
                 }
                 ui.add(egui::TextEdit::singleline(&mut draft.assignee).hint_text("Responsável"));
-                super::dialogs::date_time_picker(
-                    ui,
-                    app.locale,
-                    palette,
-                    "crm-sidecar-quick-work-date",
-                    &mut draft.date,
-                    &mut draft.hour,
-                    &mut draft.minute,
-                );
+                ui.horizontal(|ui| {
+                    ui.label(
+                        egui::RichText::new(format!(
+                            "📅 {:02}/{:02}/{} às {:02}:{:02}",
+                            draft.date.day(),
+                            draft.date.month(),
+                            draft.date.year(),
+                            draft.hour,
+                            draft.minute,
+                        ))
+                        .font(theme::medium(12.0))
+                        .color(palette.text),
+                    );
+                    if ui
+                        .small_button(if draft.cal_open {
+                            "Fechar calendário"
+                        } else {
+                            "Escolher data..."
+                        })
+                        .clicked()
+                    {
+                        draft.cal_open = !draft.cal_open;
+                    }
+                });
+                if draft.cal_open {
+                    super::dialogs::date_time_picker(
+                        ui,
+                        app.locale,
+                        &palette,
+                        "crm-sidecar-quick-work-date",
+                        &mut draft.date,
+                        &mut draft.hour,
+                        &mut draft.minute,
+                    );
+                }
                 if draft.kind == "call" {
                     egui::ComboBox::from_id_salt(("crm-sidecar-call-duration", chat_id))
                         .selected_text(format!("{} min", draft.duration_minutes))
@@ -513,8 +555,8 @@ fn render_stage_selector(
 
     Frame::new()
         .fill(palette.surface)
-        .stroke(Stroke::new(1.0, palette.surface_hover))
-        .corner_radius(CornerRadius::same(8))
+        .stroke(Stroke::new(1.0, palette.outline))
+        .corner_radius(CornerRadius::same(10))
         .inner_margin(Margin::same(10))
         .show(ui, |ui| {
             ui.vertical(|ui| {
@@ -752,8 +794,8 @@ fn render_deal_value(
 
     Frame::new()
         .fill(palette.surface)
-        .stroke(Stroke::new(1.0, palette.surface_hover))
-        .corner_radius(CornerRadius::same(8))
+        .stroke(Stroke::new(1.0, palette.outline))
+        .corner_radius(CornerRadius::same(10))
         .inner_margin(Margin::same(10))
         .show(ui, |ui| {
             ui.vertical(|ui| {
@@ -892,8 +934,8 @@ fn render_tags(
 
     Frame::new()
         .fill(palette.surface)
-        .stroke(Stroke::new(1.0, palette.surface_hover))
-        .corner_radius(CornerRadius::same(8))
+        .stroke(Stroke::new(1.0, palette.outline))
+        .corner_radius(CornerRadius::same(10))
         .inner_margin(Margin::same(10))
         .show(ui, |ui| {
             ui.vertical(|ui| {
@@ -1019,8 +1061,8 @@ fn render_internal_notes(
 
     Frame::new()
         .fill(palette.surface)
-        .stroke(Stroke::new(1.0, palette.surface_hover))
-        .corner_radius(CornerRadius::same(8))
+        .stroke(Stroke::new(1.0, palette.outline))
+        .corner_radius(CornerRadius::same(10))
         .inner_margin(Margin::same(10))
         .show(ui, |ui| {
             ui.vertical(|ui| {
@@ -1101,8 +1143,8 @@ fn render_internal_notes(
 fn render_followups(app: &mut App, ui: &mut egui::Ui, palette: &Palette, chat_id: &str) {
     Frame::new()
         .fill(palette.surface)
-        .stroke(Stroke::new(1.0, palette.surface_hover))
-        .corner_radius(CornerRadius::same(8))
+        .stroke(Stroke::new(1.0, palette.outline))
+        .corner_radius(CornerRadius::same(10))
         .inner_margin(Margin::same(10))
         .show(ui, |ui| {
             ui.vertical(|ui| {
