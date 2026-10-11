@@ -5,7 +5,7 @@ use egui::{Align, Color32, CornerRadius, Frame, Layout, Margin, Rect, Stroke, Ve
 use jiff::civil::Date;
 
 use crate::app::App;
-use crate::model::{Action, Chat, CrmDeal, CrmFollowup, CrmProject, CrmTask, Dialog, Page};
+use crate::model::{Action, Chat, CrmDeal, CrmFollowup, CrmProject, CrmTask};
 use crate::theme::{self, Icon, Palette};
 
 pub const MIN_WIDTH: f32 = 240.0;
