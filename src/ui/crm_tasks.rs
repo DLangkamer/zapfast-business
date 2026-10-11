@@ -3142,93 +3142,69 @@ fn task_row(app: &mut App, ui: &mut egui::Ui, task: &CrmTask, now: i64, draft: &
         .inner_margin(Margin::symmetric(14, 11))
         .show(ui, |ui| {
             ui.horizontal(|ui| {
-                ui.vertical(|ui| {
-                    ui.label(
-                        RichText::new(&task.title)
-                            .size(14.0)
-                            .strong()
-                            .color(if done { cp.dim } else { cp.text }),
-                    );
-                    if !task.description.is_empty() {
-                        ui.add_space(2.0);
-                        ui.label(
-                            RichText::new(&task.description)
-                                .size(12.5)
-                                .color(cp.secondary),
-                        );
-                    }
-                    if !task.call_result.is_empty() {
-                        ui.add_space(2.0);
-                        ui.label(
-                            RichText::new(format!("Resultado: {}", task.call_result))
-                                .size(12.0)
-                                .color(cp.secondary),
-                        );
-                    }
-                    if !task.next_step.is_empty() {
-                        ui.add_space(2.0);
-                        ui.label(
-                            RichText::new(format!("Próximo passo: {}", task.next_step))
-                                .size(12.0)
-                                .color(cp.secondary),
-                        );
-                    }
-                    ui.add_space(4.0);
-                    let mut meta = if matches!(task.kind.as_str(), "call" | "conversation") {
-                        format!("Call • {} min", task.duration_minutes.unwrap_or(30))
-                    } else {
-                        priority_label(&task.priority).to_owned()
-                    };
-                    if let Some(project) = task
-                        .project_id
-                        .as_ref()
-                        .and_then(|id| app.crm_projects.iter().find(|p| &p.id == id))
-                    {
-                        meta.push_str(&format!(" • Projeto: {}", project.name));
-                    }
-                    meta.push_str(&format!(" • {}", status_label(&task.status)));
-                    if !task.assignee.is_empty() {
-                        meta.push_str(&format!(" • Responsável: {}", task.assignee));
-                    }
-                    if let Some(d) = task.due_at {
-                        meta.push_str(&format!(" • {}", format_when(d)));
-                    }
-                    if let Some(c) = contact {
-                        meta.push_str(&format!(" • {c}"));
-                    }
-                    ui.label(RichText::new(&meta).size(11.5).color(if late {
-                        cp.danger
-                    } else {
-                        cp.dim
-                    }));
-                let left_w = (ui.available_width() - 170.0).max(90.0);
+                let left_w = (ui.available_width() - 170.0).max(120.0);
                 ui.allocate_ui_with_layout(
-                    vec2(left_w, 36.0),
+                    vec2(left_w, 0.0),
                     Layout::top_down(Align::Min),
                     |ui| {
-                        ui.add(
-                            egui::Label::new(
-                                RichText::new(&task.title)
-                                    .size(13.0)
-                                    .strong()
-                                    .color(if task.status == "done" {
-                                        cp.dim
-                                    } else {
-                                        cp.text
-                                    }),
-                            )
-                            .truncate(),
+                        ui.label(
+                            RichText::new(&task.title)
+                                .size(14.0)
+                                .strong()
+                                .color(if done { cp.dim } else { cp.text }),
                         );
-                        ui.add(
-                            egui::Label::new(
-                                RichText::new(&meta).size(11.5).color(if late {
-                                    cp.danger
-                                } else {
-                                    cp.dim
-                                }),
-                            )
-                            .truncate(),
-                        );
+                        if !task.description.is_empty() {
+                            ui.add_space(2.0);
+                            ui.label(
+                                RichText::new(&task.description)
+                                    .size(12.5)
+                                    .color(cp.secondary),
+                            );
+                        }
+                        if !task.call_result.is_empty() {
+                            ui.add_space(2.0);
+                            ui.label(
+                                RichText::new(format!("Resultado: {}", task.call_result))
+                                    .size(12.0)
+                                    .color(cp.secondary),
+                            );
+                        }
+                        if !task.next_step.is_empty() {
+                            ui.add_space(2.0);
+                            ui.label(
+                                RichText::new(format!("Próximo passo: {}", task.next_step))
+                                    .size(12.0)
+                                    .color(cp.secondary),
+                            );
+                        }
+                        ui.add_space(4.0);
+                        let mut meta = if matches!(task.kind.as_str(), "call" | "conversation") {
+                            format!("Call • {} min", task.duration_minutes.unwrap_or(30))
+                        } else {
+                            priority_label(&task.priority).to_owned()
+                        };
+                        if let Some(project) = task
+                            .project_id
+                            .as_ref()
+                            .and_then(|id| app.crm_projects.iter().find(|p| &p.id == id))
+                        {
+                            meta.push_str(&format!(" • Projeto: {}", project.name));
+                        }
+                        meta.push_str(&format!(" • {}", status_label(&task.status)));
+                        if !task.assignee.is_empty() {
+                            meta.push_str(&format!(" • Responsável: {}", task.assignee));
+                        }
+                        if let Some(d) = task.due_at {
+                            meta.push_str(&format!(" • {}", format_when(d)));
+                        }
+                        if let Some(c) = contact {
+                            meta.push_str(&format!(" • {c}"));
+                        }
+                        ui.label(RichText::new(&meta).size(11.5).color(if late {
+                            cp.danger
+                        } else {
+                            cp.dim
+                        }));
                     },
                 );
                 ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
