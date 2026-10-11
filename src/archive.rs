@@ -174,6 +174,13 @@ const MIGRATIONS: &[(&str, &str, &str)] = &[
     ("business_quick_replies", "voice", "BLOB"),
     ("crm_tasks", "kind", "TEXT NOT NULL DEFAULT 'task'"),
     ("crm_tasks", "duration_minutes", "INTEGER"),
+    ("crm_tasks", "assignee", "TEXT NOT NULL DEFAULT ''"),
+    ("crm_tasks", "call_result", "TEXT NOT NULL DEFAULT ''"),
+    ("crm_tasks", "next_step", "TEXT NOT NULL DEFAULT ''"),
+    ("crm_projects", "assignee", "TEXT NOT NULL DEFAULT ''"),
+    ("crm_projects", "client_name", "TEXT NOT NULL DEFAULT ''"),
+    ("crm_projects", "client_phone", "TEXT NOT NULL DEFAULT ''"),
+    ("crm_projects", "client_email", "TEXT NOT NULL DEFAULT ''"),
     ("chats", "description", "TEXT"),
 ];
 const CHAT_JOIN: &str = "FROM chats c

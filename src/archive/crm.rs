@@ -45,6 +45,9 @@ CREATE TABLE IF NOT EXISTS crm_tasks (
     priority TEXT NOT NULL DEFAULT 'normal',
     kind TEXT NOT NULL DEFAULT 'task',
     duration_minutes INTEGER,
+    assignee TEXT NOT NULL DEFAULT '',
+    call_result TEXT NOT NULL DEFAULT '',
+    next_step TEXT NOT NULL DEFAULT '',
     due_at INTEGER,
     completed_at INTEGER,
     created_at INTEGER NOT NULL,
@@ -65,7 +68,11 @@ CREATE TABLE IF NOT EXISTS crm_projects (
     start_at INTEGER,
     due_at INTEGER,
     created_at INTEGER NOT NULL,
-    updated_at INTEGER NOT NULL
+    updated_at INTEGER NOT NULL,
+    assignee TEXT NOT NULL DEFAULT '',
+    client_name TEXT NOT NULL DEFAULT '',
+    client_phone TEXT NOT NULL DEFAULT '',
+    client_email TEXT NOT NULL DEFAULT ''
 );
 
 CREATE TABLE IF NOT EXISTS crm_project_chats (
@@ -337,7 +344,8 @@ impl Archive {
     pub fn crm_tasks(&self) -> Result<Vec<CrmTask>> {
         let mut statement = self.connection.prepare(
             "SELECT id, chat_id, project_id, title, description, status, priority,
-                    kind, duration_minutes, due_at, completed_at, created_at, updated_at
+                    kind, duration_minutes, assignee, call_result, next_step,
+                    due_at, completed_at, created_at, updated_at
              FROM crm_tasks
              ORDER BY CASE WHEN status = 'done' THEN 1 ELSE 0 END, due_at IS NULL, due_at, created_at",
         )?;
@@ -352,10 +360,13 @@ impl Archive {
                 priority: row.get(6)?,
                 kind: row.get(7)?,
                 duration_minutes: row.get(8)?,
-                due_at: row.get(9)?,
-                completed_at: row.get(10)?,
-                created_at: row.get(11)?,
-                updated_at: row.get(12)?,
+                assignee: row.get(9)?,
+                call_result: row.get(10)?,
+                next_step: row.get(11)?,
+                due_at: row.get(12)?,
+                completed_at: row.get(13)?,
+                created_at: row.get(14)?,
+                updated_at: row.get(15)?,
             })
         })?;
         rows.collect()
@@ -364,17 +375,20 @@ impl Archive {
     pub fn upsert_crm_task(&self, task: &CrmTask) -> Result<()> {
         self.connection.execute(
             "INSERT INTO crm_tasks
-             (id, chat_id, project_id, title, description, status, priority, kind, duration_minutes, due_at, completed_at, created_at, updated_at)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13)
+             (id, chat_id, project_id, title, description, status, priority, kind, duration_minutes, assignee, call_result, next_step, due_at, completed_at, created_at, updated_at)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16)
              ON CONFLICT(id) DO UPDATE SET chat_id=excluded.chat_id,
                 project_id=excluded.project_id, title=excluded.title,
                 description=excluded.description, status=excluded.status,
                 priority=excluded.priority, kind=excluded.kind,
-                duration_minutes=excluded.duration_minutes, due_at=excluded.due_at,
+                duration_minutes=excluded.duration_minutes, assignee=excluded.assignee,
+                call_result=excluded.call_result, next_step=excluded.next_step,
+                due_at=excluded.due_at,
                 completed_at=excluded.completed_at, updated_at=excluded.updated_at",
             params![task.id, task.chat_id, task.project_id, task.title, task.description,
-                task.status, task.priority, task.kind, task.duration_minutes, task.due_at,
-                task.completed_at, task.created_at, task.updated_at],
+                task.status, task.priority, task.kind, task.duration_minutes, task.assignee,
+                task.call_result, task.next_step, task.due_at, task.completed_at,
+                task.created_at, task.updated_at],
         )?;
         Ok(())
     }
@@ -389,7 +403,7 @@ impl Archive {
     pub fn crm_projects(&self) -> Result<Vec<CrmProject>> {
         let mut statement = self.connection.prepare(
             "SELECT id, name, description, kind, status, color, icon, start_at,
-                    due_at, created_at, updated_at
+                    due_at, created_at, updated_at, assignee, client_name, client_phone, client_email
              FROM crm_projects ORDER BY CASE status WHEN 'active' THEN 0 ELSE 1 END,
                     updated_at DESC, name ASC",
         )?;
@@ -406,6 +420,10 @@ impl Archive {
                 due_at: row.get(8)?,
                 created_at: row.get(9)?,
                 updated_at: row.get(10)?,
+                assignee: row.get(11)?,
+                client_name: row.get(12)?,
+                client_phone: row.get(13)?,
+                client_email: row.get(14)?,
                 chat_ids: Vec::new(),
             })
         })?;
@@ -424,16 +442,19 @@ impl Archive {
     pub fn upsert_crm_project(&self, project: &CrmProject) -> Result<()> {
         self.connection.execute(
             "INSERT INTO crm_projects
-             (id, name, description, kind, status, color, icon, start_at, due_at, created_at, updated_at)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)
+             (id, name, description, kind, status, color, icon, start_at, due_at, created_at, updated_at, assignee, client_name, client_phone, client_email)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15)
              ON CONFLICT(id) DO UPDATE SET name=excluded.name,
                 description=excluded.description, kind=excluded.kind,
                 status=excluded.status, color=excluded.color, icon=excluded.icon,
                 start_at=excluded.start_at, due_at=excluded.due_at,
+                assignee=excluded.assignee, client_name=excluded.client_name,
+                client_phone=excluded.client_phone, client_email=excluded.client_email,
                 updated_at=excluded.updated_at",
             params![project.id, project.name, project.description, project.kind,
                 project.status, project.color, project.icon, project.start_at,
-                project.due_at, project.created_at, project.updated_at],
+                project.due_at, project.created_at, project.updated_at, project.assignee,
+                project.client_name, project.client_phone, project.client_email],
         )?;
         self.connection.execute(
             "DELETE FROM crm_project_chats WHERE project_id = ?1",
@@ -475,7 +496,7 @@ impl Archive {
             .unwrap_or_default()
             .as_secs() as i64;
         Ok(CrmBackup {
-            version: 4,
+            version: 5,
             exported_at: now,
             account_id: None,
             columns,
@@ -619,6 +640,9 @@ mod tests {
             priority: "high".to_owned(),
             kind: "task".to_owned(),
             duration_minutes: None,
+            assignee: "Douglas".to_owned(),
+            call_result: String::new(),
+            next_step: String::new(),
             due_at: Some(1700003600),
             completed_at: None,
             created_at: 1700000000,
@@ -636,7 +660,7 @@ mod tests {
         assert_eq!(archive.crm_tasks().unwrap()[0].status, "done");
 
         let backup = archive.export_crm_backup().unwrap();
-        assert_eq!(backup.version, 4);
+        assert_eq!(backup.version, 5);
         assert_eq!(backup.tasks, vec![task]);
 
         assert!(archive.delete_crm_task("task_123").unwrap());
@@ -658,6 +682,10 @@ mod tests {
             due_at: None,
             created_at: 1700000000,
             updated_at: 1700000000,
+            assignee: "Douglas".to_owned(),
+            client_name: "Cliente de teste".to_owned(),
+            client_phone: String::new(),
+            client_email: String::new(),
             chat_ids: vec!["120363000000000000@g.us".to_owned()],
         };
         archive.upsert_crm_project(&project).unwrap();
@@ -673,6 +701,9 @@ mod tests {
             priority: "normal".to_owned(),
             kind: "task".to_owned(),
             duration_minutes: None,
+            assignee: String::new(),
+            call_result: String::new(),
+            next_step: String::new(),
             due_at: None,
             completed_at: None,
             created_at: 1700000000,

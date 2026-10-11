@@ -22,6 +22,13 @@ struct ProjectDraft {
     description: String,
     kind: String,
     link_current_chat: bool,
+    assignee: String,
+    client_name: String,
+    client_phone: String,
+    client_email: String,
+    start_date: Date,
+    start_hour: u8,
+    start_minute: u8,
 }
 
 impl Default for ProjectDraft {
@@ -31,6 +38,13 @@ impl Default for ProjectDraft {
             description: String::new(),
             kind: "client".into(),
             link_current_chat: true,
+            assignee: String::new(),
+            client_name: String::new(),
+            client_phone: String::new(),
+            client_email: String::new(),
+            start_date: crate::util::today(),
+            start_hour: 9,
+            start_minute: 0,
         }
     }
 }
@@ -41,6 +55,13 @@ struct ProjectEdit {
     name: String,
     description: String,
     kind: String,
+    assignee: String,
+    client_name: String,
+    client_phone: String,
+    client_email: String,
+    start_date: Date,
+    start_hour: u8,
+    start_minute: u8,
     has_due: bool,
     due_date: Date,
     due_hour: u8,
@@ -54,6 +75,17 @@ impl ProjectEdit {
             name: project.name.clone(),
             description: project.description.clone(),
             kind: project.kind.clone(),
+            assignee: project.assignee.clone(),
+            client_name: project.client_name.clone(),
+            client_phone: project.client_phone.clone(),
+            client_email: project.client_email.clone(),
+            start_date: project
+                .start_at
+                .and_then(crate::util::local_datetime)
+                .map(|x| x.0)
+                .unwrap_or_else(crate::util::today),
+            start_hour: 9,
+            start_minute: 0,
             has_due: project.due_at.is_some(),
             due_date: project
                 .due_at
@@ -486,6 +518,36 @@ fn projects(
                     egui::TextEdit::multiline(&mut draft.description)
                         .hint_text("Descrição e objetivo"),
                 );
+                ui.horizontal_wrapped(|ui| {
+                    ui.add_sized(
+                        [220.0, 28.0],
+                        egui::TextEdit::singleline(&mut draft.assignee)
+                            .hint_text("Responsável pelo projeto"),
+                    );
+                    ui.add_sized(
+                        [220.0, 28.0],
+                        egui::TextEdit::singleline(&mut draft.client_name)
+                            .hint_text("Nome do cliente"),
+                    );
+                    ui.add_sized(
+                        [180.0, 28.0],
+                        egui::TextEdit::singleline(&mut draft.client_phone).hint_text("Telefone"),
+                    );
+                    ui.add_sized(
+                        [240.0, 28.0],
+                        egui::TextEdit::singleline(&mut draft.client_email).hint_text("E-mail"),
+                    );
+                });
+                ui.label("Data de início");
+                super::dialogs::date_time_picker(
+                    ui,
+                    app.locale,
+                    &app.palette,
+                    "project-start-date",
+                    &mut draft.start_date,
+                    &mut draft.start_hour,
+                    &mut draft.start_minute,
+                );
                 if ui
                     .add_enabled(
                         !draft.name.trim().is_empty(),
@@ -515,10 +577,18 @@ fn projects(
                         status: "active".into(),
                         color: "#00a884".into(),
                         icon: "briefcase".into(),
-                        start_at: Some(now),
+                        start_at: crate::util::to_unix_seconds(
+                            draft.start_date,
+                            draft.start_hour,
+                            draft.start_minute,
+                        ),
                         due_at: None,
                         created_at: now,
                         updated_at: now,
+                        assignee: draft.assignee.trim().into(),
+                        client_name: draft.client_name.trim().into(),
+                        client_phone: draft.client_phone.trim().into(),
+                        client_email: draft.client_email.trim().into(),
                         chat_ids,
                     }));
                     *draft = ProjectDraft::default();
@@ -703,6 +773,35 @@ fn project_detail(
                     egui::TextEdit::multiline(&mut edit.description)
                         .hint_text("Descrição e objetivo"),
                 );
+                ui.horizontal_wrapped(|ui| {
+                    ui.add_sized(
+                        [220.0, 28.0],
+                        egui::TextEdit::singleline(&mut edit.assignee).hint_text("Responsável"),
+                    );
+                    ui.add_sized(
+                        [220.0, 28.0],
+                        egui::TextEdit::singleline(&mut edit.client_name)
+                            .hint_text("Nome do cliente"),
+                    );
+                    ui.add_sized(
+                        [180.0, 28.0],
+                        egui::TextEdit::singleline(&mut edit.client_phone).hint_text("Telefone"),
+                    );
+                    ui.add_sized(
+                        [240.0, 28.0],
+                        egui::TextEdit::singleline(&mut edit.client_email).hint_text("E-mail"),
+                    );
+                });
+                ui.label("Data de início");
+                super::dialogs::date_time_picker(
+                    ui,
+                    app.locale,
+                    &app.palette,
+                    "project-edit-start-date",
+                    &mut edit.start_date,
+                    &mut edit.start_hour,
+                    &mut edit.start_minute,
+                );
                 if edit.has_due {
                     super::dialogs::date_time_picker(
                         ui,
@@ -724,6 +823,15 @@ fn project_detail(
                     project.name = edit.name.trim().into();
                     project.description = edit.description.trim().into();
                     project.kind = edit.kind.clone();
+                    project.assignee = edit.assignee.trim().into();
+                    project.client_name = edit.client_name.trim().into();
+                    project.client_phone = edit.client_phone.trim().into();
+                    project.client_email = edit.client_email.trim().into();
+                    project.start_at = crate::util::to_unix_seconds(
+                        edit.start_date,
+                        edit.start_hour,
+                        edit.start_minute,
+                    );
                     project.due_at = edit.has_due.then(|| {
                         crate::util::to_unix_seconds(edit.due_date, edit.due_hour, edit.due_minute)
                             .unwrap_or(crate::util::now())
@@ -739,6 +847,22 @@ fn project_detail(
     if !project.description.is_empty() {
         ui.label(&project.description);
     }
+    ui.horizontal_wrapped(|ui| {
+        if !project.assignee.is_empty() {
+            ui.label(format!("Responsável: {}", project.assignee));
+        }
+        if !project.client_name.is_empty() {
+            ui.label(format!("Cliente: {}", project.client_name));
+        }
+        if let Some((date, _, _)) = project.start_at.and_then(crate::util::local_datetime) {
+            ui.label(format!(
+                "Início: {:02}/{:02}/{}",
+                date.day(),
+                date.month(),
+                date.year()
+            ));
+        }
+    });
     ui.add_space(8.0);
     ui.horizontal(|ui| {
         ui.label("Situação:");
@@ -850,8 +974,11 @@ fn project_detail(
                     description: String::new(),
                     status: "todo".into(),
                     priority: "normal".into(),
-                    kind: "conversation".into(),
+                    kind: "call".into(),
                     duration_minutes: Some(conversation.duration_minutes),
+                    assignee: project.assignee.clone(),
+                    call_result: String::new(),
+                    next_step: String::new(),
                     due_at: crate::util::to_unix_seconds(
                         conversation.date,
                         conversation.hour,
@@ -866,7 +993,8 @@ fn project_detail(
         });
     ui.data_mut(|d| d.insert_temp(conversation_id, conversation));
     for task in app.crm_tasks.clone().into_iter().filter(|task| {
-        task.project_id.as_deref() == Some(&project.id) && task.kind == "conversation"
+        task.project_id.as_deref() == Some(&project.id)
+            && matches!(task.kind.as_str(), "call" | "conversation")
     }) {
         task_assignment_row(app, ui, task, None);
     }
@@ -898,6 +1026,9 @@ fn project_detail(
                 priority: "normal".into(),
                 kind: "task".into(),
                 duration_minutes: None,
+                assignee: project.assignee.clone(),
+                call_result: String::new(),
+                next_step: String::new(),
                 due_at: None,
                 completed_at: None,
                 created_at: now,
@@ -909,7 +1040,9 @@ fn project_detail(
     ui.data_mut(|d| d.insert_temp(new_task_id, new_task));
     let mut any = false;
     for task in app.crm_tasks.clone() {
-        if task.project_id.as_deref() == Some(&project.id) && task.kind != "conversation" {
+        if task.project_id.as_deref() == Some(&project.id)
+            && !matches!(task.kind.as_str(), "call" | "conversation")
+        {
             any = true;
             task_assignment_row(app, ui, task, None);
         }

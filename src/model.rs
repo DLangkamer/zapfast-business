@@ -166,6 +166,12 @@ pub struct CrmTask {
     /// Planned duration for conversation appointments. Regular tasks keep this empty.
     #[serde(default)]
     pub duration_minutes: Option<u16>,
+    #[serde(default)]
+    pub assignee: String,
+    #[serde(default)]
+    pub call_result: String,
+    #[serde(default)]
+    pub next_step: String,
     pub due_at: Option<i64>,
     pub completed_at: Option<i64>,
     pub created_at: i64,
@@ -190,6 +196,14 @@ pub struct CrmProject {
     pub due_at: Option<i64>,
     pub created_at: i64,
     pub updated_at: i64,
+    #[serde(default)]
+    pub assignee: String,
+    #[serde(default)]
+    pub client_name: String,
+    #[serde(default)]
+    pub client_phone: String,
+    #[serde(default)]
+    pub client_email: String,
     /// Conversations and groups connected to this project. No message content is copied.
     #[serde(default)]
     pub chat_ids: Vec<ChatId>,

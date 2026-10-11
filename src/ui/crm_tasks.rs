@@ -20,8 +20,12 @@ struct TaskDraft {
     title: String,
     description: String,
     priority: String,
+    status: String,
+    assignee: String,
     kind: String,
     duration_minutes: u16,
+    call_result: String,
+    next_step: String,
     project_id: Option<String>,
     has_due: bool,
     due_date: Date,
@@ -36,8 +40,12 @@ impl Default for TaskDraft {
             title: String::new(),
             description: String::new(),
             priority: "normal".into(),
+            status: "todo".into(),
+            assignee: String::new(),
             kind: "task".into(),
             duration_minutes: 30,
+            call_result: String::new(),
+            next_step: String::new(),
             project_id: None,
             has_due: true,
             due_date: crate::util::today()
@@ -118,6 +126,22 @@ fn show_inner(app: &mut App, ui: &mut egui::Ui, modal: bool, forced: Option<Task
         summary(ui, &p, "Concluídas", done, false);
         summary(ui, &p, "Follow-ups", followups.len(), false);
     });
+    let undo_id = egui::Id::new(("crm-task-undo", &account_id));
+    if let Some(task) = ui.data_mut(|d| d.get_temp::<CrmTask>(undo_id)) {
+        Frame::new()
+            .fill(p.accent.gamma_multiply(0.12))
+            .corner_radius(CornerRadius::same(7))
+            .inner_margin(Margin::symmetric(10, 7))
+            .show(ui, |ui| {
+                ui.horizontal(|ui| {
+                    ui.label(format!("‘{}’ foi excluída.", task.title));
+                    if ui.button("Desfazer").clicked() {
+                        app.actions.push(Action::SaveCrmTask(task));
+                        ui.data_mut(|d| d.remove::<CrmTask>(undo_id));
+                    }
+                });
+            });
+    }
     ui.separator();
 
     if modal {
@@ -156,18 +180,14 @@ fn show_inner(app: &mut App, ui: &mut egui::Ui, modal: bool, forced: Option<Task
             );
             ui.horizontal_wrapped(|ui| {
                 egui::ComboBox::from_id_salt("task-kind")
-                    .selected_text(if draft.kind == "conversation" {
-                        "Conversa agendada"
+                    .selected_text(if matches!(draft.kind.as_str(), "call" | "conversation") {
+                        "Call / reunião"
                     } else {
                         "Tarefa"
                     })
                     .show_ui(ui, |ui| {
                         ui.selectable_value(&mut draft.kind, "task".into(), "Tarefa");
-                        ui.selectable_value(
-                            &mut draft.kind,
-                            "conversation".into(),
-                            "Conversa agendada",
-                        );
+                        ui.selectable_value(&mut draft.kind, "call".into(), "Call / reunião");
                     });
                 ui.add_sized(
                     [260.0, 28.0],
@@ -186,9 +206,25 @@ fn show_inner(app: &mut App, ui: &mut egui::Ui, modal: bool, forced: Option<Task
                             ui.selectable_value(&mut draft.priority, v.into(), l);
                         }
                     });
+                egui::ComboBox::from_id_salt("task-status")
+                    .selected_text(status_label(&draft.status))
+                    .show_ui(ui, |ui| {
+                        for (value, label) in [
+                            ("todo", "A fazer"),
+                            ("doing", "Em andamento"),
+                            ("review", "Em revisão"),
+                            ("done", "Concluída"),
+                        ] {
+                            ui.selectable_value(&mut draft.status, value.into(), label);
+                        }
+                    });
                 ui.checkbox(&mut draft.has_due, "Definir prazo");
             });
             ui.horizontal_wrapped(|ui| {
+                ui.add_sized(
+                    [210.0, 28.0],
+                    egui::TextEdit::singleline(&mut draft.assignee).hint_text("Responsável"),
+                );
                 egui::ComboBox::from_id_salt("task-project")
                     .selected_text(
                         draft
@@ -207,7 +243,7 @@ fn show_inner(app: &mut App, ui: &mut egui::Ui, modal: bool, forced: Option<Task
                             );
                         }
                     });
-                if draft.kind == "conversation" {
+                if matches!(draft.kind.as_str(), "call" | "conversation") {
                     ui.label("Duração");
                     egui::ComboBox::from_id_salt("conversation-duration")
                         .selected_text(format!("{} min", draft.duration_minutes))
@@ -238,6 +274,19 @@ fn show_inner(app: &mut App, ui: &mut egui::Ui, modal: bool, forced: Option<Task
                 egui::TextEdit::multiline(&mut draft.description)
                     .hint_text("Descrição ou próximo passo (opcional)"),
             );
+            if matches!(draft.kind.as_str(), "call" | "conversation") {
+                ui.horizontal_wrapped(|ui| {
+                    ui.add_sized(
+                        [300.0, 28.0],
+                        egui::TextEdit::singleline(&mut draft.call_result)
+                            .hint_text("Resultado da call"),
+                    );
+                    ui.add_sized(
+                        [300.0, 28.0],
+                        egui::TextEdit::singleline(&mut draft.next_step).hint_text("Próximo passo"),
+                    );
+                });
+            }
             ui.horizontal(|ui| {
                 if app.open_chat.is_some() {
                     ui.checkbox(&mut draft.link_chat, "Vincular à conversa aberta");
@@ -277,13 +326,17 @@ fn show_inner(app: &mut App, ui: &mut egui::Ui, modal: bool, forced: Option<Task
                             project_id: draft.project_id.clone(),
                             title: draft.title.trim().into(),
                             description: draft.description.trim().into(),
-                            status: old
-                                .as_ref()
-                                .map_or_else(|| "todo".into(), |x| x.status.clone()),
+                            status: draft.status.clone(),
                             priority: draft.priority.clone(),
                             kind: draft.kind.clone(),
-                            duration_minutes: (draft.kind == "conversation")
-                                .then_some(draft.duration_minutes),
+                            duration_minutes: matches!(
+                                draft.kind.as_str(),
+                                "call" | "conversation"
+                            )
+                            .then_some(draft.duration_minutes),
+                            assignee: draft.assignee.trim().into(),
+                            call_result: draft.call_result.trim().into(),
+                            next_step: draft.next_step.trim().into(),
                             due_at: draft.has_due.then(|| {
                                 crate::util::to_unix_seconds(
                                     draft.due_date,
@@ -310,33 +363,36 @@ fn show_inner(app: &mut App, ui: &mut egui::Ui, modal: bool, forced: Option<Task
         .max_height(440.0)
         .show(ui, |ui| {
             theme::text(ui, "Tarefas de trabalho", theme::semibold(14.0), p.text);
-            if !app.crm_tasks.iter().any(|task| task.kind != "conversation") {
+            if !app
+                .crm_tasks
+                .iter()
+                .any(|task| !matches!(task.kind.as_str(), "call" | "conversation"))
+            {
                 theme::text(ui, "Nenhuma tarefa criada.", theme::regular(12.0), p.dim);
             }
             for task in app
                 .crm_tasks
                 .clone()
                 .into_iter()
-                .filter(|task| task.kind != "conversation")
+                .filter(|task| !matches!(task.kind.as_str(), "call" | "conversation"))
             {
                 task_row(app, ui, &task, now, &mut draft);
                 ui.add_space(6.0);
             }
             ui.add_space(8.0);
-            theme::text(ui, "Conversas agendadas", theme::semibold(14.0), p.text);
-            if !app.crm_tasks.iter().any(|task| task.kind == "conversation") {
-                theme::text(
-                    ui,
-                    "Nenhuma conversa agendada.",
-                    theme::regular(12.0),
-                    p.dim,
-                );
+            theme::text(ui, "Calls e reuniões", theme::semibold(14.0), p.text);
+            if !app
+                .crm_tasks
+                .iter()
+                .any(|task| matches!(task.kind.as_str(), "call" | "conversation"))
+            {
+                theme::text(ui, "Nenhuma call agendada.", theme::regular(12.0), p.dim);
             }
             for task in app
                 .crm_tasks
                 .clone()
                 .into_iter()
-                .filter(|task| task.kind == "conversation")
+                .filter(|task| matches!(task.kind.as_str(), "call" | "conversation"))
             {
                 task_row(app, ui, &task, now, &mut draft);
                 ui.add_space(6.0);
@@ -580,8 +636,24 @@ fn task_row(app: &mut App, ui: &mut egui::Ui, task: &CrmTask, now: i64, draft: &
                     if !task.description.is_empty() {
                         theme::text(ui, &task.description, theme::regular(11.0), p.secondary);
                     }
-                    let mut meta = if task.kind == "conversation" {
-                        format!("Conversa • {} min", task.duration_minutes.unwrap_or(30))
+                    if !task.call_result.is_empty() {
+                        theme::text(
+                            ui,
+                            &format!("Resultado: {}", task.call_result),
+                            theme::regular(11.0),
+                            p.secondary,
+                        );
+                    }
+                    if !task.next_step.is_empty() {
+                        theme::text(
+                            ui,
+                            &format!("Próximo passo: {}", task.next_step),
+                            theme::regular(11.0),
+                            p.secondary,
+                        );
+                    }
+                    let mut meta = if matches!(task.kind.as_str(), "call" | "conversation") {
+                        format!("Call • {} min", task.duration_minutes.unwrap_or(30))
                     } else {
                         priority_label(&task.priority).to_owned()
                     };
@@ -591,6 +663,10 @@ fn task_row(app: &mut App, ui: &mut egui::Ui, task: &CrmTask, now: i64, draft: &
                         .and_then(|id| app.crm_projects.iter().find(|p| &p.id == id))
                     {
                         meta.push_str(&format!(" • Projeto: {}", project.name));
+                    }
+                    meta.push_str(&format!(" • {}", status_label(&task.status)));
+                    if !task.assignee.is_empty() {
+                        meta.push_str(&format!(" • Responsável: {}", task.assignee));
                     }
                     if let Some(d) = task.due_at {
                         meta.push_str(&format!(" • {}", format_when(d)));
@@ -606,16 +682,36 @@ fn task_row(app: &mut App, ui: &mut egui::Ui, task: &CrmTask, now: i64, draft: &
                     );
                 });
                 ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-                    if ui.small_button("Excluir").clicked() {
-                        app.actions.push(Action::DeleteCrmTask(task.id.clone()));
+                    let confirm_id =
+                        egui::Id::new(("crm-task-delete-confirm", app.id.as_str(), &task.id));
+                    let confirming =
+                        ui.data_mut(|d| d.get_temp::<bool>(confirm_id).unwrap_or(false));
+                    if confirming {
+                        if ui.small_button("Confirmar").clicked() {
+                            app.actions.push(Action::DeleteCrmTask(task.id.clone()));
+                            let undo_id = egui::Id::new(("crm-task-undo", app.id.as_str()));
+                            ui.data_mut(|d| {
+                                d.insert_temp(undo_id, task.clone());
+                                d.insert_temp(confirm_id, false);
+                            });
+                        }
+                        if ui.small_button("Cancelar").clicked() {
+                            ui.data_mut(|d| d.insert_temp(confirm_id, false));
+                        }
+                    } else if ui.small_button("Excluir").clicked() {
+                        ui.data_mut(|d| d.insert_temp(confirm_id, true));
                     }
                     if ui.small_button("Editar").clicked() {
                         draft.id = Some(task.id.clone());
                         draft.title = task.title.clone();
                         draft.description = task.description.clone();
                         draft.priority = task.priority.clone();
+                        draft.status = task.status.clone();
+                        draft.assignee = task.assignee.clone();
                         draft.kind = task.kind.clone();
                         draft.duration_minutes = task.duration_minutes.unwrap_or(30);
+                        draft.call_result = task.call_result.clone();
+                        draft.next_step = task.next_step.clone();
                         draft.project_id = task.project_id.clone();
                         draft.has_due = task.due_at.is_some();
                         if let Some((date, hour, minute)) =
@@ -714,6 +810,15 @@ fn priority_label(v: &str) -> &str {
         "high" => "Alta",
         "urgent" => "Urgente",
         _ => "Normal",
+    }
+}
+
+fn status_label(value: &str) -> &str {
+    match value {
+        "doing" => "Em andamento",
+        "review" => "Em revisão",
+        "done" => "Concluída",
+        _ => "A fazer",
     }
 }
 fn new_task_id() -> String {
