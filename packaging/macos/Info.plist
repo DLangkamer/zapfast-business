@@ -5,7 +5,7 @@
     <key>CFBundleName</key><string>ZapFast</string>
     <key>CFBundleDisplayName</key><string>ZapFast</string>
     <!-- Keep the installed app identity across the rename. -->
-    <key>CFBundleIdentifier</key><string>me.paolino.fastsapp</string>
+    <key>CFBundleIdentifier</key><string>io.github.DLangkamer.ZapFastBusiness</string>
     <key>CFBundleExecutable</key><string>zapfast</string>
     <key>CFBundleIconFile</key><string>zapfast</string>
     <key>CFBundlePackageType</key><string>APPL</string>

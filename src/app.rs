@@ -4681,6 +4681,7 @@ impl App {
                     .get_mut(&chat)
                     .and_then(|conversation| conversation.message_mut(&id))
                 {
+                    message.content = Content::Revoked;
                     message.revoked = true;
                 }
                 self.backend.send(Command::Revoke { chat, id });
@@ -8693,8 +8694,11 @@ mod tests {
             assert_eq!(
                 super::tray_config(lockable).menu,
                 [
-                    fastframe_tray::MenuItem::action(super::TRAY_SHOW, "Show or hide ZapFast"),
-                    fastframe_tray::MenuItem::action(super::TRAY_LOCK, "Lock ZapFast")
+                    fastframe_tray::MenuItem::action(
+                        super::TRAY_SHOW,
+                        "Show or hide ZapFast Business"
+                    ),
+                    fastframe_tray::MenuItem::action(super::TRAY_LOCK, "Lock ZapFast Business")
                         .visible(lockable),
                     fastframe_tray::MenuItem::Separator,
                     fastframe_tray::MenuItem::action(super::TRAY_QUIT, "Quit"),

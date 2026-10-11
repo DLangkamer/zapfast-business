@@ -10041,7 +10041,7 @@ mod tests {
             );
             let item = egui::pos2(
                 menu.center().x,
-                menu.top() + menu.height() * (1.0 + 2.0 * row) / 6.0,
+                menu.top() + menu.height() * (1.0 + 2.0 * row) / 10.0,
             );
             click(&mut app, &ctx, item);
             assert!(

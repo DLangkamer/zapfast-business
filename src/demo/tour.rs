@@ -518,7 +518,16 @@ impl Tour {
 
     fn target(&self, target: Target, app: &App, ctx: &egui::Context) -> Option<Pos2> {
         match target {
-            Target::Label(label) => self.labels.get(label).copied(),
+            Target::Label(label) => {
+                if let Some(label_obj) = app.labels.iter().find(|l| l.name == label) {
+                    if let Some(rect) =
+                        ctx.data(|d| d.get_temp::<Rect>(crate::ui::labels::chip_id(&label_obj.id)))
+                    {
+                        return Some(rect.center());
+                    }
+                }
+                self.labels.get(label).copied()
+            }
             Target::Widget(id) => ctx
                 .read_response(egui::Id::new(id))
                 .map(|r| r.rect.center()),
@@ -568,14 +577,13 @@ impl Tour {
         }
     }
 
-    /// The part of a bubble in the open chat that the transcript shows.
     fn bubble(app: &App, ctx: &egui::Context, message: &str) -> Option<Rect> {
-        let id =
-            crate::ui::conversation::bubble_id(app.open_chat.as_deref()?, message).with("rect");
+        let open_chat = app.open_chat.as_deref()?;
+        let id = crate::ui::conversation::bubble_id(open_chat, message).with("rect");
         let rect = ctx.data(|d| d.get_temp::<Rect>(id))?;
         let view = (*app.selection_view.lock().unwrap_or_else(|p| p.into_inner()))?;
-        let rect = rect.intersect(view);
-        rect.is_positive().then_some(rect)
+        let inter = rect.intersect(view);
+        inter.is_positive().then_some(inter)
     }
 
     fn input_at(&mut self, app: &App, ctx: &egui::Context, input: &mut egui::RawInput, at: f32) {

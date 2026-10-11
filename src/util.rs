@@ -1027,7 +1027,7 @@ mod tests {
         let template = tray_template_rgba(size);
         let alpha = |x: usize, y: usize| template[(y * size + x) * 4 + 3];
         assert_eq!(alpha(0, 0), 0);
-        assert_eq!(alpha(32, 32), 255, "inside the bubble is disc");
+        assert_eq!(alpha(32, 32), 0, "inside the B cutout is transparent");
         assert_eq!(alpha(32, 4), 255, "so is the rim above it");
         let outline = (0..32).map(|y| alpha(32, y)).min().unwrap();
         assert!(outline < 40, "the outline is cut out: {outline}");
