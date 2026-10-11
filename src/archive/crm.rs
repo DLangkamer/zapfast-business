@@ -359,9 +359,15 @@ impl Archive {
                 project_id: row.get(2)?,
                 title: row.get(3)?,
                 description: row.get::<_, Option<String>>(4)?.unwrap_or_default(),
-                status: row.get::<_, Option<String>>(5)?.unwrap_or_else(|| "todo".into()),
-                priority: row.get::<_, Option<String>>(6)?.unwrap_or_else(|| "normal".into()),
-                kind: row.get::<_, Option<String>>(7)?.unwrap_or_else(|| "task".into()),
+                status: row
+                    .get::<_, Option<String>>(5)?
+                    .unwrap_or_else(|| "todo".into()),
+                priority: row
+                    .get::<_, Option<String>>(6)?
+                    .unwrap_or_else(|| "normal".into()),
+                kind: row
+                    .get::<_, Option<String>>(7)?
+                    .unwrap_or_else(|| "task".into()),
                 duration_minutes: row.get(8)?,
                 assignee: row.get::<_, Option<String>>(9)?.unwrap_or_default(),
                 call_result: row.get::<_, Option<String>>(10)?.unwrap_or_default(),
@@ -419,10 +425,18 @@ impl Archive {
                 id: row.get(0)?,
                 name: row.get(1)?,
                 description: row.get::<_, Option<String>>(2)?.unwrap_or_default(),
-                kind: row.get::<_, Option<String>>(3)?.unwrap_or_else(|| "client".into()),
-                status: row.get::<_, Option<String>>(4)?.unwrap_or_else(|| "active".into()),
-                color: row.get::<_, Option<String>>(5)?.unwrap_or_else(|| "#00a884".into()),
-                icon: row.get::<_, Option<String>>(6)?.unwrap_or_else(|| "briefcase".into()),
+                kind: row
+                    .get::<_, Option<String>>(3)?
+                    .unwrap_or_else(|| "client".into()),
+                status: row
+                    .get::<_, Option<String>>(4)?
+                    .unwrap_or_else(|| "active".into()),
+                color: row
+                    .get::<_, Option<String>>(5)?
+                    .unwrap_or_else(|| "#00a884".into()),
+                icon: row
+                    .get::<_, Option<String>>(6)?
+                    .unwrap_or_else(|| "briefcase".into()),
                 start_at: row.get(7)?,
                 due_at: row.get(8)?,
                 created_at: row.get::<_, Option<i64>>(9)?.unwrap_or(0),

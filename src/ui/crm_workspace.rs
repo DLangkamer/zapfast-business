@@ -2807,20 +2807,34 @@ fn render_project_card(
                 ui.horizontal(|ui| {
                     theme::icon(ui, Icon::Users, 13.0, cp.dim);
                     ui.label(RichText::new("Cliente:").size(11.5).color(cp.dim));
-                    ui.label(
-                        RichText::new(client_label)
-                            .size(11.5)
-                            .color(if project.client_name.is_empty() { cp.dim } else { cp.text }),
-                    );
+                    ui.label(RichText::new(client_label).size(11.5).color(
+                        if project.client_name.is_empty() {
+                            cp.dim
+                        } else {
+                            cp.text
+                        },
+                    ));
                 });
 
                 // Due Date row
                 let now = crate::util::now();
-                let is_overdue = project.due_at.is_some_and(|d| d < now && project.status != "completed");
+                let is_overdue = project
+                    .due_at
+                    .is_some_and(|d| d < now && project.status != "completed");
                 ui.horizontal(|ui| {
-                    theme::icon(ui, Icon::Clock, 13.0, if is_overdue { cp.danger } else { cp.dim });
-                    ui.label(RichText::new("Prazo:").size(11.5).color(if is_overdue { cp.danger } else { cp.dim }));
-                    if let Some((date, _, _)) = project.due_at.and_then(crate::util::local_datetime) {
+                    theme::icon(
+                        ui,
+                        Icon::Clock,
+                        13.0,
+                        if is_overdue { cp.danger } else { cp.dim },
+                    );
+                    ui.label(RichText::new("Prazo:").size(11.5).color(if is_overdue {
+                        cp.danger
+                    } else {
+                        cp.dim
+                    }));
+                    if let Some((date, _, _)) = project.due_at.and_then(crate::util::local_datetime)
+                    {
                         let date_str = crate::util::long_date(app.locale, date);
                         let text = if is_overdue {
                             format!("{} (Atrasado)", date_str)
@@ -2847,11 +2861,13 @@ fn render_project_card(
                 ui.horizontal(|ui| {
                     theme::icon(ui, Icon::User, 13.0, cp.dim);
                     ui.label(RichText::new("Responsável:").size(11.5).color(cp.dim));
-                    ui.label(
-                        RichText::new(assignee_label)
-                            .size(11.5)
-                            .color(if project.assignee.is_empty() { cp.dim } else { cp.secondary }),
-                    );
+                    ui.label(RichText::new(assignee_label).size(11.5).color(
+                        if project.assignee.is_empty() {
+                            cp.dim
+                        } else {
+                            cp.secondary
+                        },
+                    ));
                 });
 
                 ui.add_space(10.0);
@@ -3349,11 +3365,12 @@ fn project_detail(
 
             ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
                 // Delete project button
-                let del_btn = egui::Button::new(RichText::new("🗑 Excluir").size(12.5).color(cp.danger))
-                    .fill(cp.surface)
-                    .stroke(Stroke::new(1.0, cp.outline))
-                    .corner_radius(CornerRadius::same(6))
-                    .min_size(vec2(85.0, 32.0));
+                let del_btn =
+                    egui::Button::new(RichText::new("🗑 Excluir").size(12.5).color(cp.danger))
+                        .fill(cp.surface)
+                        .stroke(Stroke::new(1.0, cp.outline))
+                        .corner_radius(CornerRadius::same(6))
+                        .min_size(vec2(85.0, 32.0));
                 if ui.add(del_btn).clicked() {
                     confirm_delete = true;
                 }
@@ -3361,11 +3378,12 @@ fn project_detail(
                 ui.add_space(6.0);
 
                 // Edit project button
-                let edit_btn = egui::Button::new(RichText::new("✎ Editar").size(12.5).color(cp.text))
-                    .fill(cp.surface)
-                    .stroke(Stroke::new(1.0, cp.outline))
-                    .corner_radius(CornerRadius::same(6))
-                    .min_size(vec2(85.0, 32.0));
+                let edit_btn =
+                    egui::Button::new(RichText::new("✎ Editar").size(12.5).color(cp.text))
+                        .fill(cp.surface)
+                        .stroke(Stroke::new(1.0, cp.outline))
+                        .corner_radius(CornerRadius::same(6))
+                        .min_size(vec2(85.0, 32.0));
                 if ui.add(edit_btn).clicked() {
                     edit.open = true;
                 }
@@ -3413,15 +3431,13 @@ fn project_detail(
                         "Não informado"
                     };
                     ui.add(
-                        egui::Label::new(
-                            RichText::new(c_name).size(13.5).strong().color(
-                                if project.client_name.is_empty() {
-                                    cp.dim
-                                } else {
-                                    cp.text
-                                },
-                            ),
-                        )
+                        egui::Label::new(RichText::new(c_name).size(13.5).strong().color(
+                            if project.client_name.is_empty() {
+                                cp.dim
+                            } else {
+                                cp.text
+                            },
+                        ))
                         .truncate(),
                     );
                     if !project.client_phone.is_empty() {
@@ -3446,8 +3462,9 @@ fn project_detail(
                 // Col 2: Prazo
                 ui.allocate_ui_with_layout(vec2(col_w, 64.0), Layout::top_down(Align::Min), |ui| {
                     let now = crate::util::now();
-                    let is_overdue =
-                        project.due_at.is_some_and(|d| d < now && project.status != "completed");
+                    let is_overdue = project
+                        .due_at
+                        .is_some_and(|d| d < now && project.status != "completed");
                     ui.horizontal(|ui| {
                         theme::icon(
                             ui,
@@ -3472,10 +3489,8 @@ fn project_detail(
                             (date_str, cp.text)
                         };
                         ui.add(
-                            egui::Label::new(
-                                RichText::new(txt).size(13.0).strong().color(color),
-                            )
-                            .truncate(),
+                            egui::Label::new(RichText::new(txt).size(13.0).strong().color(color))
+                                .truncate(),
                         );
                     } else {
                         ui.label(RichText::new("Sem prazo").size(13.0).color(cp.dim));
@@ -3508,7 +3523,12 @@ fn project_detail(
                 ui.allocate_ui_with_layout(vec2(col_w, 64.0), Layout::top_down(Align::Min), |ui| {
                     ui.horizontal(|ui| {
                         theme::icon(ui, Icon::User, 14.0, cp.accent);
-                        ui.label(RichText::new("RESPONSÁVEL").size(10.5).strong().color(cp.dim));
+                        ui.label(
+                            RichText::new("RESPONSÁVEL")
+                                .size(10.5)
+                                .strong()
+                                .color(cp.dim),
+                        );
                     });
                     ui.add_space(4.0);
                     let resp = if !project.assignee.is_empty() {
@@ -3517,15 +3537,13 @@ fn project_detail(
                         "Não atribuído"
                     };
                     ui.add(
-                        egui::Label::new(
-                            RichText::new(resp).size(13.5).strong().color(
-                                if project.assignee.is_empty() {
-                                    cp.dim
-                                } else {
-                                    cp.text
-                                },
-                            ),
-                        )
+                        egui::Label::new(RichText::new(resp).size(13.5).strong().color(
+                            if project.assignee.is_empty() {
+                                cp.dim
+                            } else {
+                                cp.text
+                            },
+                        ))
                         .truncate(),
                     );
                     ui.label(RichText::new("Responsável direto").size(11.0).color(cp.dim));

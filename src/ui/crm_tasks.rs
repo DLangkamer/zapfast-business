@@ -823,10 +823,12 @@ fn render_call_card(
                             }
                         } else if ui
                             .add(
-                                egui::Button::new(RichText::new("Excluir").size(12.0).color(cp.danger))
-                                    .fill(cp.surface_hover)
-                                    .stroke(Stroke::new(1.0, cp.outline))
-                                    .corner_radius(CornerRadius::same(5)),
+                                egui::Button::new(
+                                    RichText::new("Excluir").size(12.0).color(cp.danger),
+                                )
+                                .fill(cp.surface_hover)
+                                .stroke(Stroke::new(1.0, cp.outline))
+                                .corner_radius(CornerRadius::same(5)),
                             )
                             .clicked()
                         {
@@ -1459,20 +1461,21 @@ pub fn show_task_board(app: &mut App, ui: &mut egui::Ui, cp: &CrmPalette) {
             );
 
             let is_kanban = view_mode == "kanban";
-            let kanban_btn = egui::Button::new(RichText::new("⊞ Kanban").size(12.0).strong().color(
-                if is_kanban {
-                    cp.on_accent
-                } else {
-                    cp.secondary
-                },
-            ))
-            .fill(if is_kanban { cp.accent } else { cp.surface })
-            .stroke(Stroke::new(
-                1.0,
-                if is_kanban { cp.accent } else { cp.outline },
-            ))
-            .corner_radius(CornerRadius::same(6))
-            .min_size(vec2(76.0, 30.0));
+            let kanban_btn =
+                egui::Button::new(RichText::new("⊞ Kanban").size(12.0).strong().color(
+                    if is_kanban {
+                        cp.on_accent
+                    } else {
+                        cp.secondary
+                    },
+                ))
+                .fill(if is_kanban { cp.accent } else { cp.surface })
+                .stroke(Stroke::new(
+                    1.0,
+                    if is_kanban { cp.accent } else { cp.outline },
+                ))
+                .corner_radius(CornerRadius::same(6))
+                .min_size(vec2(76.0, 30.0));
             if ui.add(kanban_btn).clicked() {
                 view_mode = "kanban".into();
             }
@@ -1593,20 +1596,21 @@ pub fn show_task_board(app: &mut App, ui: &mut egui::Ui, cp: &CrmPalette) {
 
             // View Mode Switcher
             let is_kanban = view_mode == "kanban";
-            let kanban_btn = egui::Button::new(RichText::new("⊞ Kanban").size(12.0).strong().color(
-                if is_kanban {
-                    cp.on_accent
-                } else {
-                    cp.secondary
-                },
-            ))
-            .fill(if is_kanban { cp.accent } else { cp.surface })
-            .stroke(Stroke::new(
-                1.0,
-                if is_kanban { cp.accent } else { cp.outline },
-            ))
-            .corner_radius(CornerRadius::same(6))
-            .min_size(vec2(78.0, 32.0));
+            let kanban_btn =
+                egui::Button::new(RichText::new("⊞ Kanban").size(12.0).strong().color(
+                    if is_kanban {
+                        cp.on_accent
+                    } else {
+                        cp.secondary
+                    },
+                ))
+                .fill(if is_kanban { cp.accent } else { cp.surface })
+                .stroke(Stroke::new(
+                    1.0,
+                    if is_kanban { cp.accent } else { cp.outline },
+                ))
+                .corner_radius(CornerRadius::same(6))
+                .min_size(vec2(78.0, 32.0));
             if ui.add(kanban_btn).clicked() {
                 view_mode = "kanban".into();
             }

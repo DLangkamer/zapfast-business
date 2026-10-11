@@ -231,8 +231,7 @@ fn header(app: &mut App, ui: &mut egui::Ui) {
                         )
                         .clicked()
                         {
-                            app.actions
-                                .push(Action::OpenCrmView("funnel".into()));
+                            app.actions.push(Action::OpenCrmView("funnel".into()));
                         }
                         if theme::icon_button(
                             ui,
