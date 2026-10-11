@@ -1857,6 +1857,8 @@ pub enum Action {
     PickExportCrmBackup,
     PickImportCrmBackup,
     RefreshCrmData,
+    /// Switches to the Central de Operações and selects a specific view tab.
+    OpenCrmView(String),
     /// Shows or leaves the archived chats.
     ShowArchived(bool),
     /// Mutes (`true`) or unmutes every followed channel.

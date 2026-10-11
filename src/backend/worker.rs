@@ -1196,30 +1196,33 @@ impl Worker {
     }
 
     fn emit_crm_data(&self) {
-        match (
-            self.archive.crm_columns(),
-            self.archive.crm_deals(),
-            self.archive.crm_followups(),
-            self.archive.crm_tasks(),
-            self.archive.crm_projects(),
-        ) {
-            (Ok(columns), Ok(deals), Ok(followups), Ok(tasks), Ok(projects)) => {
-                self.emit(Event::CrmData {
-                    columns,
-                    deals,
-                    followups,
-                    tasks,
-                    projects,
-                });
-            }
-            (Err(err), _, _, _, _)
-            | (_, Err(err), _, _, _)
-            | (_, _, Err(err), _, _)
-            | (_, _, _, Err(err), _)
-            | (_, _, _, _, Err(err)) => {
-                log::warn!("could not list crm data: {err}");
-            }
-        }
+        let columns = self.archive.crm_columns().unwrap_or_else(|err| {
+            log::warn!("could not list crm columns: {err}");
+            Vec::new()
+        });
+        let deals = self.archive.crm_deals().unwrap_or_else(|err| {
+            log::warn!("could not list crm deals: {err}");
+            Vec::new()
+        });
+        let followups = self.archive.crm_followups().unwrap_or_else(|err| {
+            log::warn!("could not list crm followups: {err}");
+            Vec::new()
+        });
+        let tasks = self.archive.crm_tasks().unwrap_or_else(|err| {
+            log::warn!("could not list crm tasks: {err}");
+            Vec::new()
+        });
+        let projects = self.archive.crm_projects().unwrap_or_else(|err| {
+            log::warn!("could not list crm projects: {err}");
+            Vec::new()
+        });
+        self.emit(Event::CrmData {
+            columns,
+            deals,
+            followups,
+            tasks,
+            projects,
+        });
     }
 
     fn resolve_template_for_target(&self, template: &str, target: &str) -> String {

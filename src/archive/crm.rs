@@ -344,9 +344,11 @@ impl Archive {
 
     pub fn crm_tasks(&self) -> Result<Vec<CrmTask>> {
         let mut statement = self.connection.prepare(
-            "SELECT id, chat_id, project_id, title, description, status, priority,
-                    kind, duration_minutes, assignee, call_result, next_step, revenue_cents,
-                    due_at, completed_at, created_at, updated_at
+            "SELECT id, chat_id, project_id, title,
+                    COALESCE(description, ''), COALESCE(status, 'todo'), COALESCE(priority, 'normal'),
+                    COALESCE(kind, 'task'), duration_minutes, COALESCE(assignee, ''),
+                    COALESCE(call_result, ''), COALESCE(next_step, ''), COALESCE(revenue_cents, 0),
+                    due_at, completed_at, COALESCE(created_at, 0), COALESCE(updated_at, 0)
              FROM crm_tasks
              ORDER BY CASE WHEN status = 'done' THEN 1 ELSE 0 END, due_at IS NULL, due_at, created_at",
         )?;
@@ -356,19 +358,19 @@ impl Archive {
                 chat_id: row.get(1)?,
                 project_id: row.get(2)?,
                 title: row.get(3)?,
-                description: row.get(4)?,
-                status: row.get(5)?,
-                priority: row.get(6)?,
-                kind: row.get(7)?,
+                description: row.get::<_, Option<String>>(4)?.unwrap_or_default(),
+                status: row.get::<_, Option<String>>(5)?.unwrap_or_else(|| "todo".into()),
+                priority: row.get::<_, Option<String>>(6)?.unwrap_or_else(|| "normal".into()),
+                kind: row.get::<_, Option<String>>(7)?.unwrap_or_else(|| "task".into()),
                 duration_minutes: row.get(8)?,
-                assignee: row.get(9)?,
-                call_result: row.get(10)?,
-                next_step: row.get(11)?,
-                revenue_cents: row.get(12)?,
+                assignee: row.get::<_, Option<String>>(9)?.unwrap_or_default(),
+                call_result: row.get::<_, Option<String>>(10)?.unwrap_or_default(),
+                next_step: row.get::<_, Option<String>>(11)?.unwrap_or_default(),
+                revenue_cents: row.get::<_, Option<i64>>(12)?.unwrap_or(0),
                 due_at: row.get(13)?,
                 completed_at: row.get(14)?,
-                created_at: row.get(15)?,
-                updated_at: row.get(16)?,
+                created_at: row.get::<_, Option<i64>>(15)?.unwrap_or(0),
+                updated_at: row.get::<_, Option<i64>>(16)?.unwrap_or(0),
             })
         })?;
         rows.collect()
@@ -405,8 +407,10 @@ impl Archive {
 
     pub fn crm_projects(&self) -> Result<Vec<CrmProject>> {
         let mut statement = self.connection.prepare(
-            "SELECT id, name, description, kind, status, color, icon, start_at,
-                    due_at, created_at, updated_at, assignee, client_name, client_phone, client_email
+            "SELECT id, name, COALESCE(description, ''), COALESCE(kind, 'client'),
+                    COALESCE(status, 'active'), COALESCE(color, '#00a884'), COALESCE(icon, 'briefcase'),
+                    start_at, due_at, COALESCE(created_at, 0), COALESCE(updated_at, 0),
+                    COALESCE(assignee, ''), COALESCE(client_name, ''), COALESCE(client_phone, ''), COALESCE(client_email, '')
              FROM crm_projects ORDER BY CASE status WHEN 'active' THEN 0 ELSE 1 END,
                     updated_at DESC, name ASC",
         )?;
@@ -414,19 +418,19 @@ impl Archive {
             Ok(CrmProject {
                 id: row.get(0)?,
                 name: row.get(1)?,
-                description: row.get(2)?,
-                kind: row.get(3)?,
-                status: row.get(4)?,
-                color: row.get(5)?,
-                icon: row.get(6)?,
+                description: row.get::<_, Option<String>>(2)?.unwrap_or_default(),
+                kind: row.get::<_, Option<String>>(3)?.unwrap_or_else(|| "client".into()),
+                status: row.get::<_, Option<String>>(4)?.unwrap_or_else(|| "active".into()),
+                color: row.get::<_, Option<String>>(5)?.unwrap_or_else(|| "#00a884".into()),
+                icon: row.get::<_, Option<String>>(6)?.unwrap_or_else(|| "briefcase".into()),
                 start_at: row.get(7)?,
                 due_at: row.get(8)?,
-                created_at: row.get(9)?,
-                updated_at: row.get(10)?,
-                assignee: row.get(11)?,
-                client_name: row.get(12)?,
-                client_phone: row.get(13)?,
-                client_email: row.get(14)?,
+                created_at: row.get::<_, Option<i64>>(9)?.unwrap_or(0),
+                updated_at: row.get::<_, Option<i64>>(10)?.unwrap_or(0),
+                assignee: row.get::<_, Option<String>>(11)?.unwrap_or_default(),
+                client_name: row.get::<_, Option<String>>(12)?.unwrap_or_default(),
+                client_phone: row.get::<_, Option<String>>(13)?.unwrap_or_default(),
+                client_email: row.get::<_, Option<String>>(14)?.unwrap_or_default(),
                 chat_ids: Vec::new(),
             })
         })?;

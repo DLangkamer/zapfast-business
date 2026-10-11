@@ -16,12 +16,12 @@ pub fn crm_palette(base: &Palette) -> Palette {
     let mut p = *base;
     p.panel = Color32::from_rgb(0x0C, 0x12, 0x16);
     p.surface = Color32::from_rgb(0x13, 0x1B, 0x21);
-    p.surface_hover = Color32::from_rgb(0x1A, 0x24, 0x2C);
+    p.surface_hover = Color32::from_rgb(0x1A, 0x25, 0x2E);
     p.outline = Color32::from_rgb(0x20, 0x2C, 0x36);
     p.accent = Color32::from_rgb(0x00, 0xE6, 0x99);
-    p.secondary = Color32::from_rgb(0x00, 0xE6, 0x99);
-    p.text = Color32::from_rgb(0xF0, 0xF4, 0xF8);
-    p.dim = Color32::from_rgb(0x8A, 0x9B, 0xA8);
+    p.secondary = Color32::from_rgb(0xA1, 0xB0, 0xBA);
+    p.text = Color32::from_rgb(0xF3, 0xF6, 0xF8);
+    p.dim = Color32::from_rgb(0x6F, 0x80, 0x8C);
     p
 }
 
@@ -182,7 +182,7 @@ fn render_operations(
                 );
                 ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
                     if ui.small_button("Abrir CRM").clicked() {
-                        app.actions.push(Action::Open(Page::Crm));
+                        app.actions.push(Action::OpenCrmView("overview".into()));
                     }
                 });
             });
@@ -483,7 +483,7 @@ fn render_header(app: &mut App, ui: &mut egui::Ui, palette: &Palette, chat: &Cha
                 app.actions.push(Action::ToggleCrmSidecar);
             }
 
-            // Quick shortcut to open Kanban
+            // Quick shortcut to open Central Funnel
             if theme::icon_button(
                 ui,
                 Icon::ListChecks,
@@ -494,7 +494,7 @@ fn render_header(app: &mut App, ui: &mut egui::Ui, palette: &Palette, chat: &Cha
             )
             .clicked()
             {
-                app.actions.push(Action::ShowDialog(Dialog::Kanban));
+                app.actions.push(Action::OpenCrmView("funnel".into()));
             }
 
             // Contact avatar and titles fill the remaining space on the left

@@ -796,23 +796,6 @@ fn render_call_card(
                             if ui
                                 .add(
                                     egui::Button::new(
-                                        RichText::new("Excluir")
-                                            .size(12.0)
-                                            .strong()
-                                            .color(cp.danger),
-                                    )
-                                    .fill(cp.danger.gamma_multiply(0.15))
-                                    .stroke(Stroke::new(1.0, cp.danger))
-                                    .corner_radius(CornerRadius::same(5)),
-                                )
-                                .clicked()
-                            {
-                                app.actions.push(Action::DeleteCrmTask(call.id.clone()));
-                                ui.data_mut(|d| d.insert_temp(delete_id, false));
-                            }
-                            if ui
-                                .add(
-                                    egui::Button::new(
                                         RichText::new("Cancelar").size(12.0).color(cp.secondary),
                                     )
                                     .fill(cp.surface_hover)
@@ -822,7 +805,31 @@ fn render_call_card(
                             {
                                 ui.data_mut(|d| d.insert_temp(delete_id, false));
                             }
-                        } else if ui.small_button("Excluir").clicked() {
+                            if ui
+                                .add(
+                                    egui::Button::new(
+                                        RichText::new("Excluir")
+                                            .size(12.0)
+                                            .strong()
+                                            .color(Color32::WHITE),
+                                    )
+                                    .fill(cp.danger)
+                                    .corner_radius(CornerRadius::same(5)),
+                                )
+                                .clicked()
+                            {
+                                app.actions.push(Action::DeleteCrmTask(call.id.clone()));
+                                ui.data_mut(|d| d.insert_temp(delete_id, false));
+                            }
+                        } else if ui
+                            .add(
+                                egui::Button::new(RichText::new("Excluir").size(12.0).color(cp.danger))
+                                    .fill(cp.surface_hover)
+                                    .stroke(Stroke::new(1.0, cp.outline))
+                                    .corner_radius(CornerRadius::same(5)),
+                            )
+                            .clicked()
+                        {
                             ui.data_mut(|d| d.insert_temp(delete_id, true));
                         }
 
@@ -1439,104 +1446,208 @@ pub fn show_task_board(app: &mut App, ui: &mut egui::Ui, cp: &CrmPalette) {
             .unwrap_or_else(|| "kanban".into())
     });
 
-    // 1. Top Filters & Action Row
-    ui.horizontal(|ui| {
-        ui.add(
-            egui::TextEdit::singleline(&mut search)
-                .hint_text("Buscar por título, descrição, cliente...")
-                .desired_width(230.0),
-        );
+    // 1. Top Filters & Action Row (responsive layout)
+    let avail = ui.available_width();
+    if avail < 760.0 {
+        // Compact 2-row layout: Search & Switcher, then Filters & "+ Nova tarefa"
+        ui.horizontal(|ui| {
+            let search_w = (avail - 180.0).max(120.0);
+            ui.add(
+                egui::TextEdit::singleline(&mut search)
+                    .hint_text("Buscar por título, descrição...")
+                    .desired_width(search_w),
+            );
 
-        let selected_proj_title = project_filter
-            .as_ref()
-            .and_then(|id| app.crm_projects.iter().find(|p| &p.id == id))
-            .map(|p| p.name.as_str())
-            .unwrap_or("Todos os projetos");
+            let is_kanban = view_mode == "kanban";
+            let kanban_btn = egui::Button::new(RichText::new("⊞ Kanban").size(12.0).strong().color(
+                if is_kanban {
+                    cp.on_accent
+                } else {
+                    cp.secondary
+                },
+            ))
+            .fill(if is_kanban { cp.accent } else { cp.surface })
+            .stroke(Stroke::new(
+                1.0,
+                if is_kanban { cp.accent } else { cp.outline },
+            ))
+            .corner_radius(CornerRadius::same(6))
+            .min_size(vec2(76.0, 30.0));
+            if ui.add(kanban_btn).clicked() {
+                view_mode = "kanban".into();
+            }
 
-        egui::ComboBox::from_id_salt(("task-board-proj-filter", &account_id))
-            .selected_text(selected_proj_title)
-            .show_ui(ui, |ui| {
-                ui.selectable_value(&mut project_filter, None, "Todos os projetos");
-                for p in &app.crm_projects {
-                    ui.selectable_value(&mut project_filter, Some(p.id.clone()), &p.name);
-                }
-            });
-
-        let prio_title = match priority_filter.as_str() {
-            "urgent" => "Urgente",
-            "high" => "Alta",
-            "normal" => "Normal",
-            "low" => "Baixa",
-            _ => "Todas as prioridades",
-        };
-        egui::ComboBox::from_id_salt(("task-board-prio-filter", &account_id))
-            .selected_text(prio_title)
-            .show_ui(ui, |ui| {
-                ui.selectable_value(&mut priority_filter, "all".into(), "Todas as prioridades");
-                ui.selectable_value(&mut priority_filter, "urgent".into(), "Urgente");
-                ui.selectable_value(&mut priority_filter, "high".into(), "Alta");
-                ui.selectable_value(&mut priority_filter, "normal".into(), "Normal");
-                ui.selectable_value(&mut priority_filter, "low".into(), "Baixa");
-            });
-
-        ui.add_space(4.0);
-
-        // View Mode Switcher
-        let is_kanban = view_mode == "kanban";
-        let kanban_btn = egui::Button::new(RichText::new("⊞ Kanban").size(12.0).strong().color(
-            if is_kanban {
-                cp.on_accent
-            } else {
-                cp.secondary
-            },
-        ))
-        .fill(if is_kanban { cp.accent } else { cp.surface })
-        .stroke(Stroke::new(
-            1.0,
-            if is_kanban { cp.accent } else { cp.outline },
-        ))
-        .corner_radius(CornerRadius::same(6))
-        .min_size(vec2(78.0, 32.0));
-        if ui.add(kanban_btn).clicked() {
-            view_mode = "kanban".into();
-        }
-
-        let is_list = view_mode == "list";
-        let list_btn = egui::Button::new(
-            RichText::new("☰ Lista")
-                .size(12.0)
-                .strong()
-                .color(if is_list { cp.on_accent } else { cp.secondary }),
-        )
-        .fill(if is_list { cp.accent } else { cp.surface })
-        .stroke(Stroke::new(
-            1.0,
-            if is_list { cp.accent } else { cp.outline },
-        ))
-        .corner_radius(CornerRadius::same(6))
-        .min_size(vec2(72.0, 32.0));
-        if ui.add(list_btn).clicked() {
-            view_mode = "list".into();
-        }
-
-        ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-            ui.add_space(14.0);
-            let new_task_btn = egui::Button::new(
-                RichText::new("+ Nova tarefa")
-                    .size(13.5)
+            let is_list = view_mode == "list";
+            let list_btn = egui::Button::new(
+                RichText::new("☰ Lista")
+                    .size(12.0)
                     .strong()
-                    .color(cp.on_accent),
+                    .color(if is_list { cp.on_accent } else { cp.secondary }),
             )
-            .fill(cp.accent)
-            .corner_radius(CornerRadius::same(8))
-            .min_size(vec2(140.0, 36.0));
-
-            if ui.add(new_task_btn).clicked() {
-                draft = TaskDraft::default();
-                show_form = true;
+            .fill(if is_list { cp.accent } else { cp.surface })
+            .stroke(Stroke::new(
+                1.0,
+                if is_list { cp.accent } else { cp.outline },
+            ))
+            .corner_radius(CornerRadius::same(6))
+            .min_size(vec2(68.0, 30.0));
+            if ui.add(list_btn).clicked() {
+                view_mode = "list".into();
             }
         });
-    });
+
+        ui.add_space(6.0);
+
+        ui.horizontal(|ui| {
+            let selected_proj_title = project_filter
+                .as_ref()
+                .and_then(|id| app.crm_projects.iter().find(|p| &p.id == id))
+                .map(|p| p.name.as_str())
+                .unwrap_or("Todos os projetos");
+
+            egui::ComboBox::from_id_salt(("task-board-proj-filter", &account_id))
+                .selected_text(selected_proj_title)
+                .show_ui(ui, |ui| {
+                    ui.selectable_value(&mut project_filter, None, "Todos os projetos");
+                    for p in &app.crm_projects {
+                        ui.selectable_value(&mut project_filter, Some(p.id.clone()), &p.name);
+                    }
+                });
+
+            let prio_title = match priority_filter.as_str() {
+                "urgent" => "Urgente",
+                "high" => "Alta",
+                "normal" => "Normal",
+                "low" => "Baixa",
+                _ => "Prioridade",
+            };
+            egui::ComboBox::from_id_salt(("task-board-prio-filter", &account_id))
+                .selected_text(prio_title)
+                .show_ui(ui, |ui| {
+                    ui.selectable_value(&mut priority_filter, "all".into(), "Todas as prioridades");
+                    ui.selectable_value(&mut priority_filter, "urgent".into(), "Urgente");
+                    ui.selectable_value(&mut priority_filter, "high".into(), "Alta");
+                    ui.selectable_value(&mut priority_filter, "normal".into(), "Normal");
+                    ui.selectable_value(&mut priority_filter, "low".into(), "Baixa");
+                });
+
+            ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
+                let new_task_btn = egui::Button::new(
+                    RichText::new("+ Nova tarefa")
+                        .size(13.5)
+                        .strong()
+                        .color(cp.on_accent),
+                )
+                .fill(cp.accent)
+                .corner_radius(CornerRadius::same(8))
+                .min_size(vec2(130.0, 32.0));
+
+                if ui.add(new_task_btn).clicked() {
+                    draft = TaskDraft::default();
+                    show_form = true;
+                }
+            });
+        });
+    } else {
+        ui.horizontal(|ui| {
+            let search_w = (avail - 490.0).clamp(160.0, 260.0);
+            ui.add(
+                egui::TextEdit::singleline(&mut search)
+                    .hint_text("Buscar por título, descrição, cliente...")
+                    .desired_width(search_w),
+            );
+
+            let selected_proj_title = project_filter
+                .as_ref()
+                .and_then(|id| app.crm_projects.iter().find(|p| &p.id == id))
+                .map(|p| p.name.as_str())
+                .unwrap_or("Todos os projetos");
+
+            egui::ComboBox::from_id_salt(("task-board-proj-filter", &account_id))
+                .selected_text(selected_proj_title)
+                .show_ui(ui, |ui| {
+                    ui.selectable_value(&mut project_filter, None, "Todos os projetos");
+                    for p in &app.crm_projects {
+                        ui.selectable_value(&mut project_filter, Some(p.id.clone()), &p.name);
+                    }
+                });
+
+            let prio_title = match priority_filter.as_str() {
+                "urgent" => "Urgente",
+                "high" => "Alta",
+                "normal" => "Normal",
+                "low" => "Baixa",
+                _ => "Todas as prioridades",
+            };
+            egui::ComboBox::from_id_salt(("task-board-prio-filter", &account_id))
+                .selected_text(prio_title)
+                .show_ui(ui, |ui| {
+                    ui.selectable_value(&mut priority_filter, "all".into(), "Todas as prioridades");
+                    ui.selectable_value(&mut priority_filter, "urgent".into(), "Urgente");
+                    ui.selectable_value(&mut priority_filter, "high".into(), "Alta");
+                    ui.selectable_value(&mut priority_filter, "normal".into(), "Normal");
+                    ui.selectable_value(&mut priority_filter, "low".into(), "Baixa");
+                });
+
+            ui.add_space(4.0);
+
+            // View Mode Switcher
+            let is_kanban = view_mode == "kanban";
+            let kanban_btn = egui::Button::new(RichText::new("⊞ Kanban").size(12.0).strong().color(
+                if is_kanban {
+                    cp.on_accent
+                } else {
+                    cp.secondary
+                },
+            ))
+            .fill(if is_kanban { cp.accent } else { cp.surface })
+            .stroke(Stroke::new(
+                1.0,
+                if is_kanban { cp.accent } else { cp.outline },
+            ))
+            .corner_radius(CornerRadius::same(6))
+            .min_size(vec2(78.0, 32.0));
+            if ui.add(kanban_btn).clicked() {
+                view_mode = "kanban".into();
+            }
+
+            let is_list = view_mode == "list";
+            let list_btn = egui::Button::new(
+                RichText::new("☰ Lista")
+                    .size(12.0)
+                    .strong()
+                    .color(if is_list { cp.on_accent } else { cp.secondary }),
+            )
+            .fill(if is_list { cp.accent } else { cp.surface })
+            .stroke(Stroke::new(
+                1.0,
+                if is_list { cp.accent } else { cp.outline },
+            ))
+            .corner_radius(CornerRadius::same(6))
+            .min_size(vec2(72.0, 32.0));
+            if ui.add(list_btn).clicked() {
+                view_mode = "list".into();
+            }
+
+            ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
+                ui.add_space(8.0);
+                let new_task_btn = egui::Button::new(
+                    RichText::new("+ Nova tarefa")
+                        .size(13.5)
+                        .strong()
+                        .color(cp.on_accent),
+                )
+                .fill(cp.accent)
+                .corner_radius(CornerRadius::same(8))
+                .min_size(vec2(136.0, 34.0));
+
+                if ui.add(new_task_btn).clicked() {
+                    draft = TaskDraft::default();
+                    show_form = true;
+                }
+            });
+        });
+    }
 
     ui.add_space(12.0);
 
@@ -1948,26 +2059,38 @@ fn show_task_list(
 
                             ui.add_space(6.0);
 
-                            // Title & Description
-                            ui.vertical(|ui| {
-                                ui.label(
-                                    RichText::new(&task.title)
-                                        .size(13.5)
-                                        .strong()
-                                        .color(if done { cp.dim } else { cp.text }),
-                                );
-                                if !task.description.is_empty() {
-                                    ui.label(
-                                        RichText::new(&task.description)
-                                            .size(11.5)
-                                            .color(cp.secondary),
+                            // Title & Description (constrained width so actions never get pushed off-screen)
+                            let row_avail = ui.available_width();
+                            let title_max_w = (row_avail - 250.0).max(90.0);
+                            ui.allocate_ui_with_layout(
+                                vec2(title_max_w, 36.0),
+                                Layout::top_down(Align::Min),
+                                |ui| {
+                                    ui.add(
+                                        egui::Label::new(
+                                            RichText::new(&task.title)
+                                                .size(13.5)
+                                                .strong()
+                                                .color(if done { cp.dim } else { cp.text }),
+                                        )
+                                        .truncate(),
                                     );
-                                }
-                            });
+                                    if !task.description.is_empty() {
+                                        ui.add(
+                                            egui::Label::new(
+                                                RichText::new(&task.description)
+                                                    .size(11.5)
+                                                    .color(cp.secondary),
+                                            )
+                                            .truncate(),
+                                        );
+                                    }
+                                },
+                            );
 
                             // Right-aligned items: Project, Client, Due date, Assignee, Actions
                             ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-                                ui.add_space(8.0);
+                                ui.add_space(4.0);
 
                                 // Standard delete confirmation (Cancelar left, Excluir right)
                                 let delete_id =
@@ -1975,23 +2098,6 @@ fn show_task_list(
                                 let mut is_confirming =
                                     ui.data_mut(|d| d.get_temp::<bool>(delete_id).unwrap_or(false));
                                 if is_confirming {
-                                    if ui
-                                        .add(
-                                            egui::Button::new(
-                                                RichText::new("Excluir")
-                                                    .size(12.0)
-                                                    .strong()
-                                                    .color(cp.danger),
-                                            )
-                                            .fill(cp.danger.gamma_multiply(0.15))
-                                            .stroke(Stroke::new(1.0, cp.danger))
-                                            .corner_radius(CornerRadius::same(5)),
-                                        )
-                                        .clicked()
-                                    {
-                                        app.actions.push(Action::DeleteCrmTask(task.id.clone()));
-                                        is_confirming = false;
-                                    }
                                     if ui
                                         .add(
                                             egui::Button::new(
@@ -2006,12 +2112,29 @@ fn show_task_list(
                                     {
                                         is_confirming = false;
                                     }
+                                    if ui
+                                        .add(
+                                            egui::Button::new(
+                                                RichText::new("Excluir")
+                                                    .size(12.0)
+                                                    .strong()
+                                                    .color(Color32::WHITE),
+                                            )
+                                            .fill(cp.danger)
+                                            .corner_radius(CornerRadius::same(5)),
+                                        )
+                                        .clicked()
+                                    {
+                                        app.actions.push(Action::DeleteCrmTask(task.id.clone()));
+                                        is_confirming = false;
+                                    }
                                 } else if ui
                                     .add(
                                         egui::Button::new(
-                                            RichText::new("Excluir").size(12.0).color(cp.dim),
+                                            RichText::new("Excluir").size(12.0).color(cp.danger),
                                         )
                                         .fill(cp.surface_hover)
+                                        .stroke(Stroke::new(1.0, cp.outline))
                                         .corner_radius(CornerRadius::same(5)),
                                     )
                                     .clicked()
@@ -2355,23 +2478,6 @@ fn render_kanban_card(
                         if ui
                             .add(
                                 egui::Button::new(
-                                    RichText::new("Excluir")
-                                        .size(12.0)
-                                        .strong()
-                                        .color(cp.danger),
-                                )
-                                .fill(cp.danger.gamma_multiply(0.15))
-                                .stroke(Stroke::new(1.0, cp.danger))
-                                .corner_radius(CornerRadius::same(5)),
-                            )
-                            .clicked()
-                        {
-                            app.actions.push(Action::DeleteCrmTask(task.id.clone()));
-                            ui.data_mut(|d| d.insert_temp(delete_id, false));
-                        }
-                        if ui
-                            .add(
-                                egui::Button::new(
                                     RichText::new("Cancelar").size(12.0).color(cp.secondary),
                                 )
                                 .fill(cp.surface_hover)
@@ -2381,7 +2487,31 @@ fn render_kanban_card(
                         {
                             ui.data_mut(|d| d.insert_temp(delete_id, false));
                         }
-                    } else if ui.small_button("Excluir").clicked() {
+                        if ui
+                            .add(
+                                egui::Button::new(
+                                    RichText::new("Excluir")
+                                        .size(12.0)
+                                        .strong()
+                                        .color(Color32::WHITE),
+                                )
+                                .fill(cp.danger)
+                                .corner_radius(CornerRadius::same(5)),
+                            )
+                            .clicked()
+                        {
+                            app.actions.push(Action::DeleteCrmTask(task.id.clone()));
+                            ui.data_mut(|d| d.insert_temp(delete_id, false));
+                        }
+                    } else if ui
+                        .add(
+                            egui::Button::new(RichText::new("Excluir").size(12.0).color(cp.danger))
+                                .fill(cp.surface_hover)
+                                .stroke(Stroke::new(1.0, cp.outline))
+                                .corner_radius(CornerRadius::same(5)),
+                        )
+                        .clicked()
+                    {
                         ui.data_mut(|d| d.insert_temp(delete_id, true));
                     }
 
@@ -3071,15 +3201,52 @@ fn task_row(app: &mut App, ui: &mut egui::Ui, task: &CrmTask, now: i64, draft: &
                     } else {
                         cp.dim
                     }));
-                });
+                let left_w = (ui.available_width() - 170.0).max(90.0);
+                ui.allocate_ui_with_layout(
+                    vec2(left_w, 36.0),
+                    Layout::top_down(Align::Min),
+                    |ui| {
+                        ui.add(
+                            egui::Label::new(
+                                RichText::new(&task.title)
+                                    .size(13.0)
+                                    .strong()
+                                    .color(if task.status == "done" {
+                                        cp.dim
+                                    } else {
+                                        cp.text
+                                    }),
+                            )
+                            .truncate(),
+                        );
+                        ui.add(
+                            egui::Label::new(
+                                RichText::new(&meta).size(11.5).color(if late {
+                                    cp.danger
+                                } else {
+                                    cp.dim
+                                }),
+                            )
+                            .truncate(),
+                        );
+                    },
+                );
                 ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
                     let confirm_id =
                         egui::Id::new(("crm-task-delete-confirm", app.id.as_str(), &task.id));
                     let confirming =
                         ui.data_mut(|d| d.get_temp::<bool>(confirm_id).unwrap_or(false));
                     if confirming {
+                        let cancel_btn = egui::Button::new(
+                            RichText::new("Cancelar").size(12.0).color(cp.secondary),
+                        )
+                        .fill(cp.surface_hover)
+                        .corner_radius(CornerRadius::same(6));
+                        if ui.add(cancel_btn).clicked() {
+                            ui.data_mut(|d| d.insert_temp(confirm_id, false));
+                        }
                         let ok_btn = egui::Button::new(
-                            RichText::new("Confirmar")
+                            RichText::new("Excluir")
                                 .size(12.0)
                                 .strong()
                                 .color(Color32::WHITE),
@@ -3093,14 +3260,6 @@ fn task_row(app: &mut App, ui: &mut egui::Ui, task: &CrmTask, now: i64, draft: &
                                 d.insert_temp(undo_id, task.clone());
                                 d.insert_temp(confirm_id, false);
                             });
-                        }
-                        let cancel_btn = egui::Button::new(
-                            RichText::new("Cancelar").size(12.0).color(cp.secondary),
-                        )
-                        .fill(cp.surface_hover)
-                        .corner_radius(CornerRadius::same(6));
-                        if ui.add(cancel_btn).clicked() {
-                            ui.data_mut(|d| d.insert_temp(confirm_id, false));
                         }
                     } else {
                         let del_btn =

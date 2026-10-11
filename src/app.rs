@@ -541,6 +541,7 @@ pub struct App {
     pub label_filter: Option<String>,
     pub bulk_state: crate::ui::bulk_dispatch::BulkDispatchState,
     pub show_crm_sidecar: bool,
+    pub crm_requested_view: Option<String>,
     /// Recording waiting for the schedule time to be chosen.
     pub scheduled_voice: Option<(ChatId, Vec<f32>, Option<String>)>,
     /// Chats opened from the Unread list, kept there until the filter changes.
@@ -1092,6 +1093,7 @@ impl App {
             label_filter: None,
             bulk_state: Default::default(),
             show_crm_sidecar: false,
+            crm_requested_view: None,
             scheduled_voice: None,
             unread_kept: HashSet::new(),
             toasts: Vec::new(),
@@ -5563,6 +5565,10 @@ impl App {
             }
             Action::RefreshCrmData => {
                 self.backend.send(Command::ListCrmData);
+            }
+            Action::OpenCrmView(view) => {
+                self.page = Page::Crm;
+                self.crm_requested_view = Some(view);
             }
             // Reading a chat must not pull its row out from under the pointer.
             // Only the filtered list sends this: search results and

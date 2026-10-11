@@ -232,7 +232,7 @@ fn header(app: &mut App, ui: &mut egui::Ui) {
                         .clicked()
                         {
                             app.actions
-                                .push(Action::ShowDialog(crate::model::Dialog::Kanban));
+                                .push(Action::OpenCrmView("funnel".into()));
                         }
                         if theme::icon_button(
                             ui,
@@ -370,7 +370,7 @@ fn macos_header(app: &mut App, ui: &mut egui::Ui) {
                     )
                     .clicked()
                     {
-                        app.actions.push(Action::ShowDialog(Dialog::Kanban));
+                        app.actions.push(Action::OpenCrmView("funnel".into()));
                     }
                     if theme::icon_button(
                         ui,

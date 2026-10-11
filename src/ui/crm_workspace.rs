@@ -183,6 +183,18 @@ pub fn show(app: &mut App, ui: &mut egui::Ui) {
     let mut draft = ui.data_mut(|d| d.get_temp::<ProjectDraft>(draft_id).unwrap_or_default());
     let mut selected = ui.data_mut(|d| d.get_temp::<Option<String>>(selected_id).flatten());
 
+    if let Some(req) = app.crm_requested_view.take() {
+        match req.as_str() {
+            "funnel" => view = WorkspaceView::Funnel,
+            "tasks" => view = WorkspaceView::Tasks,
+            "projects" => view = WorkspaceView::Projects,
+            "timeline" => view = WorkspaceView::Timeline,
+            "calls" => view = WorkspaceView::Calls,
+            "agenda" => view = WorkspaceView::Agenda,
+            _ => view = WorkspaceView::Overview,
+        }
+    }
+
     let available = ui.available_size();
     let gap = ui.spacing().item_spacing.x;
     let (sidebar_width, content_width) = workspace_widths(available.x, gap);
@@ -310,16 +322,19 @@ pub fn show(app: &mut App, ui: &mut egui::Ui) {
             },
         );
 
+        let content_margin_x = if content_width < 500.0 { 12 } else { 24 };
+        let content_margin_y = if content_width < 500.0 { 10 } else { 18 };
         ui.allocate_ui_with_layout(
             vec2(content_width, available.y),
             Layout::top_down(Align::Min),
             |ui| {
                 Frame::new()
                     .fill(cp.window)
-                    .inner_margin(Margin::symmetric(24, 18))
+                    .inner_margin(Margin::symmetric(content_margin_x, content_margin_y))
                     .show(ui, |ui| {
-                        ui.set_width((content_width - 48.0).max(272.0));
-                        ui.set_min_height((available.y - 36.0).max(320.0));
+                        let pad = (content_margin_x * 2) as f32;
+                        ui.set_width((content_width - pad).max(160.0));
+                        ui.set_min_height((available.y - (content_margin_y * 2) as f32).max(200.0));
                         let (title, subtitle) = match view {
                             WorkspaceView::Overview => {
                                 ("Meu dia", "Prioridades matinais e próximos passos")
@@ -438,8 +453,12 @@ pub fn show(app: &mut App, ui: &mut egui::Ui) {
 }
 
 fn workspace_widths(available: f32, gap: f32) -> (f32, f32) {
-    let sidebar = 218.0_f32.min((available * 0.32).max(170.0));
-    let content = (available - sidebar - gap).max(320.0);
+    let sidebar = if available < 600.0 {
+        150.0_f32.min((available * 0.28).max(120.0))
+    } else {
+        218.0_f32.min((available * 0.30).max(170.0))
+    };
+    let content = (available - sidebar - gap).max(160.0);
     (sidebar, content)
 }
 
@@ -512,18 +531,29 @@ fn crm_header<F>(
 ) where
     F: FnOnce(&mut egui::Ui),
 {
-    ui.horizontal(|ui| {
+    let avail = ui.available_width();
+    if avail < 500.0 {
         ui.vertical(|ui| {
-            ui.label(RichText::new(title).size(24.0).strong().color(palette.text));
+            ui.label(RichText::new(title).size(22.0).strong().color(palette.text));
             ui.add_space(2.0);
-            ui.label(RichText::new(subtitle).size(13.0).color(palette.secondary));
-        });
-
-        ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-            ui.add_space(14.0);
+            ui.label(RichText::new(subtitle).size(12.0).color(palette.secondary));
+            ui.add_space(8.0);
             render_controls(ui);
         });
-    });
+    } else {
+        ui.horizontal(|ui| {
+            ui.vertical(|ui| {
+                ui.label(RichText::new(title).size(24.0).strong().color(palette.text));
+                ui.add_space(2.0);
+                ui.label(RichText::new(subtitle).size(13.0).color(palette.secondary));
+            });
+
+            ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
+                ui.add_space(8.0);
+                render_controls(ui);
+            });
+        });
+    }
     ui.add_space(10.0);
     let cur = ui.cursor();
     ui.painter().hline(
@@ -2486,41 +2516,81 @@ fn projects(
             .unwrap_or_else(|| "all".into())
     });
 
-    ui.horizontal(|ui| {
-        ui.add(
-            egui::TextEdit::singleline(&mut search)
-                .hint_text("Buscar projeto…")
-                .desired_width(280.0),
-        );
-        egui::ComboBox::from_id_salt(("project-filter", &account_id))
-            .selected_text(match status.as_str() {
-                "active" => "Ativos",
-                "paused" => "Pausados",
-                "completed" => "Concluídos",
-                _ => "Todos",
-            })
-            .show_ui(ui, |ui| {
-                ui.selectable_value(&mut status, "all".into(), "Todos");
-                ui.selectable_value(&mut status, "active".into(), "Ativos");
-                ui.selectable_value(&mut status, "paused".into(), "Pausados");
-                ui.selectable_value(&mut status, "completed".into(), "Concluídos");
-            });
-        ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-            let btn = egui::Button::new(
-                RichText::new("+ Novo projeto")
-                    .size(13.5)
-                    .strong()
-                    .color(cp.on_accent),
-            )
-            .fill(cp.accent)
-            .corner_radius(CornerRadius::same(8))
-            .min_size(vec2(140.0, 36.0));
-
-            if ui.add(btn).clicked() {
-                show_form = true;
-            }
+    let avail = ui.available_width();
+    if avail < 560.0 {
+        ui.horizontal(|ui| {
+            let search_w = (avail - 110.0).max(100.0);
+            ui.add(
+                egui::TextEdit::singleline(&mut search)
+                    .hint_text("Buscar projeto…")
+                    .desired_width(search_w),
+            );
+            egui::ComboBox::from_id_salt(("project-filter", &account_id))
+                .selected_text(match status.as_str() {
+                    "active" => "Ativos",
+                    "paused" => "Pausados",
+                    "completed" => "Concluídos",
+                    _ => "Todos",
+                })
+                .show_ui(ui, |ui| {
+                    ui.selectable_value(&mut status, "all".into(), "Todos");
+                    ui.selectable_value(&mut status, "active".into(), "Ativos");
+                    ui.selectable_value(&mut status, "paused".into(), "Pausados");
+                    ui.selectable_value(&mut status, "completed".into(), "Concluídos");
+                });
         });
-    });
+        ui.add_space(6.0);
+        let btn = egui::Button::new(
+            RichText::new("+ Novo projeto")
+                .size(13.5)
+                .strong()
+                .color(cp.on_accent),
+        )
+        .fill(cp.accent)
+        .corner_radius(CornerRadius::same(8))
+        .min_size(vec2(140.0, 34.0));
+
+        if ui.add(btn).clicked() {
+            show_form = true;
+        }
+    } else {
+        ui.horizontal(|ui| {
+            let search_w = (avail - 290.0).clamp(160.0, 280.0);
+            ui.add(
+                egui::TextEdit::singleline(&mut search)
+                    .hint_text("Buscar projeto…")
+                    .desired_width(search_w),
+            );
+            egui::ComboBox::from_id_salt(("project-filter", &account_id))
+                .selected_text(match status.as_str() {
+                    "active" => "Ativos",
+                    "paused" => "Pausados",
+                    "completed" => "Concluídos",
+                    _ => "Todos",
+                })
+                .show_ui(ui, |ui| {
+                    ui.selectable_value(&mut status, "all".into(), "Todos");
+                    ui.selectable_value(&mut status, "active".into(), "Ativos");
+                    ui.selectable_value(&mut status, "paused".into(), "Pausados");
+                    ui.selectable_value(&mut status, "completed".into(), "Concluídos");
+                });
+            ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
+                let btn = egui::Button::new(
+                    RichText::new("+ Novo projeto")
+                        .size(13.5)
+                        .strong()
+                        .color(cp.on_accent),
+                )
+                .fill(cp.accent)
+                .corner_radius(CornerRadius::same(8))
+                .min_size(vec2(140.0, 36.0));
+
+                if ui.add(btn).clicked() {
+                    show_form = true;
+                }
+            });
+        });
+    }
 
     ui.add_space(14.0);
 
@@ -2728,42 +2798,61 @@ fn render_project_card(
 
                 ui.add_space(10.0);
 
-                // Client & Assignee
-                if !project.client_name.is_empty() {
-                    ui.horizontal(|ui| {
-                        theme::icon(ui, Icon::Users, 13.0, cp.dim);
-                        ui.label(
-                            RichText::new(format!("Cliente: {}", project.client_name))
-                                .size(11.5)
-                                .color(cp.secondary),
-                        );
-                    });
-                }
-                if !project.assignee.is_empty() {
-                    ui.horizontal(|ui| {
-                        theme::icon(ui, Icon::User, 13.0, cp.dim);
-                        ui.label(
-                            RichText::new(format!("Responsável: {}", project.assignee))
-                                .size(11.5)
-                                .color(cp.dim),
-                        );
-                    });
-                }
-
-                // Due Date
-                if let Some((date, _, _)) = project.due_at.and_then(crate::util::local_datetime) {
-                    ui.horizontal(|ui| {
-                        theme::icon(ui, Icon::Clock, 13.0, cp.dim);
-                        ui.label(
-                            RichText::new(format!(
-                                "Prazo: {}",
-                                crate::util::long_date(app.locale, date)
-                            ))
+                // Client row
+                let client_label = if !project.client_name.is_empty() {
+                    project.client_name.clone()
+                } else {
+                    "Não informado".to_string()
+                };
+                ui.horizontal(|ui| {
+                    theme::icon(ui, Icon::Users, 13.0, cp.dim);
+                    ui.label(RichText::new("Cliente:").size(11.5).color(cp.dim));
+                    ui.label(
+                        RichText::new(client_label)
                             .size(11.5)
-                            .color(cp.dim),
+                            .color(if project.client_name.is_empty() { cp.dim } else { cp.text }),
+                    );
+                });
+
+                // Due Date row
+                let now = crate::util::now();
+                let is_overdue = project.due_at.is_some_and(|d| d < now && project.status != "completed");
+                ui.horizontal(|ui| {
+                    theme::icon(ui, Icon::Clock, 13.0, if is_overdue { cp.danger } else { cp.dim });
+                    ui.label(RichText::new("Prazo:").size(11.5).color(if is_overdue { cp.danger } else { cp.dim }));
+                    if let Some((date, _, _)) = project.due_at.and_then(crate::util::local_datetime) {
+                        let date_str = crate::util::long_date(app.locale, date);
+                        let text = if is_overdue {
+                            format!("{} (Atrasado)", date_str)
+                        } else {
+                            date_str
+                        };
+                        ui.label(
+                            RichText::new(text)
+                                .size(11.5)
+                                .strong()
+                                .color(if is_overdue { cp.danger } else { cp.secondary }),
                         );
-                    });
-                }
+                    } else {
+                        ui.label(RichText::new("Sem prazo").size(11.5).color(cp.dim));
+                    }
+                });
+
+                // Assignee row
+                let assignee_label = if !project.assignee.is_empty() {
+                    project.assignee.clone()
+                } else {
+                    "Não atribuído".to_string()
+                };
+                ui.horizontal(|ui| {
+                    theme::icon(ui, Icon::User, 13.0, cp.dim);
+                    ui.label(RichText::new("Responsável:").size(11.5).color(cp.dim));
+                    ui.label(
+                        RichText::new(assignee_label)
+                            .size(11.5)
+                            .color(if project.assignee.is_empty() { cp.dim } else { cp.secondary }),
+                    );
+                });
 
                 ui.add_space(10.0);
 
@@ -3123,84 +3212,358 @@ fn project_detail(
         .data(|d| d.get_temp::<ProjectDetailTab>(tab_id))
         .unwrap_or_default();
 
-    // 1. Top Header Bar
-    ui.horizontal(|ui| {
-        let back_btn =
-            egui::Button::new(RichText::new("← Projetos").size(13.0).color(cp.secondary))
-                .fill(cp.surface)
-                .stroke(Stroke::new(1.0, cp.outline))
-                .corner_radius(CornerRadius::same(6))
-                .min_size(vec2(95.0, 32.0));
-        if ui.add(back_btn).clicked() {
-            *selected = None;
-        }
-
-        ui.add_space(6.0);
-
-        let (status_bg, status_fg, status_txt) = match project.status.as_str() {
-            "active" => (cp.accent.gamma_multiply(0.15), cp.accent, "Ativo"),
-            "paused" => (cp.warning.gamma_multiply(0.15), cp.warning, "Pausado"),
-            "completed" => (
-                Color32::from_rgb(0x1a, 0x2e, 0x3d),
-                Color32::from_rgb(0x5c, 0xa7, 0xdb),
-                "Concluído",
-            ),
-            _ => (cp.surface_hover, cp.dim, "Arquivado"),
-        };
-        Frame::new()
-            .fill(status_bg)
-            .corner_radius(CornerRadius::same(4))
-            .inner_margin(Margin::symmetric(8, 3))
-            .show(ui, |ui| {
-                ui.label(
-                    RichText::new(status_txt)
-                        .size(12.0)
-                        .strong()
-                        .color(status_fg),
-                );
-            });
-
-        ui.add_space(4.0);
-
-        ui.label(
-            RichText::new(&project.name)
-                .size(19.0)
-                .strong()
-                .color(cp.text),
-        );
-
-        if project.kind == "internal" {
-            Frame::new()
-                .fill(cp.surface_hover)
-                .corner_radius(CornerRadius::same(4))
-                .inner_margin(Margin::symmetric(6, 2))
-                .show(ui, |ui| {
-                    ui.label(RichText::new("Interno").size(11.0).color(cp.secondary));
-                });
-        }
-
-        ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-            // Delete project button
-            let del_btn = egui::Button::new(RichText::new("🗑 Excluir").size(12.5).color(cp.danger))
-                .fill(cp.surface)
-                .stroke(Stroke::new(1.0, cp.outline))
-                .corner_radius(CornerRadius::same(6));
-            if ui.add(del_btn).clicked() {
-                confirm_delete = true;
+    // 1. Top Header Bar (Responsive: never clips action buttons)
+    let header_avail = ui.available_width();
+    if header_avail < 540.0 {
+        ui.horizontal(|ui| {
+            let back_btn =
+                egui::Button::new(RichText::new("← Projetos").size(12.5).color(cp.secondary))
+                    .fill(cp.surface)
+                    .stroke(Stroke::new(1.0, cp.outline))
+                    .corner_radius(CornerRadius::same(6))
+                    .min_size(vec2(85.0, 30.0));
+            if ui.add(back_btn).clicked() {
+                *selected = None;
             }
 
             ui.add_space(4.0);
 
-            // Edit project button
+            let (status_bg, status_fg, status_txt) = match project.status.as_str() {
+                "active" => (cp.accent.gamma_multiply(0.15), cp.accent, "Ativo"),
+                "paused" => (cp.warning.gamma_multiply(0.15), cp.warning, "Pausado"),
+                "completed" => (
+                    Color32::from_rgb(0x1a, 0x2e, 0x3d),
+                    Color32::from_rgb(0x5c, 0xa7, 0xdb),
+                    "Concluído",
+                ),
+                _ => (cp.surface_hover, cp.dim, "Arquivado"),
+            };
+            Frame::new()
+                .fill(status_bg)
+                .corner_radius(CornerRadius::same(4))
+                .inner_margin(Margin::symmetric(6, 2))
+                .show(ui, |ui| {
+                    ui.label(
+                        RichText::new(status_txt)
+                            .size(11.0)
+                            .strong()
+                            .color(status_fg),
+                    );
+                });
+
+            ui.add_space(4.0);
+            ui.label(
+                RichText::new(&project.name)
+                    .size(16.5)
+                    .strong()
+                    .color(cp.text),
+            );
+        });
+        ui.add_space(6.0);
+        ui.horizontal(|ui| {
             let edit_btn = egui::Button::new(RichText::new("✎ Editar").size(12.5).color(cp.text))
                 .fill(cp.surface)
                 .stroke(Stroke::new(1.0, cp.outline))
-                .corner_radius(CornerRadius::same(6));
+                .corner_radius(CornerRadius::same(6))
+                .min_size(vec2(85.0, 30.0));
             if ui.add(edit_btn).clicked() {
                 edit.open = true;
             }
+
+            ui.add_space(6.0);
+
+            let del_btn = egui::Button::new(RichText::new("🗑 Excluir").size(12.5).color(cp.danger))
+                .fill(cp.surface)
+                .stroke(Stroke::new(1.0, cp.outline))
+                .corner_radius(CornerRadius::same(6))
+                .min_size(vec2(85.0, 30.0));
+            if ui.add(del_btn).clicked() {
+                confirm_delete = true;
+            }
         });
-    });
+    } else {
+        ui.horizontal(|ui| {
+            let back_btn =
+                egui::Button::new(RichText::new("← Projetos").size(13.0).color(cp.secondary))
+                    .fill(cp.surface)
+                    .stroke(Stroke::new(1.0, cp.outline))
+                    .corner_radius(CornerRadius::same(6))
+                    .min_size(vec2(95.0, 32.0));
+            if ui.add(back_btn).clicked() {
+                *selected = None;
+            }
+
+            ui.add_space(6.0);
+
+            let (status_bg, status_fg, status_txt) = match project.status.as_str() {
+                "active" => (cp.accent.gamma_multiply(0.15), cp.accent, "Ativo"),
+                "paused" => (cp.warning.gamma_multiply(0.15), cp.warning, "Pausado"),
+                "completed" => (
+                    Color32::from_rgb(0x1a, 0x2e, 0x3d),
+                    Color32::from_rgb(0x5c, 0xa7, 0xdb),
+                    "Concluído",
+                ),
+                _ => (cp.surface_hover, cp.dim, "Arquivado"),
+            };
+            Frame::new()
+                .fill(status_bg)
+                .corner_radius(CornerRadius::same(4))
+                .inner_margin(Margin::symmetric(8, 3))
+                .show(ui, |ui| {
+                    ui.label(
+                        RichText::new(status_txt)
+                            .size(12.0)
+                            .strong()
+                            .color(status_fg),
+                    );
+                });
+
+            ui.add_space(4.0);
+
+            let title_max_w = (header_avail - 290.0).max(100.0);
+            ui.allocate_ui_with_layout(
+                vec2(title_max_w, 32.0),
+                Layout::left_to_right(Align::Center),
+                |ui| {
+                    ui.add(
+                        egui::Label::new(
+                            RichText::new(&project.name)
+                                .size(19.0)
+                                .strong()
+                                .color(cp.text),
+                        )
+                        .truncate(),
+                    );
+                },
+            );
+
+            if project.kind == "internal" {
+                Frame::new()
+                    .fill(cp.surface_hover)
+                    .corner_radius(CornerRadius::same(4))
+                    .inner_margin(Margin::symmetric(6, 2))
+                    .show(ui, |ui| {
+                        ui.label(RichText::new("Interno").size(11.0).color(cp.secondary));
+                    });
+            }
+
+            ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
+                // Delete project button
+                let del_btn = egui::Button::new(RichText::new("🗑 Excluir").size(12.5).color(cp.danger))
+                    .fill(cp.surface)
+                    .stroke(Stroke::new(1.0, cp.outline))
+                    .corner_radius(CornerRadius::same(6))
+                    .min_size(vec2(85.0, 32.0));
+                if ui.add(del_btn).clicked() {
+                    confirm_delete = true;
+                }
+
+                ui.add_space(6.0);
+
+                // Edit project button
+                let edit_btn = egui::Button::new(RichText::new("✎ Editar").size(12.5).color(cp.text))
+                    .fill(cp.surface)
+                    .stroke(Stroke::new(1.0, cp.outline))
+                    .corner_radius(CornerRadius::same(6))
+                    .min_size(vec2(85.0, 32.0));
+                if ui.add(edit_btn).clicked() {
+                    edit.open = true;
+                }
+            });
+        });
+    }
+
+    // Fluxo Style KPI & Metadata Summary Card
+    let total_tasks = app
+        .crm_tasks
+        .iter()
+        .filter(|t| t.project_id.as_deref() == Some(&project.id))
+        .count();
+    let done_tasks = app
+        .crm_tasks
+        .iter()
+        .filter(|t| t.project_id.as_deref() == Some(&project.id) && t.status == "done")
+        .count();
+    let proj_progress = if total_tasks == 0 {
+        0.0
+    } else {
+        done_tasks as f32 / total_tasks as f32
+    };
+
+    ui.add_space(10.0);
+    Frame::new()
+        .fill(cp.surface)
+        .stroke(Stroke::new(1.0, cp.outline))
+        .corner_radius(CornerRadius::same(10))
+        .inner_margin(Margin::same(14))
+        .show(ui, |ui| {
+            let card_avail = ui.available_width();
+            let col_w = ((card_avail - 40.0) / 4.0).max(110.0);
+            ui.horizontal(|ui| {
+                // Col 1: Cliente
+                ui.allocate_ui_with_layout(vec2(col_w, 64.0), Layout::top_down(Align::Min), |ui| {
+                    ui.horizontal(|ui| {
+                        theme::icon(ui, Icon::Users, 14.0, cp.accent);
+                        ui.label(RichText::new("CLIENTE").size(10.5).strong().color(cp.dim));
+                    });
+                    ui.add_space(4.0);
+                    let c_name = if !project.client_name.is_empty() {
+                        &project.client_name
+                    } else {
+                        "Não informado"
+                    };
+                    ui.add(
+                        egui::Label::new(
+                            RichText::new(c_name).size(13.5).strong().color(
+                                if project.client_name.is_empty() {
+                                    cp.dim
+                                } else {
+                                    cp.text
+                                },
+                            ),
+                        )
+                        .truncate(),
+                    );
+                    if !project.client_phone.is_empty() {
+                        ui.add(
+                            egui::Label::new(
+                                RichText::new(&project.client_phone)
+                                    .size(11.0)
+                                    .color(cp.secondary),
+                            )
+                            .truncate(),
+                        );
+                    }
+                });
+
+                ui.painter().vline(
+                    ui.cursor().left(),
+                    ui.cursor().top()..=(ui.cursor().top() + 60.0),
+                    Stroke::new(1.0, cp.outline),
+                );
+                ui.add_space(8.0);
+
+                // Col 2: Prazo
+                ui.allocate_ui_with_layout(vec2(col_w, 64.0), Layout::top_down(Align::Min), |ui| {
+                    let now = crate::util::now();
+                    let is_overdue =
+                        project.due_at.is_some_and(|d| d < now && project.status != "completed");
+                    ui.horizontal(|ui| {
+                        theme::icon(
+                            ui,
+                            Icon::Clock,
+                            14.0,
+                            if is_overdue { cp.danger } else { cp.accent },
+                        );
+                        ui.label(
+                            RichText::new("PRAZO")
+                                .size(10.5)
+                                .strong()
+                                .color(if is_overdue { cp.danger } else { cp.dim }),
+                        );
+                    });
+                    ui.add_space(4.0);
+                    if let Some((date, _, _)) = project.due_at.and_then(crate::util::local_datetime)
+                    {
+                        let date_str = crate::util::long_date(app.locale, date);
+                        let (txt, color) = if is_overdue {
+                            (format!("{} (Atrasado)", date_str), cp.danger)
+                        } else {
+                            (date_str, cp.text)
+                        };
+                        ui.add(
+                            egui::Label::new(
+                                RichText::new(txt).size(13.0).strong().color(color),
+                            )
+                            .truncate(),
+                        );
+                    } else {
+                        ui.label(RichText::new("Sem prazo").size(13.0).color(cp.dim));
+                    }
+                    if let Some((s_date, _, _)) =
+                        project.start_at.and_then(crate::util::local_datetime)
+                    {
+                        ui.add(
+                            egui::Label::new(
+                                RichText::new(format!(
+                                    "Início: {}",
+                                    crate::util::long_date(app.locale, s_date)
+                                ))
+                                .size(11.0)
+                                .color(cp.dim),
+                            )
+                            .truncate(),
+                        );
+                    }
+                });
+
+                ui.painter().vline(
+                    ui.cursor().left(),
+                    ui.cursor().top()..=(ui.cursor().top() + 60.0),
+                    Stroke::new(1.0, cp.outline),
+                );
+                ui.add_space(8.0);
+
+                // Col 3: Responsável
+                ui.allocate_ui_with_layout(vec2(col_w, 64.0), Layout::top_down(Align::Min), |ui| {
+                    ui.horizontal(|ui| {
+                        theme::icon(ui, Icon::User, 14.0, cp.accent);
+                        ui.label(RichText::new("RESPONSÁVEL").size(10.5).strong().color(cp.dim));
+                    });
+                    ui.add_space(4.0);
+                    let resp = if !project.assignee.is_empty() {
+                        &project.assignee
+                    } else {
+                        "Não atribuído"
+                    };
+                    ui.add(
+                        egui::Label::new(
+                            RichText::new(resp).size(13.5).strong().color(
+                                if project.assignee.is_empty() {
+                                    cp.dim
+                                } else {
+                                    cp.text
+                                },
+                            ),
+                        )
+                        .truncate(),
+                    );
+                    ui.label(RichText::new("Responsável direto").size(11.0).color(cp.dim));
+                });
+
+                ui.painter().vline(
+                    ui.cursor().left(),
+                    ui.cursor().top()..=(ui.cursor().top() + 60.0),
+                    Stroke::new(1.0, cp.outline),
+                );
+                ui.add_space(8.0);
+
+                // Col 4: Progresso
+                ui.allocate_ui_with_layout(vec2(col_w, 64.0), Layout::top_down(Align::Min), |ui| {
+                    ui.horizontal(|ui| {
+                        theme::icon(ui, Icon::ListChecks, 14.0, cp.accent);
+                        ui.label(RichText::new("PROGRESSO").size(10.5).strong().color(cp.dim));
+                    });
+                    ui.add_space(4.0);
+                    ui.label(
+                        RichText::new(format!(
+                            "{done_tasks}/{total_tasks} ({:.0}%)",
+                            proj_progress * 100.0
+                        ))
+                        .size(13.0)
+                        .strong()
+                        .color(cp.text),
+                    );
+                    ui.add_space(4.0);
+                    ui.add_sized(
+                        [ui.available_width(), 5.0],
+                        egui::ProgressBar::new(proj_progress)
+                            .fill(cp.accent)
+                            .animate(false),
+                    );
+                });
+            });
+        });
 
     // 2. Standardized Deletion Confirmation Banner
     if confirm_delete {
