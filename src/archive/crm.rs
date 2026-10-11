@@ -48,6 +48,7 @@ CREATE TABLE IF NOT EXISTS crm_tasks (
     assignee TEXT NOT NULL DEFAULT '',
     call_result TEXT NOT NULL DEFAULT '',
     next_step TEXT NOT NULL DEFAULT '',
+    revenue_cents INTEGER NOT NULL DEFAULT 0,
     due_at INTEGER,
     completed_at INTEGER,
     created_at INTEGER NOT NULL,
@@ -344,7 +345,7 @@ impl Archive {
     pub fn crm_tasks(&self) -> Result<Vec<CrmTask>> {
         let mut statement = self.connection.prepare(
             "SELECT id, chat_id, project_id, title, description, status, priority,
-                    kind, duration_minutes, assignee, call_result, next_step,
+                    kind, duration_minutes, assignee, call_result, next_step, revenue_cents,
                     due_at, completed_at, created_at, updated_at
              FROM crm_tasks
              ORDER BY CASE WHEN status = 'done' THEN 1 ELSE 0 END, due_at IS NULL, due_at, created_at",
@@ -363,10 +364,11 @@ impl Archive {
                 assignee: row.get(9)?,
                 call_result: row.get(10)?,
                 next_step: row.get(11)?,
-                due_at: row.get(12)?,
-                completed_at: row.get(13)?,
-                created_at: row.get(14)?,
-                updated_at: row.get(15)?,
+                revenue_cents: row.get(12)?,
+                due_at: row.get(13)?,
+                completed_at: row.get(14)?,
+                created_at: row.get(15)?,
+                updated_at: row.get(16)?,
             })
         })?;
         rows.collect()
@@ -375,19 +377,20 @@ impl Archive {
     pub fn upsert_crm_task(&self, task: &CrmTask) -> Result<()> {
         self.connection.execute(
             "INSERT INTO crm_tasks
-             (id, chat_id, project_id, title, description, status, priority, kind, duration_minutes, assignee, call_result, next_step, due_at, completed_at, created_at, updated_at)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16)
+             (id, chat_id, project_id, title, description, status, priority, kind, duration_minutes, assignee, call_result, next_step, revenue_cents, due_at, completed_at, created_at, updated_at)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17)
              ON CONFLICT(id) DO UPDATE SET chat_id=excluded.chat_id,
                 project_id=excluded.project_id, title=excluded.title,
                 description=excluded.description, status=excluded.status,
                 priority=excluded.priority, kind=excluded.kind,
                 duration_minutes=excluded.duration_minutes, assignee=excluded.assignee,
                 call_result=excluded.call_result, next_step=excluded.next_step,
+                revenue_cents=excluded.revenue_cents,
                 due_at=excluded.due_at,
                 completed_at=excluded.completed_at, updated_at=excluded.updated_at",
             params![task.id, task.chat_id, task.project_id, task.title, task.description,
                 task.status, task.priority, task.kind, task.duration_minutes, task.assignee,
-                task.call_result, task.next_step, task.due_at, task.completed_at,
+                task.call_result, task.next_step, task.revenue_cents, task.due_at, task.completed_at,
                 task.created_at, task.updated_at],
         )?;
         Ok(())
@@ -643,6 +646,7 @@ mod tests {
             assignee: "Douglas".to_owned(),
             call_result: String::new(),
             next_step: String::new(),
+            revenue_cents: 0,
             due_at: Some(1700003600),
             completed_at: None,
             created_at: 1700000000,
@@ -704,6 +708,7 @@ mod tests {
             assignee: String::new(),
             call_result: String::new(),
             next_step: String::new(),
+            revenue_cents: 0,
             due_at: None,
             completed_at: None,
             created_at: 1700000000,

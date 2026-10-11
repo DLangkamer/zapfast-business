@@ -7390,6 +7390,7 @@ mod tests {
                     assignee: String::new(),
                     call_result: String::new(),
                     next_step: String::new(),
+                    revenue_cents: 0,
                     due_at: Some(2),
                     completed_at: None,
                     created_at: 1,

@@ -12,6 +12,8 @@ enum WorkspaceView {
     Overview,
     Projects,
     Tasks,
+    Timeline,
+    Calls,
     Agenda,
     Funnel,
 }
@@ -168,6 +170,12 @@ pub fn show(app: &mut App, ui: &mut egui::Ui) {
                                 .color(palette.dim),
                         );
                         ui.add_space(20.0);
+                        ui.label(
+                            RichText::new("OPERAÇÕES")
+                                .size(10.0)
+                                .strong()
+                                .color(palette.dim),
+                        );
                         nav(
                             ui,
                             &mut view,
@@ -188,6 +196,20 @@ pub fn show(app: &mut App, ui: &mut egui::Ui) {
                             WorkspaceView::Tasks,
                             Icon::ListChecks,
                             "Tarefas",
+                        );
+                        nav(
+                            ui,
+                            &mut view,
+                            WorkspaceView::Timeline,
+                            Icon::Clock,
+                            "Timeline",
+                        );
+                        nav(
+                            ui,
+                            &mut view,
+                            WorkspaceView::Calls,
+                            Icon::MessageCircle,
+                            "Calls de Venda",
                         );
                         nav(
                             ui,
@@ -236,6 +258,12 @@ pub fn show(app: &mut App, ui: &mut egui::Ui) {
                                 ("Projetos", "Clientes, entregas e conversas vinculadas")
                             }
                             WorkspaceView::Tasks => ("Tarefas", "Organize e acompanhe o trabalho"),
+                            WorkspaceView::Timeline => {
+                                ("Timeline", "Histórico operacional dos clientes")
+                            }
+                            WorkspaceView::Calls => {
+                                ("Calls de Venda", "Reuniões, resultados e conversão")
+                            }
                             WorkspaceView::Agenda => ("Agenda", "Prazos e follow-ups da conta"),
                             WorkspaceView::Funnel => {
                                 ("Funil comercial", "Negócios e etapas de venda")
@@ -254,6 +282,10 @@ pub fn show(app: &mut App, ui: &mut egui::Ui) {
                                     projects(app, ui, &mut draft, &mut selected)
                                 }
                                 WorkspaceView::Tasks => super::crm_tasks::show_workspace(app, ui),
+                                WorkspaceView::Timeline => timeline(app, ui),
+                                WorkspaceView::Calls => {
+                                    super::crm_tasks::show_calls_workspace(app, ui)
+                                }
                                 WorkspaceView::Agenda => {
                                     super::crm_tasks::show_agenda_workspace(app, ui)
                                 }
@@ -292,6 +324,100 @@ fn nav(
         *view = target;
     }
     ui.add_space(3.0);
+}
+
+fn timeline(app: &mut App, ui: &mut egui::Ui) {
+    let p = app.palette;
+    let mut events: Vec<(i64, &'static str, String, String)> = Vec::new();
+    for (chat_id, conversation) in &app.conversations {
+        let client = app
+            .chat(chat_id)
+            .map(|chat| app.chat_title(chat))
+            .unwrap_or_else(|| "Conversa".into());
+        for message in conversation.messages.iter().rev().take(25) {
+            events.push((
+                message.timestamp,
+                if message.from_me {
+                    "Mensagem enviada"
+                } else {
+                    "Mensagem recebida"
+                },
+                client.clone(),
+                message.summary(),
+            ));
+        }
+    }
+    for task in &app.crm_tasks {
+        let project = task
+            .project_id
+            .as_ref()
+            .and_then(|id| app.crm_projects.iter().find(|project| &project.id == id))
+            .map_or_else(|| "Sem projeto".into(), |project| project.name.clone());
+        events.push((
+            task.updated_at,
+            if matches!(task.kind.as_str(), "call" | "conversation") {
+                "Call / reunião"
+            } else {
+                "Tarefa"
+            },
+            project,
+            task.title.clone(),
+        ));
+    }
+    for deal in app
+        .crm_deals
+        .values()
+        .filter(|deal| !deal.notes.trim().is_empty())
+    {
+        let client = app
+            .chat(&deal.chat_id)
+            .map(|chat| app.chat_title(chat))
+            .unwrap_or_else(|| "Cliente".into());
+        events.push((deal.updated_at, "Anotação", client, deal.notes.clone()));
+    }
+    events.sort_by_key(|event| std::cmp::Reverse(event.0));
+    if events.is_empty() {
+        empty_panel(
+            ui,
+            Icon::Clock,
+            "Nenhum evento",
+            "Mensagens, calls, anotações e tarefas aparecerão aqui.",
+        );
+        return;
+    }
+    for (at, kind, owner, detail) in events.into_iter().take(120) {
+        Frame::new()
+            .fill(p.surface)
+            .stroke(Stroke::new(1.0, p.outline))
+            .corner_radius(CornerRadius::same(9))
+            .inner_margin(Margin::symmetric(12, 9))
+            .show(ui, |ui| {
+                ui.horizontal_wrapped(|ui| {
+                    ui.label(RichText::new(kind).strong().color(p.accent));
+                    ui.label(RichText::new(owner).strong());
+                    ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
+                        ui.label(RichText::new(format_event_time(at)).small().color(p.dim));
+                    });
+                });
+                ui.label(RichText::new(detail).color(p.secondary));
+            });
+        ui.add_space(6.0);
+    }
+}
+
+fn format_event_time(timestamp: i64) -> String {
+    crate::util::local_datetime(timestamp)
+        .map(|(date, hour, minute)| {
+            format!(
+                "{:02}/{:02}/{} {:02}:{:02}",
+                date.day(),
+                date.month(),
+                date.year(),
+                hour,
+                minute
+            )
+        })
+        .unwrap_or_else(|| "Data indisponível".into())
 }
 
 fn funnel(app: &mut App, ui: &mut egui::Ui) {
@@ -979,6 +1105,7 @@ fn project_detail(
                     assignee: project.assignee.clone(),
                     call_result: String::new(),
                     next_step: String::new(),
+                    revenue_cents: 0,
                     due_at: crate::util::to_unix_seconds(
                         conversation.date,
                         conversation.hour,
@@ -1029,6 +1156,7 @@ fn project_detail(
                 assignee: project.assignee.clone(),
                 call_result: String::new(),
                 next_step: String::new(),
+                revenue_cents: 0,
                 due_at: None,
                 completed_at: None,
                 created_at: now,

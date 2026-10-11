@@ -339,6 +339,7 @@ fn render_operations(
                                 assignee: draft.assignee.trim().into(),
                                 call_result: String::new(),
                                 next_step: String::new(),
+                                revenue_cents: 0,
                                 due_at: crate::util::to_unix_seconds(
                                     draft.date,
                                     draft.hour,

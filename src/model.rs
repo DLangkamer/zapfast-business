@@ -172,6 +172,8 @@ pub struct CrmTask {
     pub call_result: String,
     #[serde(default)]
     pub next_step: String,
+    #[serde(default)]
+    pub revenue_cents: i64,
     pub due_at: Option<i64>,
     pub completed_at: Option<i64>,
     pub created_at: i64,

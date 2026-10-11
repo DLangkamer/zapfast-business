@@ -177,6 +177,7 @@ const MIGRATIONS: &[(&str, &str, &str)] = &[
     ("crm_tasks", "assignee", "TEXT NOT NULL DEFAULT ''"),
     ("crm_tasks", "call_result", "TEXT NOT NULL DEFAULT ''"),
     ("crm_tasks", "next_step", "TEXT NOT NULL DEFAULT ''"),
+    ("crm_tasks", "revenue_cents", "INTEGER NOT NULL DEFAULT 0"),
     ("crm_projects", "assignee", "TEXT NOT NULL DEFAULT ''"),
     ("crm_projects", "client_name", "TEXT NOT NULL DEFAULT ''"),
     ("crm_projects", "client_phone", "TEXT NOT NULL DEFAULT ''"),
