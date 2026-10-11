@@ -131,29 +131,29 @@ pub async fn handle_ws_stream(
                             }
                         }
                         Ok(ClientWsMessage::SendText { instance_id, chat, text, quoting }) => {
-                            if let Some(user) = &authenticated_user {
-                                if user.role == "admin" || allowed_instances.contains(&instance_id) {
-                                    manager.send_command(&instance_id, Command::SendText {
-                                        chat,
-                                        text,
-                                        quoting,
-                                        mentions: Vec::new(),
-                                    });
-                                }
+                            if let Some(user) = &authenticated_user
+                                && (user.role == "admin" || allowed_instances.contains(&instance_id))
+                            {
+                                manager.send_command(&instance_id, Command::SendText {
+                                    chat,
+                                    text,
+                                    quoting,
+                                    mentions: Vec::new(),
+                                });
                             }
                         }
                         Ok(ClientWsMessage::MarkRead { instance_id, chat }) => {
-                            if let Some(user) = &authenticated_user {
-                                if user.role == "admin" || allowed_instances.contains(&instance_id) {
-                                    manager.send_command(&instance_id, Command::MarkRead { chat, receipts: true });
-                                }
+                            if let Some(user) = &authenticated_user
+                                && (user.role == "admin" || allowed_instances.contains(&instance_id))
+                            {
+                                manager.send_command(&instance_id, Command::MarkRead { chat, receipts: true });
                             }
                         }
                         Ok(ClientWsMessage::DeleteForEveryone { instance_id, chat, id }) => {
-                            if let Some(user) = &authenticated_user {
-                                if user.role == "admin" || allowed_instances.contains(&instance_id) {
-                                    manager.send_command(&instance_id, Command::Revoke { chat, id });
-                                }
+                            if let Some(user) = &authenticated_user
+                                && (user.role == "admin" || allowed_instances.contains(&instance_id))
+                            {
+                                manager.send_command(&instance_id, Command::Revoke { chat, id });
                             }
                         }
                         Ok(ClientWsMessage::Ping) => {

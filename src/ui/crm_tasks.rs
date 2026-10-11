@@ -2909,7 +2909,7 @@ fn show_calendar(app: &mut App, ui: &mut egui::Ui, now: i64, draft: &mut TaskDra
             let first = month.first_of_month();
             let lead = usize::try_from(first.weekday().to_monday_zero_offset()).unwrap_or(0);
             let days = first.days_in_month() as usize;
-            let cells = ((lead + days + 6) / 7) * 7;
+            let cells = (lead + days).div_ceil(7) * 7;
             for index in 0..cells {
                 if index < lead || index >= lead + days {
                     ui.add_sized([cell_width, 60.0], egui::Label::new(""));

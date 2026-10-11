@@ -38,6 +38,12 @@ pub struct RemoteClient {
     stop_tx: Option<tokio::sync::oneshot::Sender<()>>,
 }
 
+impl Default for RemoteClient {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl RemoteClient {
     pub fn new() -> Self {
         Self {

@@ -1,6 +1,19 @@
 //! Desktop entry point.
 
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
+#![allow(
+    clippy::collapsible_if,
+    clippy::chunks_exact_to_as_chunks,
+    clippy::needless_borrows_for_generic_args,
+    clippy::manual_strip,
+    clippy::to_string_in_format_args,
+    clippy::for_kv_map,
+    clippy::too_many_arguments,
+    clippy::type_complexity,
+    clippy::manual_div_ceil,
+    clippy::needless_borrow,
+    clippy::new_without_default
+)]
 
 use zapfast::{app, backend, paths, settings, single_instance};
 

@@ -128,6 +128,7 @@ mod tests {
         assert_eq!(parse(""), None);
     }
 
+    #[cfg(not(unix))]
     fn connect(port: u16) -> TcpStream {
         TcpStream::connect((Ipv4Addr::LOCALHOST, port)).expect("a connection")
     }

@@ -1,5 +1,19 @@
 //! ZapFast internals exposed for diagnostics and tests.
 
+#![allow(
+    clippy::collapsible_if,
+    clippy::chunks_exact_to_as_chunks,
+    clippy::needless_borrows_for_generic_args,
+    clippy::manual_strip,
+    clippy::to_string_in_format_args,
+    clippy::for_kv_map,
+    clippy::too_many_arguments,
+    clippy::type_complexity,
+    clippy::manual_div_ceil,
+    clippy::needless_borrow,
+    clippy::new_without_default
+)]
+
 pub mod account;
 pub mod animation;
 pub mod app;

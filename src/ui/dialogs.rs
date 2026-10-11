@@ -199,7 +199,7 @@ pub(crate) fn date_time_picker(
     let lead = usize::try_from(first.weekday().to_monday_zero_offset()).unwrap_or(0);
     let days_in_month = first.days_in_month();
     let total_cells = lead + days_in_month as usize;
-    let rows = (total_cells + 6) / 7;
+    let rows = total_cells.div_ceil(7);
 
     for row_idx in 0..rows {
         ui.horizontal(|ui| {
@@ -439,7 +439,7 @@ fn schedule_voice(app: &mut App, ui: &mut egui::Ui, chat: &str) {
     let default_ts = crate::util::now() + 3600;
     let (def_date, def_hour, def_min) =
         crate::util::local_datetime(default_ts).unwrap_or((crate::util::today(), 12, 0));
-    let def_min = ((def_min + 4) / 5) * 5 % 60;
+    let def_min = def_min.div_ceil(5) * 5 % 60;
 
     let mut date = ui
         .data_mut(|d| d.get_temp::<Date>(date_id))
@@ -791,7 +791,7 @@ fn schedule_message(app: &mut App, ui: &mut egui::Ui, chat: &str) {
     let default_ts = crate::util::now() + 3600;
     let (def_date, def_hour, def_min) =
         crate::util::local_datetime(default_ts).unwrap_or((crate::util::today(), 12, 0));
-    let def_min = ((def_min + 4) / 5) * 5 % 60;
+    let def_min = def_min.div_ceil(5) * 5 % 60;
 
     let mut date = ui
         .data_mut(|d| d.get_temp::<Date>(date_id))

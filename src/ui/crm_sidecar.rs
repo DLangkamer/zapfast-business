@@ -317,7 +317,7 @@ fn render_operations(
                     super::dialogs::date_time_picker(
                         ui,
                         app.locale,
-                        &palette,
+                        palette,
                         "crm-sidecar-quick-work-date",
                         &mut draft.date,
                         &mut draft.hour,
