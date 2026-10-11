@@ -2,13 +2,45 @@
 //! deal value (R$), tags, and follow-up reminders attached to the active chat.
 
 use egui::{Align, Color32, CornerRadius, Frame, Layout, Margin, Rect, Stroke, Vec2, pos2, vec2};
+use jiff::civil::Date;
 
 use crate::app::App;
-use crate::model::{Action, Chat, CrmDeal, CrmFollowup, Dialog, Page};
+use crate::model::{Action, Chat, CrmDeal, CrmFollowup, CrmProject, CrmTask, Dialog, Page};
 use crate::theme::{self, Icon, Palette};
 
 pub const MIN_WIDTH: f32 = 240.0;
 pub const MAX_WIDTH: f32 = 560.0;
+
+#[derive(Clone)]
+struct QuickWorkDraft {
+    open: bool,
+    kind: String,
+    title: String,
+    project_id: Option<String>,
+    assignee: String,
+    date: Date,
+    hour: u8,
+    minute: u8,
+    duration_minutes: u16,
+}
+
+impl Default for QuickWorkDraft {
+    fn default() -> Self {
+        Self {
+            open: false,
+            kind: "task".into(),
+            title: String::new(),
+            project_id: None,
+            assignee: String::new(),
+            date: crate::util::today()
+                .tomorrow()
+                .unwrap_or_else(|_| crate::util::today()),
+            hour: 9,
+            minute: 0,
+            duration_minutes: 30,
+        }
+    }
+}
 
 /// Docks the CRM sidecar panel at the right edge of the chat.
 /// Allows the user to freely resize its width, adapts to any window size,
@@ -176,6 +208,155 @@ fn render_operations(
                 ui.label(format!("{open_tasks} tarefa(s) aberta(s)"));
                 ui.label(format!("{upcoming_calls} call(s) próxima(s)"));
             });
+
+            let draft_id = egui::Id::new(("crm-sidecar-quick-work", app.id.as_str(), chat_id));
+            let mut draft = ui.data_mut(|data| {
+                data.get_temp::<QuickWorkDraft>(draft_id)
+                    .unwrap_or_default()
+            });
+            ui.horizontal_wrapped(|ui| {
+                if ui.small_button("+ Projeto").clicked() {
+                    draft.open = true;
+                    draft.kind = "project".into();
+                    draft.project_id = None;
+                    draft.title.clear();
+                }
+                if ui.small_button("+ Tarefa").clicked() {
+                    draft.open = true;
+                    draft.kind = "task".into();
+                    draft.project_id = projects.first().map(|project| project.id.clone());
+                    draft.assignee = projects
+                        .first()
+                        .map_or_else(String::new, |project| project.assignee.clone());
+                }
+                if ui.small_button("+ Call").clicked() {
+                    draft.open = true;
+                    draft.kind = "call".into();
+                    draft.project_id = projects.first().map(|project| project.id.clone());
+                    draft.assignee = projects
+                        .first()
+                        .map_or_else(String::new, |project| project.assignee.clone());
+                }
+            });
+            if draft.open {
+                ui.separator();
+                ui.label(match draft.kind.as_str() {
+                    "call" => "Nova call / reunião",
+                    "project" => "Novo projeto",
+                    _ => "Nova tarefa",
+                });
+                ui.add(egui::TextEdit::singleline(&mut draft.title).hint_text(
+                    match draft.kind.as_str() {
+                        "call" => "Assunto da call",
+                        "project" => "Nome do projeto",
+                        _ => "Título da tarefa",
+                    },
+                ));
+                if draft.kind != "project" {
+                    egui::ComboBox::from_id_salt(("crm-sidecar-project", chat_id))
+                        .selected_text(
+                            draft
+                                .project_id
+                                .as_ref()
+                                .and_then(|id| projects.iter().find(|project| &project.id == id))
+                                .map_or("Sem projeto", |project| project.name.as_str()),
+                        )
+                        .show_ui(ui, |ui| {
+                            ui.selectable_value(&mut draft.project_id, None, "Sem projeto");
+                            for project in &projects {
+                                ui.selectable_value(
+                                    &mut draft.project_id,
+                                    Some(project.id.clone()),
+                                    &project.name,
+                                );
+                            }
+                        });
+                }
+                ui.add(egui::TextEdit::singleline(&mut draft.assignee).hint_text("Responsável"));
+                super::dialogs::date_time_picker(
+                    ui,
+                    app.locale,
+                    palette,
+                    "crm-sidecar-quick-work-date",
+                    &mut draft.date,
+                    &mut draft.hour,
+                    &mut draft.minute,
+                );
+                if draft.kind == "call" {
+                    egui::ComboBox::from_id_salt(("crm-sidecar-call-duration", chat_id))
+                        .selected_text(format!("{} min", draft.duration_minutes))
+                        .show_ui(ui, |ui| {
+                            for minutes in [15, 30, 45, 60, 90, 120] {
+                                ui.selectable_value(
+                                    &mut draft.duration_minutes,
+                                    minutes,
+                                    format!("{minutes} min"),
+                                );
+                            }
+                        });
+                }
+                ui.horizontal(|ui| {
+                    if ui
+                        .add_enabled(!draft.title.trim().is_empty(), egui::Button::new("Salvar"))
+                        .clicked()
+                    {
+                        let now = crate::util::now();
+                        let nonce = std::time::SystemTime::now()
+                            .duration_since(std::time::UNIX_EPOCH)
+                            .unwrap_or_default()
+                            .as_nanos();
+                        if draft.kind == "project" {
+                            app.actions.push(Action::SaveCrmProject(CrmProject {
+                                id: format!("project-{nonce}"),
+                                name: draft.title.trim().into(),
+                                description: String::new(),
+                                kind: "client".into(),
+                                status: "active".into(),
+                                color: "#00a884".into(),
+                                icon: "briefcase".into(),
+                                start_at: Some(now),
+                                due_at: None,
+                                created_at: now,
+                                updated_at: now,
+                                assignee: draft.assignee.trim().into(),
+                                client_name: String::new(),
+                                client_phone: String::new(),
+                                client_email: String::new(),
+                                chat_ids: vec![chat_id.to_owned()],
+                            }));
+                        } else {
+                            app.actions.push(Action::SaveCrmTask(CrmTask {
+                                id: format!("{}-{nonce}", draft.kind),
+                                chat_id: Some(chat_id.to_owned()),
+                                project_id: draft.project_id.clone(),
+                                title: draft.title.trim().into(),
+                                description: String::new(),
+                                status: "todo".into(),
+                                priority: "normal".into(),
+                                kind: draft.kind.clone(),
+                                duration_minutes: (draft.kind == "call")
+                                    .then_some(draft.duration_minutes),
+                                assignee: draft.assignee.trim().into(),
+                                call_result: String::new(),
+                                next_step: String::new(),
+                                due_at: crate::util::to_unix_seconds(
+                                    draft.date,
+                                    draft.hour,
+                                    draft.minute,
+                                ),
+                                completed_at: None,
+                                created_at: now,
+                                updated_at: now,
+                            }));
+                        }
+                        draft = QuickWorkDraft::default();
+                    }
+                    if ui.small_button("Cancelar").clicked() {
+                        draft = QuickWorkDraft::default();
+                    }
+                });
+            }
+            ui.data_mut(|data| data.insert_temp(draft_id, draft));
 
             ui.collapsing("Linha do tempo", |ui| {
                 let mut events: Vec<(i64, String, String)> = Vec::new();
