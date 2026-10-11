@@ -11454,6 +11454,7 @@ mod tests {
             mentions: Vec::new(),
             forwarded: false,
             thumbnail: Some(vec![1]),
+            revoked: false,
         };
         let mention = MentionRef {
             user: "3".into(),
@@ -11524,6 +11525,7 @@ mod receipt_tests {
             .handle_command(Command::GroupInfo {
                 chat: chat.into(),
                 name: Some(String::new()),
+                description: None,
                 participants: vec![PEER.into()],
                 read_only: false,
                 ephemeral_expiration: None,
@@ -11548,6 +11550,7 @@ mod receipt_tests {
             .handle_command(Command::GroupInfo {
                 chat: chat.into(),
                 name: Some("Current title".into()),
+                description: None,
                 participants: vec![PEER.into()],
                 read_only: false,
                 ephemeral_expiration: None,
@@ -11579,6 +11582,7 @@ mod receipt_tests {
             .handle_command(Command::GroupInfo {
                 chat: chat.into(),
                 name: Some("Weekend plans".into()),
+                description: None,
                 participants: vec![PEER.into(), ME.into()],
                 read_only: false,
                 ephemeral_expiration: None,
@@ -11599,6 +11603,7 @@ mod receipt_tests {
             .handle_command(Command::GroupInfo {
                 chat: chat.into(),
                 name: Some("Weekend plans".into()),
+                description: None,
                 participants: vec![PEER.into(), ME.into()],
                 read_only: false,
                 ephemeral_expiration: None,
@@ -11655,6 +11660,7 @@ mod receipt_tests {
             .handle_command(Command::GroupInfo {
                 chat: chat.into(),
                 name: Some("Weekend plans".into()),
+                description: None,
                 participants: vec![PEER.into(), ME.into()],
                 read_only: false,
                 ephemeral_expiration: None,
@@ -11788,6 +11794,7 @@ mod receipt_tests {
         let snapshot = |name: &str, subject_generation| Command::GroupInfo {
             chat: chat.into(),
             name: Some(name.into()),
+            description: None,
             participants: vec![PEER.into(), ME.into()],
             read_only: false,
             ephemeral_expiration: None,

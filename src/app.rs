@@ -4286,10 +4286,10 @@ impl App {
                     return;
                 };
                 let mut final_samples = Vec::new();
-                if let Some((paused_chat, paused_samples)) = self.recording_paused.take() {
-                    if paused_chat == chat {
-                        final_samples.extend(paused_samples);
-                    }
+                if let Some((paused_chat, paused_samples)) = self.recording_paused.take()
+                    && paused_chat == chat
+                {
+                    final_samples.extend(paused_samples);
                 }
                 if let Some(recorder) = self.recording.take() {
                     match recorder.finish() {
