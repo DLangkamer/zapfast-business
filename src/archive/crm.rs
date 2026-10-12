@@ -655,6 +655,30 @@ mod tests {
     }
 
     #[test]
+    fn crm_deals_are_preserved_across_column_changes_and_schema_reloads() {
+        let archive = Archive::in_memory().unwrap();
+        let deal = CrmDeal {
+            chat_id: "551188888888@s.whatsapp.net".to_owned(),
+            column_id: "custom_stage".to_owned(),
+            value_cents: 250000,
+            notes: "Negócio importante em andamento".to_owned(),
+            tags: vec!["Prioritário".to_owned()],
+            updated_at: 1700000000,
+        };
+
+        archive.upsert_crm_deal(&deal).unwrap();
+
+        // crm_deals() self-heals orphaned custom_stage to default first stage without losing notes, value or tags
+        let deals = archive.crm_deals().unwrap();
+        assert_eq!(deals.len(), 1);
+        assert_eq!(deals[0].chat_id, "551188888888@s.whatsapp.net");
+        assert_eq!(deals[0].value_cents, 250000);
+        assert_eq!(deals[0].notes, "Negócio importante em andamento");
+        assert_eq!(deals[0].tags, vec!["Prioritário"]);
+        assert_eq!(deals[0].column_id, "lead"); // healed, not dropped!
+    }
+
+    #[test]
     fn crm_followups_are_independent_of_deals() {
         let archive = Archive::in_memory().unwrap();
         let followup = CrmFollowup {

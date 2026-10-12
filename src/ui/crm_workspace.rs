@@ -1178,7 +1178,7 @@ fn timeline(app: &mut App, ui: &mut egui::Ui, cp: &CrmPalette) {
                     .corner_radius(CornerRadius::same(10))
                     .inner_margin(Margin::symmetric(14, 10))
                     .show(ui, |ui| {
-                        let card_w = (ui.available_width() - 36.0).max(180.0);
+                        let card_w = ui.available_width().max(180.0);
                         ui.set_width(card_w);
 
                         // Card Header
@@ -1197,13 +1197,23 @@ fn timeline(app: &mut App, ui: &mut egui::Ui, cp: &CrmPalette) {
                                     );
                                 });
 
-                            // Entity pill
+                            // Entity pill with truncation so right time is never pushed off
                             if !event.entity.is_empty() {
-                                ui.label(
-                                    RichText::new(&event.entity)
-                                        .size(12.5)
-                                        .strong()
-                                        .color(cp.text),
+                                let entity_max_w = (ui.available_width() - 90.0).max(50.0);
+                                ui.allocate_ui_with_layout(
+                                    vec2(entity_max_w, 20.0),
+                                    Layout::left_to_right(Align::Center),
+                                    |ui| {
+                                        ui.add(
+                                            egui::Label::new(
+                                                RichText::new(&event.entity)
+                                                    .size(12.5)
+                                                    .strong()
+                                                    .color(cp.text),
+                                            )
+                                            .truncate(),
+                                        );
+                                    },
                                 );
                             }
 
@@ -1225,7 +1235,7 @@ fn timeline(app: &mut App, ui: &mut egui::Ui, cp: &CrmPalette) {
 
                             // Right-aligned time
                             ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-                                ui.add_space(8.0);
+                                ui.add_space(4.0);
                                 ui.label(RichText::new(&event.time_str).size(12.0).color(cp.dim));
                             });
                         });
@@ -1233,18 +1243,28 @@ fn timeline(app: &mut App, ui: &mut egui::Ui, cp: &CrmPalette) {
                         // Title if different from entity
                         if !event.title.is_empty() && event.title != event.entity {
                             ui.add_space(2.0);
-                            ui.label(
-                                RichText::new(&event.title)
-                                    .size(13.5)
-                                    .strong()
-                                    .color(cp.text),
+                            ui.add(
+                                egui::Label::new(
+                                    RichText::new(&event.title)
+                                        .size(13.5)
+                                        .strong()
+                                        .color(cp.text),
+                                )
+                                .wrap(),
                             );
                         }
 
                         // Summary
                         if !event.summary.is_empty() {
                             ui.add_space(2.0);
-                            ui.label(RichText::new(&event.summary).size(12.5).color(cp.secondary));
+                            ui.add(
+                                egui::Label::new(
+                                    RichText::new(&event.summary)
+                                        .size(12.5)
+                                        .color(cp.secondary),
+                                )
+                                .wrap(),
+                            );
                         }
                     });
             });

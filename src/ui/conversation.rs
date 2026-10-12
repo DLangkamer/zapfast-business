@@ -131,7 +131,7 @@ fn header(app: &mut App, ui: &mut egui::Ui, chat: &Chat) -> Rect {
                 ui.set_min_height(HEADER_ROW);
                 let picture = app.avatar(&chat.id);
                 let (subtitle, color) = subtitle(app, chat);
-                let right_controls = 72.0;
+                let right_controls = 165.0;
                 // Treat the avatar, name, and subtitle as one info button.
                 let block = ui
                     .scope(|ui| {
@@ -160,7 +160,7 @@ fn header(app: &mut App, ui: &mut egui::Ui, chat: &Chat) -> Rect {
                                 }
                                 ui.add_space(4.0);
                                 ui.vertical(|ui| {
-                                    let width = (ui.available_width() - right_controls).max(80.0);
+                                    let width = (ui.available_width() - 8.0).max(80.0);
                                     ui.set_max_width(width);
                                     if subtitle.is_empty() {
                                         // Center the name on the avatar.

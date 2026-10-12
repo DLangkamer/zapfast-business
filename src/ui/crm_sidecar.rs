@@ -554,9 +554,47 @@ fn render_header(app: &mut App, ui: &mut egui::Ui, palette: &Palette, chat: &Cha
     };
 
     ui.horizontal(|ui| {
-        // Right action buttons first: guaranteed to anchor at the right border without clipping
+        // Contact avatar and titles on the left
+        let (rect, _) = ui.allocate_exact_size(Vec2::splat(32.0), egui::Sense::hover());
+        let picture = app.avatar(&chat.id);
+        super::widgets::paint_avatar(
+            ui,
+            palette,
+            rect,
+            &title,
+            &chat.id,
+            picture.as_deref(),
+        );
+
+        ui.add_space(4.0);
+
+        let right_buttons_w = 88.0;
+        let text_w = (ui.available_width() - right_buttons_w).max(40.0);
+        ui.allocate_ui_with_layout(
+            vec2(text_w, 34.0),
+            Layout::top_down(Align::Min),
+            |ui| {
+                ui.add(
+                    egui::Label::new(
+                        egui::RichText::new(&title)
+                            .font(theme::semibold(13.0))
+                            .color(palette.text),
+                    )
+                    .truncate(),
+                );
+                ui.add(
+                    egui::Label::new(
+                        egui::RichText::new(&subtitle)
+                            .font(theme::regular(11.0))
+                            .color(palette.dim),
+                    )
+                    .truncate(),
+                );
+            },
+        );
+
+        // Right action buttons anchored at the right border without hit-test conflicts
         ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-            // Close / Collapse button
             if theme::icon_button(
                 ui,
                 Icon::ChevronRight,
@@ -583,7 +621,6 @@ fn render_header(app: &mut App, ui: &mut egui::Ui, palette: &Palette, chat: &Cha
                 app.actions.push(Action::ToggleCrmSidecar);
             }
 
-            // Quick shortcut to open Central Funnel
             if theme::icon_button(
                 ui,
                 Icon::ListChecks,
@@ -596,46 +633,6 @@ fn render_header(app: &mut App, ui: &mut egui::Ui, palette: &Palette, chat: &Cha
             {
                 app.actions.push(Action::OpenCrmView("funnel".into()));
             }
-
-            // Contact avatar and titles fill the remaining space on the left
-            ui.with_layout(Layout::left_to_right(Align::Center), |ui| {
-                let (rect, _) = ui.allocate_exact_size(Vec2::splat(32.0), egui::Sense::hover());
-                let picture = app.avatar(&chat.id);
-                super::widgets::paint_avatar(
-                    ui,
-                    palette,
-                    rect,
-                    &title,
-                    &chat.id,
-                    picture.as_deref(),
-                );
-
-                ui.add_space(4.0);
-
-                let text_w = ui.available_width().max(40.0);
-                ui.allocate_ui_with_layout(
-                    vec2(text_w, 34.0),
-                    Layout::top_down(Align::Min),
-                    |ui| {
-                        ui.add(
-                            egui::Label::new(
-                                egui::RichText::new(&title)
-                                    .font(theme::semibold(13.0))
-                                    .color(palette.text),
-                            )
-                            .truncate(),
-                        );
-                        ui.add(
-                            egui::Label::new(
-                                egui::RichText::new(&subtitle)
-                                    .font(theme::regular(11.0))
-                                    .color(palette.dim),
-                            )
-                            .truncate(),
-                        );
-                    },
-                );
-            });
         });
     });
 }

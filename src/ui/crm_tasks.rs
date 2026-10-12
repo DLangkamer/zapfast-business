@@ -492,6 +492,7 @@ fn render_agenda_week_view(
     let days_w = (avail_w - time_col_w - 14.0).max(560.0);
     let col_w = (days_w / 7.0).max(75.0);
     let row_h = 54.0;
+    let total_week_w = time_col_w + col_w * 7.0 + 16.0;
 
     let mon_offset = anchor_date.weekday().to_monday_zero_offset() as i32;
     let monday = day_step(anchor_date, -mon_offset);
@@ -500,7 +501,12 @@ fn render_agenda_week_view(
     let week_events: Vec<Vec<AgendaEventItem>> =
         week_days.iter().map(|d| get_day_events(app, *d)).collect();
 
-    ui.horizontal(|ui| {
+    ScrollArea::horizontal()
+        .auto_shrink([false, false])
+        .show(ui, |ui| {
+            ui.set_min_width(total_week_w);
+
+            ui.horizontal(|ui| {
         ui.allocate_exact_size(vec2(time_col_w, 36.0), egui::Sense::hover());
         for (i, d) in week_days.iter().enumerate() {
             let is_today = *d == today;
@@ -672,6 +678,7 @@ fn render_agenda_week_view(
             }
         });
     }
+        });
 }
 
 fn render_agenda_month_view(
@@ -686,7 +693,7 @@ fn render_agenda_month_view(
 ) {
     let avail_w = ui.available_width();
     let col_w = ((avail_w - 24.0) / 7.0).max(65.0);
-    let cell_h = 88.0;
+    let cell_h = 104.0;
 
     let first = anchor_date.first_of_month();
     let lead = usize::try_from(first.weekday().to_monday_zero_offset()).unwrap_or(0);
@@ -727,6 +734,7 @@ fn render_agenda_month_view(
                     if let Ok(date) = Date::new(anchor_date.year(), anchor_date.month(), day) {
                         let is_today = date == today;
                         let day_events = get_day_events(app, date);
+                        let mut event_clicked = false;
 
                         let cell_id = ui.id().with(("month_cell", date.to_string()));
                         let cell_rect =
@@ -773,9 +781,9 @@ fn render_agenda_month_view(
                                     } else {
                                         ui.label(
                                             RichText::new(day.to_string())
-                                                .size(12.0)
-                                                .strong()
-                                                .color(cp.text),
+                                                        .size(12.0)
+                                                        .strong()
+                                                        .color(cp.text),
                                         );
                                     }
                                 });
@@ -804,10 +812,11 @@ fn render_agenda_month_view(
                                     .corner_radius(CornerRadius::same(3));
 
                                     if ui
-                                        .add_sized([col_w - 8.0, 16.0], chip_btn)
+                                        .add_sized([col_w - 8.0, 18.0], chip_btn)
                                         .on_hover_text(format!("{}\n{}", ev.title, ev.subtitle))
                                         .clicked()
                                     {
+                                        event_clicked = true;
                                         if let Some(ref t) = ev.raw_task {
                                             *draft = TaskDraft {
                                                 id: Some(t.id.clone()),
@@ -855,7 +864,7 @@ fn render_agenda_month_view(
                                 }
                             });
 
-                        if cell_resp.clicked() {
+                        if cell_resp.clicked() && !event_clicked {
                             *draft = TaskDraft {
                                 due_date: date,
                                 due_hour: 9,
@@ -1060,6 +1069,7 @@ pub fn show_agenda_workspace(app: &mut App, ui: &mut egui::Ui) {
             ui.label(RichText::new(range_title).size(16.0).strong().color(cp.text));
 
             ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
+                ui.add_space(6.0);
                 let new_btn = egui::Button::new(
                     RichText::new("+ Novo Agendamento")
                         .size(13.0)
@@ -1311,6 +1321,10 @@ pub fn show_calls_workspace(app: &mut App, ui: &mut egui::Ui) {
         .iter()
         .filter(|call| matches!(call.status.as_str(), "held" | "done" | "closed"))
         .count();
+    let lost = all_calls
+        .iter()
+        .filter(|call| call.status == "lost")
+        .count();
     let no_show = all_calls
         .iter()
         .filter(|call| call.status == "no_show")
@@ -1324,15 +1338,28 @@ pub fn show_calls_workspace(app: &mut App, ui: &mut egui::Ui) {
         .filter(|call| call.status == "closed" || call.revenue_cents > 0)
         .count();
     let revenue: i64 = all_calls.iter().map(|call| call.revenue_cents).sum();
-    let conversion = if held == 0 {
+    let evaluated = (held + lost).max(closings + lost);
+    let conversion = if evaluated == 0 {
         0.0
     } else {
-        closings as f32 * 100.0 / held as f32
+        closings as f32 * 100.0 / evaluated as f32
     };
 
     // 1. KPI Indicator Cards with Icons and Tailored Colors
     let avail_w = ui.available_width();
-    let metric_w = ((avail_w - 7.0 * 8.0) / 8.0).max(115.0);
+    let cols = if avail_w > 1200.0 {
+        9
+    } else if avail_w > 900.0 {
+        5
+    } else if avail_w > 650.0 {
+        4
+    } else if avail_w > 450.0 {
+        3
+    } else {
+        2
+    };
+    let spacing = 8.0;
+    let metric_w = ((avail_w - (cols as f32 - 1.0) * spacing) / cols as f32).max(110.0);
 
     ui.horizontal_wrapped(|ui| {
         ui.spacing_mut().item_spacing = vec2(8.0, 8.0);
@@ -1378,6 +1405,15 @@ pub fn show_calls_workspace(app: &mut App, ui: &mut egui::Ui) {
             Icon::Ban,
             "Canceladas",
             cancelled.to_string(),
+            cp.danger,
+            metric_w,
+        );
+        call_metric(
+            ui,
+            &cp,
+            Icon::CircleAlert,
+            "Perdidas",
+            lost.to_string(),
             cp.danger,
             metric_w,
         );
@@ -1500,7 +1536,7 @@ pub fn show_calls_workspace(app: &mut App, ui: &mut egui::Ui) {
                 ui.horizontal(|ui| {
                     theme::icon(ui, Icon::CircleAlert, 16.0, cp.danger);
                     ui.label(
-                        RichText::new("Perdas: Cancelamentos & No-Shows")
+                        RichText::new("Perdas: Descarte, Cancelamentos & No-Shows")
                             .size(14.0)
                             .strong()
                             .color(cp.text),
@@ -1508,7 +1544,7 @@ pub fn show_calls_workspace(app: &mut App, ui: &mut egui::Ui) {
                 });
                 ui.add_space(8.0);
 
-                let lost_total = no_show + cancelled;
+                let lost_total = lost + no_show + cancelled;
                 let loss_pct = if total == 0 {
                     0.0
                 } else {
@@ -1560,7 +1596,7 @@ pub fn show_calls_workspace(app: &mut App, ui: &mut egui::Ui) {
                 ui.horizontal(|ui| {
                     ui.label(
                         RichText::new(format!(
-                            "• {no_show} No-show(s)  • {cancelled} Cancelada(s)"
+                            "• {lost} Perdida(s)  • {no_show} No-show(s)  • {cancelled} Cancelada(s)"
                         ))
                         .size(11.5)
                         .color(cp.dim),
@@ -1971,7 +2007,7 @@ fn render_call_card(
         .show(ui, |ui| {
             ui.vertical(|ui| {
                 let card_avail = ui.available_width();
-                if card_avail < 580.0 {
+                if card_avail < 780.0 {
                     ui.horizontal(|ui| {
                         call_status_pill(ui, &call.status, cp);
                         ui.add_space(4.0);
@@ -2966,6 +3002,59 @@ fn render_call_modal(
                 ui.data_mut(|d| d.insert_temp(err_id, false));
             }
 
+            if let Some(call_id) = draft.id.clone() {
+                let confirm_delete_id = ui.id().with(("confirm-del-modal-call", &call_id));
+                let confirming = ui.data_mut(|d| d.get_temp::<bool>(confirm_delete_id).unwrap_or(false));
+                if confirming {
+                    if ui
+                        .add(
+                            egui::Button::new(
+                                RichText::new("Confirmar Exclusão?")
+                                    .size(12.5)
+                                    .strong()
+                                    .color(Color32::WHITE),
+                            )
+                            .fill(cp.danger)
+                            .corner_radius(CornerRadius::same(8))
+                            .min_size(vec2(130.0, 36.0)),
+                        )
+                        .clicked()
+                    {
+                        app.actions.push(Action::DeleteCrmTask(call_id));
+                        app.toast("Call excluída.");
+                        *show_form = false;
+                        *draft = TaskDraft {
+                            kind: "call".into(),
+                            status: "scheduled".into(),
+                            ..TaskDraft::default()
+                        };
+                        ui.data_mut(|d| d.insert_temp(confirm_delete_id, false));
+                        ui.ctx().request_repaint();
+                    }
+                    if ui.small_button("Não").clicked() {
+                        ui.data_mut(|d| d.insert_temp(confirm_delete_id, false));
+                        ui.ctx().request_repaint();
+                    }
+                } else if ui
+                    .add(
+                        egui::Button::new(
+                            RichText::new("Excluir Call")
+                                .size(12.5)
+                                .color(cp.danger),
+                        )
+                        .fill(cp.surface)
+                        .stroke(Stroke::new(1.0, cp.danger.gamma_multiply(0.6)))
+                        .corner_radius(CornerRadius::same(8))
+                        .min_size(vec2(100.0, 36.0)),
+                    )
+                    .on_hover_text("Excluir esta call permanentemente")
+                    .clicked()
+                {
+                    ui.data_mut(|d| d.insert_temp(confirm_delete_id, true));
+                    ui.ctx().request_repaint();
+                }
+            }
+
             ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
                 let save_btn = egui::Button::new(
                     RichText::new("Salvar call")
@@ -3709,8 +3798,244 @@ fn show_task_list(
                     .corner_radius(CornerRadius::same(8))
                     .inner_margin(Margin::symmetric(14, 10))
                     .show(ui, |ui| {
+                    let card_avail = ui.available_width();
+                    let (s_bg, s_fg, s_label) = match task.status.as_str() {
+                        "todo" => (
+                            Color32::from_rgb(0x3b, 0x82, 0xf6).gamma_multiply(0.15),
+                            Color32::from_rgb(0x3b, 0x82, 0xf6),
+                            "A fazer",
+                        ),
+                        "doing" => (
+                            Color32::from_rgb(0xea, 0xb3, 0x08).gamma_multiply(0.15),
+                            Color32::from_rgb(0xea, 0xb3, 0x08),
+                            "Em andamento",
+                        ),
+                        "review" => (
+                            Color32::from_rgb(0xa8, 0x55, 0xf7).gamma_multiply(0.15),
+                            Color32::from_rgb(0xa8, 0x55, 0xf7),
+                            "Em revisão",
+                        ),
+                        "done" => (
+                            Color32::from_rgb(0x10, 0xb9, 0x81).gamma_multiply(0.15),
+                            Color32::from_rgb(0x10, 0xb9, 0x81),
+                            "Concluída",
+                        ),
+                        _ => (cp.surface_hover, cp.dim, task.status.as_str()),
+                    };
+
+                    let mut render_actions = |ui: &mut egui::Ui| {
+                        let delete_id = egui::Id::new(("task-list-delete-confirm", &task.id));
+                        let mut is_confirming =
+                            ui.data_mut(|d| d.get_temp::<bool>(delete_id).unwrap_or(false));
+                        if is_confirming {
+                            if ui
+                                .add(
+                                    egui::Button::new(
+                                        RichText::new("Cancelar").size(12.0).color(cp.secondary),
+                                    )
+                                    .fill(cp.surface_hover)
+                                    .corner_radius(CornerRadius::same(5)),
+                                )
+                                .clicked()
+                            {
+                                is_confirming = false;
+                                ui.ctx().request_repaint();
+                            }
+                            if ui
+                                .add(
+                                    egui::Button::new(
+                                        RichText::new("Excluir")
+                                            .size(12.0)
+                                            .strong()
+                                            .color(Color32::WHITE),
+                                    )
+                                    .fill(cp.danger)
+                                    .corner_radius(CornerRadius::same(5)),
+                                )
+                                .clicked()
+                            {
+                                app.actions.push(Action::DeleteCrmTask(task.id.clone()));
+                                is_confirming = false;
+                                ui.ctx().request_repaint();
+                            }
+                        } else if ui
+                            .add(
+                                egui::Button::new(
+                                    RichText::new("Excluir").size(12.0).color(cp.danger),
+                                )
+                                .fill(cp.surface_hover)
+                                .stroke(Stroke::new(1.0, cp.outline))
+                                .corner_radius(CornerRadius::same(5)),
+                            )
+                            .clicked()
+                        {
+                            is_confirming = true;
+                            ui.ctx().request_repaint();
+                        }
+                        ui.data_mut(|d| d.insert_temp(delete_id, is_confirming));
+
+                        if ui
+                            .add(
+                                egui::Button::new(
+                                    RichText::new("Editar").size(12.0).color(cp.secondary),
+                                )
+                                .fill(cp.surface_hover)
+                                .corner_radius(CornerRadius::same(5)),
+                            )
+                            .clicked()
+                        {
+                            *draft = TaskDraft {
+                                id: Some(task.id.clone()),
+                                title: task.title.clone(),
+                                description: task.description.clone(),
+                                priority: task.priority.clone(),
+                                status: task.status.clone(),
+                                assignee: task.assignee.clone(),
+                                kind: task.kind.clone(),
+                                duration_minutes: task.duration_minutes.unwrap_or(30),
+                                call_result: task.call_result.clone(),
+                                next_step: task.next_step.clone(),
+                                revenue_reais: format_revenue_input(task.revenue_cents),
+                                project_id: task.project_id.clone(),
+                                has_due: task.due_at.is_some(),
+                                due_date: task
+                                    .due_at
+                                    .and_then(crate::util::local_datetime)
+                                    .map(|x| x.0)
+                                    .unwrap_or_else(crate::util::today),
+                                due_hour: task
+                                    .due_at
+                                    .and_then(crate::util::local_datetime)
+                                    .map(|x| x.1)
+                                    .unwrap_or(9),
+                                due_minute: task
+                                    .due_at
+                                    .and_then(crate::util::local_datetime)
+                                    .map(|x| x.2)
+                                    .unwrap_or(0),
+                                chat_id: task.chat_id.clone(),
+                                link_chat: task.chat_id.is_some(),
+                            };
+                            *show_form = true;
+                            ui.ctx().request_repaint();
+                        }
+                    };
+
+                    let render_info = |ui: &mut egui::Ui| {
+                        if let Some(due) = task.due_at {
+                            if let Some((date, _, _)) = crate::util::local_datetime(due) {
+                                let text_color = if is_late { cp.danger } else { cp.dim };
+                                ui.label(
+                                    RichText::new(format!(
+                                        "📅 {:02}/{:02}",
+                                        date.day(),
+                                        date.month()
+                                    ))
+                                    .size(11.5)
+                                    .color(text_color),
+                                );
+                            }
+                        }
+
+                        if !task.assignee.is_empty() {
+                            ui.label(
+                                RichText::new(format!("👤 {}", task.assignee))
+                                    .size(11.5)
+                                    .color(cp.dim),
+                            );
+                        }
+
+                        if let Some(c_name) = &contact_name {
+                            ui.label(
+                                RichText::new(format!("💬 {}", c_name))
+                                    .size(11.5)
+                                    .color(cp.secondary),
+                            );
+                        }
+
+                        if let Some(p_name) = &project_name {
+                            ui.label(
+                                RichText::new(format!("📁 {}", p_name))
+                                    .size(11.5)
+                                    .color(cp.accent),
+                            );
+                        }
+                    };
+
+                    if card_avail < 780.0 {
+                        ui.vertical(|ui| {
+                            // Row 1: Checkbox, Status badge, Priority badge, Title
+                            ui.horizontal(|ui| {
+                                let check_btn = egui::Button::new(
+                                    RichText::new(if done { "✓" } else { "□" })
+                                        .size(15.0)
+                                        .color(if done {
+                                            cp.accent
+                                        } else if is_late {
+                                            cp.danger
+                                        } else {
+                                            cp.dim
+                                        }),
+                                )
+                                .fill(cp.surface_hover)
+                                .corner_radius(CornerRadius::same(5))
+                                .min_size(vec2(28.0, 28.0));
+                                if ui.add(check_btn).clicked() {
+                                    let mut updated = task.clone();
+                                    updated.status = if done { "todo" } else { "done" }.into();
+                                    updated.completed_at = if done { None } else { Some(now) };
+                                    updated.updated_at = now;
+                                    to_complete = Some(updated);
+                                }
+
+                                ui.add_space(4.0);
+                                Frame::new()
+                                    .fill(s_bg)
+                                    .corner_radius(CornerRadius::same(4))
+                                    .inner_margin(Margin::symmetric(6, 2))
+                                    .show(ui, |ui| {
+                                        ui.label(
+                                            RichText::new(s_label).size(11.0).strong().color(s_fg),
+                                        );
+                                    });
+
+                                ui.add_space(4.0);
+                                priority_badge(ui, &task.priority, cp);
+                                ui.add_space(6.0);
+
+                                let title_w = (ui.available_width() - 8.0).max(60.0);
+                                ui.allocate_ui_with_layout(
+                                    vec2(title_w, 24.0),
+                                    Layout::left_to_right(Align::Center),
+                                    |ui| {
+                                        ui.add(
+                                            egui::Label::new(
+                                                RichText::new(&task.title)
+                                                    .size(13.5)
+                                                    .strong()
+                                                    .color(if done { cp.dim } else { cp.text }),
+                                            )
+                                            .truncate(),
+                                        );
+                                    },
+                                );
+                            });
+
+                            ui.add_space(4.0);
+
+                            // Row 2: Secondary info on left, action buttons on right
+                            ui.horizontal(|ui| {
+                                render_info(ui);
+
+                                ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
+                                    ui.add_space(8.0);
+                                    render_actions(ui);
+                                });
+                            });
+                        });
+                    } else {
+                        // Wide single-row layout
                         ui.horizontal(|ui| {
-                            // Checkbox toggle
                             let check_btn = egui::Button::new(
                                 RichText::new(if done { "✓" } else { "□" })
                                     .size(15.0)
@@ -3734,31 +4059,6 @@ fn show_task_list(
                             }
 
                             ui.add_space(4.0);
-
-                            // Status badge
-                            let (s_bg, s_fg, s_label) = match task.status.as_str() {
-                                "todo" => (
-                                    Color32::from_rgb(0x3b, 0x82, 0xf6).gamma_multiply(0.15),
-                                    Color32::from_rgb(0x3b, 0x82, 0xf6),
-                                    "A fazer",
-                                ),
-                                "doing" => (
-                                    Color32::from_rgb(0xea, 0xb3, 0x08).gamma_multiply(0.15),
-                                    Color32::from_rgb(0xea, 0xb3, 0x08),
-                                    "Em andamento",
-                                ),
-                                "review" => (
-                                    Color32::from_rgb(0xa8, 0x55, 0xf7).gamma_multiply(0.15),
-                                    Color32::from_rgb(0xa8, 0x55, 0xf7),
-                                    "Em revisão",
-                                ),
-                                "done" => (
-                                    Color32::from_rgb(0x10, 0xb9, 0x81).gamma_multiply(0.15),
-                                    Color32::from_rgb(0x10, 0xb9, 0x81),
-                                    "Concluída",
-                                ),
-                                _ => (cp.surface_hover, cp.dim, task.status.as_str()),
-                            };
                             Frame::new()
                                 .fill(s_bg)
                                 .corner_radius(CornerRadius::same(4))
@@ -3770,15 +4070,11 @@ fn show_task_list(
                                 });
 
                             ui.add_space(4.0);
-
-                            // Priority badge
                             priority_badge(ui, &task.priority, cp);
-
                             ui.add_space(6.0);
 
-                            // Title & Description (constrained width so actions never get pushed off-screen)
                             let row_avail = ui.available_width();
-                            let title_max_w = (row_avail - 250.0).max(90.0);
+                            let title_max_w = (row_avail - 420.0).max(100.0);
                             ui.allocate_ui_with_layout(
                                 vec2(title_max_w, 36.0),
                                 Layout::top_down(Align::Min),
@@ -3805,150 +4101,13 @@ fn show_task_list(
                                 },
                             );
 
-                            // Right-aligned items: Project, Client, Due date, Assignee, Actions
                             ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-                                ui.add_space(14.0);
-
-                                // Standard delete confirmation (Cancelar left, Excluir right)
-                                let delete_id =
-                                    egui::Id::new(("task-list-delete-confirm", &task.id));
-                                let mut is_confirming =
-                                    ui.data_mut(|d| d.get_temp::<bool>(delete_id).unwrap_or(false));
-                                if is_confirming {
-                                    if ui
-                                        .add(
-                                            egui::Button::new(
-                                                RichText::new("Cancelar")
-                                                    .size(12.0)
-                                                    .color(cp.secondary),
-                                            )
-                                            .fill(cp.surface_hover)
-                                            .corner_radius(CornerRadius::same(5)),
-                                        )
-                                        .clicked()
-                                    {
-                                        is_confirming = false;
-                                        ui.ctx().request_repaint();
-                                    }
-                                    if ui
-                                        .add(
-                                            egui::Button::new(
-                                                RichText::new("Excluir")
-                                                    .size(12.0)
-                                                    .strong()
-                                                    .color(Color32::WHITE),
-                                            )
-                                            .fill(cp.danger)
-                                            .corner_radius(CornerRadius::same(5)),
-                                        )
-                                        .clicked()
-                                    {
-                                        app.actions.push(Action::DeleteCrmTask(task.id.clone()));
-                                        is_confirming = false;
-                                        ui.ctx().request_repaint();
-                                    }
-                                } else if ui
-                                    .add(
-                                        egui::Button::new(
-                                            RichText::new("Excluir").size(12.0).color(cp.danger),
-                                        )
-                                        .fill(cp.surface_hover)
-                                        .stroke(Stroke::new(1.0, cp.outline))
-                                        .corner_radius(CornerRadius::same(5)),
-                                    )
-                                    .clicked()
-                                {
-                                    is_confirming = true;
-                                    ui.ctx().request_repaint();
-                                }
-                                ui.data_mut(|d| d.insert_temp(delete_id, is_confirming));
-
-                                if ui
-                                    .add(
-                                        egui::Button::new(
-                                            RichText::new("Editar").size(12.0).color(cp.secondary),
-                                        )
-                                        .fill(cp.surface_hover)
-                                        .corner_radius(CornerRadius::same(5)),
-                                    )
-                                    .clicked()
-                                {
-                                    *draft = TaskDraft {
-                                        id: Some(task.id.clone()),
-                                        title: task.title.clone(),
-                                        description: task.description.clone(),
-                                        priority: task.priority.clone(),
-                                        status: task.status.clone(),
-                                        assignee: task.assignee.clone(),
-                                        kind: task.kind.clone(),
-                                        duration_minutes: task.duration_minutes.unwrap_or(30),
-                                        call_result: task.call_result.clone(),
-                                        next_step: task.next_step.clone(),
-                                        revenue_reais: format_revenue_input(task.revenue_cents),
-                                        project_id: task.project_id.clone(),
-                                        has_due: task.due_at.is_some(),
-                                        due_date: task
-                                            .due_at
-                                            .and_then(crate::util::local_datetime)
-                                            .map(|x| x.0)
-                                            .unwrap_or_else(crate::util::today),
-                                        due_hour: task
-                                            .due_at
-                                            .and_then(crate::util::local_datetime)
-                                            .map(|x| x.1)
-                                            .unwrap_or(9),
-                                        due_minute: task
-                                            .due_at
-                                            .and_then(crate::util::local_datetime)
-                                            .map(|x| x.2)
-                                            .unwrap_or(0),
-                                        chat_id: task.chat_id.clone(),
-                                        link_chat: task.chat_id.is_some(),
-                                    };
-                                    *show_form = true;
-                                    ui.ctx().request_repaint();
-                                }
-
-                                if let Some(due) = task.due_at {
-                                    if let Some((date, _, _)) = crate::util::local_datetime(due) {
-                                        let text_color = if is_late { cp.danger } else { cp.dim };
-                                        ui.label(
-                                            RichText::new(format!(
-                                                "📅 {:02}/{:02}",
-                                                date.day(),
-                                                date.month()
-                                            ))
-                                            .size(11.5)
-                                            .color(text_color),
-                                        );
-                                    }
-                                }
-
-                                if !task.assignee.is_empty() {
-                                    ui.label(
-                                        RichText::new(format!("👤 {}", task.assignee))
-                                            .size(11.5)
-                                            .color(cp.dim),
-                                    );
-                                }
-
-                                if let Some(c_name) = &contact_name {
-                                    ui.label(
-                                        RichText::new(format!("💬 {}", c_name))
-                                            .size(11.5)
-                                            .color(cp.secondary),
-                                    );
-                                }
-
-                                if let Some(p_name) = &project_name {
-                                    ui.label(
-                                        RichText::new(format!("📁 {}", p_name))
-                                            .size(11.5)
-                                            .color(cp.accent),
-                                    );
-                                }
+                                ui.add_space(8.0);
+                                render_actions(ui);
+                                render_info(ui);
                             });
                         });
+                    }
                     });
             }
             if let Some(t) = to_complete {
