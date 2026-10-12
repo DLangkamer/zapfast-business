@@ -198,12 +198,17 @@ impl Archive {
         let first_col_id = columns.first().map(|c| c.id.as_str()).unwrap_or("lead");
 
         let mut statement = self.connection.prepare(
-            "SELECT chat_id, column_id, value_cents, notes, tags, updated_at
+            "SELECT chat_id,
+                    COALESCE(column_id, 'lead'),
+                    COALESCE(value_cents, 0),
+                    COALESCE(notes, ''),
+                    COALESCE(tags, '[]'),
+                    COALESCE(updated_at, 0)
              FROM crm_deals
              ORDER BY updated_at DESC",
         )?;
         let rows = statement.query_map([], |row| {
-            let tags_json: String = row.get(4)?;
+            let tags_json: String = row.get(4).unwrap_or_else(|_| "[]".to_string());
             let tags = serde_json::from_str(&tags_json).unwrap_or_default();
             Ok(CrmDeal {
                 chat_id: row.get(0)?,
@@ -214,7 +219,15 @@ impl Archive {
                 updated_at: row.get(5)?,
             })
         })?;
-        let mut deals: Vec<CrmDeal> = rows.collect::<std::result::Result<Vec<_>, _>>()?;
+        let mut deals = Vec::new();
+        for row_res in rows {
+            match row_res {
+                Ok(deal) => deals.push(deal),
+                Err(err) => {
+                    log::warn!("Skipping invalid crm_deal row: {err:?}");
+                }
+            }
+        }
 
         // Reconcile and heal any deals with invalid or orphaned column_ids
         for deal in &mut deals {
@@ -228,12 +241,17 @@ impl Archive {
 
     pub fn crm_deal(&self, chat_id: &str) -> Result<Option<CrmDeal>> {
         let mut statement = self.connection.prepare(
-            "SELECT chat_id, column_id, value_cents, notes, tags, updated_at
+            "SELECT chat_id,
+                    COALESCE(column_id, 'lead'),
+                    COALESCE(value_cents, 0),
+                    COALESCE(notes, ''),
+                    COALESCE(tags, '[]'),
+                    COALESCE(updated_at, 0)
              FROM crm_deals
              WHERE chat_id = ?1",
         )?;
         let mut rows = statement.query_map(params![chat_id], |row| {
-            let tags_json: String = row.get(4)?;
+            let tags_json: String = row.get(4).unwrap_or_else(|_| "[]".to_string());
             let tags = serde_json::from_str(&tags_json).unwrap_or_default();
             Ok(CrmDeal {
                 chat_id: row.get(0)?,
@@ -245,7 +263,7 @@ impl Archive {
             })
         })?;
         match rows.next() {
-            Some(row) => Ok(Some(row?)),
+            Some(row) => Ok(row.ok()),
             None => Ok(None),
         }
     }
@@ -353,21 +371,28 @@ impl Archive {
              ORDER BY CASE WHEN status = 'done' THEN 1 ELSE 0 END, due_at IS NULL, due_at, created_at",
         )?;
         let rows = statement.query_map([], |row| {
+            let kind: String = row
+                .get::<_, Option<String>>(7)?
+                .unwrap_or_else(|| "task".into());
+            let mut status: String = row
+                .get::<_, Option<String>>(5)?
+                .unwrap_or_else(|| "todo".into());
+            if matches!(kind.as_str(), "call" | "conversation")
+                && matches!(status.as_str(), "todo" | "doing" | "review")
+            {
+                status = "scheduled".into();
+            }
             Ok(CrmTask {
                 id: row.get(0)?,
                 chat_id: row.get(1)?,
                 project_id: row.get(2)?,
                 title: row.get(3)?,
                 description: row.get::<_, Option<String>>(4)?.unwrap_or_default(),
-                status: row
-                    .get::<_, Option<String>>(5)?
-                    .unwrap_or_else(|| "todo".into()),
+                status,
                 priority: row
                     .get::<_, Option<String>>(6)?
                     .unwrap_or_else(|| "normal".into()),
-                kind: row
-                    .get::<_, Option<String>>(7)?
-                    .unwrap_or_else(|| "task".into()),
+                kind,
                 duration_minutes: row.get(8)?,
                 assignee: row.get::<_, Option<String>>(9)?.unwrap_or_default(),
                 call_result: row.get::<_, Option<String>>(10)?.unwrap_or_default(),
@@ -379,7 +404,16 @@ impl Archive {
                 updated_at: row.get::<_, Option<i64>>(16)?.unwrap_or(0),
             })
         })?;
-        rows.collect()
+        let mut tasks = Vec::new();
+        for row_res in rows {
+            match row_res {
+                Ok(task) => tasks.push(task),
+                Err(err) => {
+                    log::warn!("Skipping invalid crm_task row: {err:?}");
+                }
+            }
+        }
+        Ok(tasks)
     }
 
     pub fn upsert_crm_task(&self, task: &CrmTask) -> Result<()> {

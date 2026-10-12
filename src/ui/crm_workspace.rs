@@ -405,22 +405,7 @@ pub fn show(app: &mut App, ui: &mut egui::Ui) {
                                     ui.ctx().request_repaint();
                                 }
                             }
-                            WorkspaceView::Calls => {
-                                let btn = egui::Button::new(
-                                    RichText::new("+ Nova call")
-                                        .size(13.0)
-                                        .strong()
-                                        .color(cp.on_accent),
-                                )
-                                .fill(cp.accent)
-                                .corner_radius(CornerRadius::same(8))
-                                .min_size(vec2(130.0, 34.0));
-                                let form_id = ui.id().with(("crm-call-form", app.id.as_str()));
-                                if ui.add(btn).clicked() {
-                                    ui.ctx().data_mut(|d| d.insert_temp(form_id, true));
-                                    ui.ctx().request_repaint();
-                                }
-                            }
+                            WorkspaceView::Calls => {}
                             WorkspaceView::Funnel => {
                                 let add_stage_id = egui::Id::new("funnel_add_stage_open");
                                 let add_deal_id = egui::Id::new("funnel_add_deal_open");
@@ -1899,11 +1884,6 @@ fn render_funnel_column(
             ui.vertical(|ui| {
                 // Column Header
                 ui.horizontal(|ui| {
-                    let (r, _) = ui.allocate_exact_size(Vec2::splat(12.0), egui::Sense::hover());
-                    ui.painter().circle_filled(r.center(), 5.0, col_color);
-
-                    ui.label(RichText::new(&col.title).size(14.0).strong().color(cp.text));
-
                     ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
                         // Delete stage button
                         if app.crm_columns.len() > 1 {
@@ -1976,6 +1956,19 @@ fn render_funnel_column(
                                 }
                             }
                         }
+
+                        // Title and indicator on the left
+                        ui.with_layout(Layout::left_to_right(Align::Center), |ui| {
+                            let (r, _) = ui.allocate_exact_size(Vec2::splat(12.0), egui::Sense::hover());
+                            ui.painter().circle_filled(r.center(), 5.0, col_color);
+                            ui.add(
+                                egui::Label::new(
+                                    RichText::new(&col.title).size(13.0).strong().color(cp.text),
+                                )
+                                .truncate(),
+                            )
+                            .on_hover_text(&col.title);
+                        });
                     });
                 });
 

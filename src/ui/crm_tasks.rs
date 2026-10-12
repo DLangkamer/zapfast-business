@@ -1,7 +1,7 @@
 //! Account-scoped CRM task and follow-up inbox.
 
 use crate::app::App;
-use crate::model::{Action, CrmFollowup, CrmTask};
+use crate::model::{Action, CrmDeal, CrmFollowup, CrmTask};
 use crate::theme::{self, Icon};
 use crate::ui::crm_workspace::{CrmPalette, empty_state};
 use egui::{
@@ -75,90 +75,1185 @@ pub fn show_workspace(app: &mut App, ui: &mut egui::Ui) {
     show_task_board(app, ui, &cp);
 }
 
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum AgendaViewMode {
+    Day,
+    Week,
+    Month,
+}
+
+fn day_step(date: Date, delta: i32) -> Date {
+    if delta == 0 {
+        date
+    } else if delta > 0 {
+        let mut d = date;
+        for _ in 0..delta {
+            if let Ok(next) = d.tomorrow() {
+                d = next;
+            }
+        }
+        d
+    } else {
+        let mut d = date;
+        for _ in 0..(-delta) {
+            if let Ok(prev) = d.yesterday() {
+                d = prev;
+            }
+        }
+        d
+    }
+}
+
+fn pt_month_name(month: i8) -> &'static str {
+    match month {
+        1 => "Janeiro",
+        2 => "Fevereiro",
+        3 => "Março",
+        4 => "Abril",
+        5 => "Maio",
+        6 => "Junho",
+        7 => "Julho",
+        8 => "Agosto",
+        9 => "Setembro",
+        10 => "Outubro",
+        11 => "Novembro",
+        12 => "Dezembro",
+        _ => "",
+    }
+}
+
+fn pt_weekday_short(day_offset: usize) -> &'static str {
+    match day_offset {
+        0 => "Seg",
+        1 => "Ter",
+        2 => "Qua",
+        3 => "Qui",
+        4 => "Sex",
+        5 => "Sáb",
+        6 => "Dom",
+        _ => "",
+    }
+}
+
+fn pt_weekday_full(day_offset: usize) -> &'static str {
+    match day_offset {
+        0 => "Segunda-feira",
+        1 => "Terça-feira",
+        2 => "Quarta-feira",
+        3 => "Quinta-feira",
+        4 => "Sexta-feira",
+        5 => "Sábado",
+        6 => "Domingo",
+        _ => "",
+    }
+}
+
+fn format_range_title(view_mode: AgendaViewMode, anchor_date: Date) -> String {
+    match view_mode {
+        AgendaViewMode::Day => {
+            let w_idx = anchor_date.weekday().to_monday_zero_offset() as usize;
+            format!(
+                "{}, {} de {} de {}",
+                pt_weekday_full(w_idx),
+                anchor_date.day(),
+                pt_month_name(anchor_date.month()),
+                anchor_date.year()
+            )
+        }
+        AgendaViewMode::Week => {
+            let mon_offset = anchor_date.weekday().to_monday_zero_offset() as i32;
+            let mon = day_step(anchor_date, -mon_offset);
+            let sun = day_step(mon, 6);
+            if mon.month() == sun.month() {
+                format!(
+                    "{} a {} de {} de {}",
+                    mon.day(),
+                    sun.day(),
+                    pt_month_name(mon.month()),
+                    mon.year()
+                )
+            } else {
+                format!(
+                    "{} de {} a {} de {} de {}",
+                    mon.day(),
+                    pt_month_name(mon.month()),
+                    sun.day(),
+                    pt_month_name(sun.month()),
+                    sun.year()
+                )
+            }
+        }
+        AgendaViewMode::Month => {
+            format!("{} de {}", pt_month_name(anchor_date.month()), anchor_date.year())
+        }
+    }
+}
+
+#[derive(Clone)]
+pub struct AgendaEventItem {
+    pub id: String,
+    pub title: String,
+    pub subtitle: String,
+    pub date: Date,
+    pub hour: u8,
+    pub minute: u8,
+    pub duration_minutes: u16,
+    pub kind: String,
+    pub status: String,
+    pub color_bg: Color32,
+    pub color_fg: Color32,
+    pub raw_task: Option<CrmTask>,
+    pub raw_followup: Option<CrmFollowup>,
+}
+
+fn get_day_events(app: &App, date: Date) -> Vec<AgendaEventItem> {
+    let mut items = Vec::new();
+
+    for task in &app.crm_tasks {
+        if let Some(due) = task.due_at {
+            if let Some((d, h, m)) = crate::util::local_datetime(due) {
+                if d == date {
+                    let is_call = matches!(task.kind.as_str(), "call" | "conversation");
+                    let client_name = task
+                        .chat_id
+                        .as_ref()
+                        .and_then(|id| app.chat(id))
+                        .map(|c| app.chat_title(c))
+                        .unwrap_or_default();
+                    items.push(AgendaEventItem {
+                        id: task.id.clone(),
+                        title: task.title.clone(),
+                        subtitle: if !client_name.is_empty() {
+                            client_name
+                        } else {
+                            task.assignee.clone()
+                        },
+                        date,
+                        hour: h,
+                        minute: m,
+                        duration_minutes: task.duration_minutes.unwrap_or(30),
+                        kind: if is_call { "call".into() } else { "task".into() },
+                        status: task.status.clone(),
+                        color_bg: if is_call {
+                            Color32::from_rgb(0x02, 0x84, 0xc7)
+                        } else {
+                            Color32::from_rgb(0x04, 0x78, 0x57)
+                        },
+                        color_fg: if is_call {
+                            Color32::from_rgb(0x7d, 0xd3, 0xfc)
+                        } else {
+                            Color32::from_rgb(0x6e, 0xe7, 0xb7)
+                        },
+                        raw_task: Some(task.clone()),
+                        raw_followup: None,
+                    });
+                }
+            }
+        }
+    }
+
+    for item in &app.crm_followups {
+        if !item.done {
+            if let Some((d, h, m)) = crate::util::local_datetime(item.remind_at) {
+                if d == date {
+                    let client_name = app
+                        .chat(&item.chat_id)
+                        .map(|c| app.chat_title(c))
+                        .unwrap_or_else(|| item.chat_id.clone());
+                    items.push(AgendaEventItem {
+                        id: item.id.clone(),
+                        title: item.title.clone(),
+                        subtitle: client_name,
+                        date,
+                        hour: h,
+                        minute: m,
+                        duration_minutes: 15,
+                        kind: "followup".into(),
+                        status: "pending".into(),
+                        color_bg: Color32::from_rgb(0xb4, 0x53, 0x09),
+                        color_fg: Color32::from_rgb(0xfc, 0xd3, 0x4d),
+                        raw_task: None,
+                        raw_followup: Some(item.clone()),
+                    });
+                }
+            }
+        }
+    }
+
+    items.sort_by_key(|e| (e.hour, e.minute));
+    items
+}
+
+fn render_agenda_day_view(
+    app: &mut App,
+    ui: &mut egui::Ui,
+    cp: &CrmPalette,
+    date: Date,
+    _now: i64,
+    draft: &mut TaskDraft,
+    show_modal: &mut bool,
+) {
+    let events = get_day_events(app, date);
+    let time_col_w = 54.0;
+    let slot_w = (ui.available_width() - time_col_w - 20.0).max(240.0);
+    let slot_h = 60.0;
+
+    for hour in 7..=22 {
+        ui.horizontal(|ui| {
+            let (r, _) = ui.allocate_exact_size(vec2(time_col_w, slot_h), egui::Sense::hover());
+            ui.painter().text(
+                r.center(),
+                egui::Align2::CENTER_CENTER,
+                format!("{:02}:00", hour),
+                theme::medium(12.5),
+                cp.dim,
+            );
+
+            let hour_events: Vec<&AgendaEventItem> =
+                events.iter().filter(|e| e.hour == hour).collect();
+            let slot_rect = egui::Rect::from_min_size(ui.cursor().min, vec2(slot_w, slot_h));
+            let slot_id = ui.id().with(("day_slot", date.to_string(), hour));
+            let slot_resp = ui.interact(slot_rect, slot_id, egui::Sense::click());
+
+            let is_hovered = slot_resp.hovered();
+
+            Frame::new()
+                .fill(if is_hovered && hour_events.is_empty() {
+                    cp.surface_hover
+                } else {
+                    cp.surface
+                })
+                .stroke(Stroke::new(0.5, cp.outline.gamma_multiply(0.6)))
+                .corner_radius(CornerRadius::same(6))
+                .inner_margin(Margin::symmetric(10, 6))
+                .show(ui, |ui| {
+                    ui.set_width(slot_w - 20.0);
+                    ui.set_min_height(slot_h - 12.0);
+
+                    if hour_events.is_empty() {
+                        if is_hovered {
+                            ui.horizontal(|ui| {
+                                ui.label(
+                                    RichText::new(format!("+ Agendar às {:02}:00", hour))
+                                        .size(12.0)
+                                        .color(cp.accent),
+                                );
+                            });
+                        }
+                    } else {
+                        for ev in &hour_events {
+                            ui.horizontal(|ui| {
+                                let (bar_rect, _) =
+                                    ui.allocate_exact_size(vec2(3.5, 28.0), egui::Sense::hover());
+                                ui.painter().rect_filled(
+                                    bar_rect,
+                                    CornerRadius::same(2),
+                                    ev.color_bg,
+                                );
+
+                                ui.add_space(4.0);
+                                ui.vertical(|ui| {
+                                    ui.horizontal(|ui| {
+                                        ui.label(
+                                            RichText::new(&ev.title)
+                                                .size(13.5)
+                                                .strong()
+                                                .color(cp.text),
+                                        );
+                                        ui.add_space(6.0);
+                                        Frame::new()
+                                            .fill(ev.color_bg.gamma_multiply(0.25))
+                                            .corner_radius(CornerRadius::same(4))
+                                            .inner_margin(Margin::symmetric(6, 2))
+                                            .show(ui, |ui| {
+                                                ui.label(
+                                                    RichText::new(format!(
+                                                        "{:02}:{:02} ({} min)",
+                                                        ev.hour, ev.minute, ev.duration_minutes
+                                                    ))
+                                                    .size(11.0)
+                                                    .strong()
+                                                    .color(ev.color_fg),
+                                                );
+                                            });
+                                    });
+                                    if !ev.subtitle.is_empty() {
+                                        ui.label(
+                                            RichText::new(&ev.subtitle)
+                                                .size(11.5)
+                                                .color(cp.secondary),
+                                        );
+                                    }
+                                });
+
+                                ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
+                                    if let Some(ref t) = ev.raw_task {
+                                        if ui.small_button("Editar").clicked() {
+                                            *draft = TaskDraft {
+                                                id: Some(t.id.clone()),
+                                                title: t.title.clone(),
+                                                description: t.description.clone(),
+                                                priority: t.priority.clone(),
+                                                status: if matches!(
+                                                    t.status.as_str(),
+                                                    "todo" | "doing" | "review"
+                                                ) && matches!(
+                                                    t.kind.as_str(),
+                                                    "call" | "conversation"
+                                                ) {
+                                                    "scheduled".into()
+                                                } else {
+                                                    t.status.clone()
+                                                },
+                                                assignee: t.assignee.clone(),
+                                                kind: t.kind.clone(),
+                                                duration_minutes: t.duration_minutes.unwrap_or(30),
+                                                call_result: t.call_result.clone(),
+                                                next_step: t.next_step.clone(),
+                                                revenue_reais: format_revenue_input(
+                                                    t.revenue_cents,
+                                                ),
+                                                project_id: t.project_id.clone(),
+                                                has_due: t.due_at.is_some(),
+                                                due_date: date,
+                                                due_hour: ev.hour,
+                                                due_minute: ev.minute,
+                                                chat_id: t.chat_id.clone(),
+                                                link_chat: t.chat_id.is_some(),
+                                            };
+                                            *show_modal = true;
+                                        }
+
+                                        if ui
+                                            .small_button("+1h")
+                                            .on_hover_text("Adiar 1 hora")
+                                            .clicked()
+                                        {
+                                            let mut updated = t.clone();
+                                            if let Some(due) = updated.due_at {
+                                                updated.due_at = Some(due + 3600);
+                                                updated.updated_at = crate::util::now();
+                                                app.actions.push(Action::SaveCrmTask(updated));
+                                                ui.ctx().request_repaint();
+                                            }
+                                        }
+
+                                        if ui
+                                            .small_button("-1h")
+                                            .on_hover_text("Adiantar 1 hora")
+                                            .clicked()
+                                        {
+                                            let mut updated = t.clone();
+                                            if let Some(due) = updated.due_at {
+                                                updated.due_at = Some(due - 3600);
+                                                updated.updated_at = crate::util::now();
+                                                app.actions.push(Action::SaveCrmTask(updated));
+                                                ui.ctx().request_repaint();
+                                            }
+                                        }
+                                    }
+                                });
+                            });
+                            ui.add_space(4.0);
+                        }
+                    }
+                });
+
+            if slot_resp.clicked() && hour_events.is_empty() {
+                *draft = TaskDraft {
+                    due_date: date,
+                    due_hour: hour,
+                    due_minute: 0,
+                    has_due: true,
+                    kind: "call".into(),
+                    status: "scheduled".into(),
+                    duration_minutes: 30,
+                    ..TaskDraft::default()
+                };
+                *show_modal = true;
+            }
+        });
+        ui.add_space(3.0);
+    }
+}
+
+fn render_agenda_week_view(
+    app: &mut App,
+    ui: &mut egui::Ui,
+    cp: &CrmPalette,
+    anchor_date: Date,
+    today: Date,
+    _now: i64,
+    draft: &mut TaskDraft,
+    show_modal: &mut bool,
+) {
+    let avail_w = ui.available_width();
+    let time_col_w = 48.0;
+    let days_w = (avail_w - time_col_w - 14.0).max(560.0);
+    let col_w = (days_w / 7.0).max(75.0);
+    let row_h = 54.0;
+
+    let mon_offset = anchor_date.weekday().to_monday_zero_offset() as i32;
+    let monday = day_step(anchor_date, -mon_offset);
+    let week_days: Vec<Date> = (0..7).map(|i| day_step(monday, i)).collect();
+
+    let week_events: Vec<Vec<AgendaEventItem>> =
+        week_days.iter().map(|d| get_day_events(app, *d)).collect();
+
+    ui.horizontal(|ui| {
+        ui.allocate_exact_size(vec2(time_col_w, 36.0), egui::Sense::hover());
+        for (i, d) in week_days.iter().enumerate() {
+            let is_today = *d == today;
+            let header_bg = if is_today {
+                cp.accent.gamma_multiply(0.18)
+            } else {
+                cp.surface
+            };
+            let border_stroke = if is_today {
+                Stroke::new(1.5, cp.accent)
+            } else {
+                Stroke::new(1.0, cp.outline)
+            };
+            Frame::new()
+                .fill(header_bg)
+                .stroke(border_stroke)
+                .corner_radius(CornerRadius::same(6))
+                .inner_margin(Margin::symmetric(4, 4))
+                .show(ui, |ui| {
+                    ui.set_width(col_w - 8.0);
+                    ui.vertical_centered(|ui| {
+                        ui.label(
+                            RichText::new(format!("{} {:02}", pt_weekday_short(i), d.day()))
+                                .size(12.5)
+                                .strong()
+                                .color(if is_today { cp.accent } else { cp.text }),
+                        );
+                    });
+                });
+        }
+    });
+
+    ui.add_space(4.0);
+
+    for hour in 8..=20 {
+        ui.horizontal(|ui| {
+            let (r, _) = ui.allocate_exact_size(vec2(time_col_w, row_h), egui::Sense::hover());
+            ui.painter().text(
+                r.center(),
+                egui::Align2::CENTER_CENTER,
+                format!("{:02}:00", hour),
+                theme::medium(11.5),
+                cp.dim,
+            );
+
+            for (day_idx, date) in week_days.iter().enumerate() {
+                let cell_rect = egui::Rect::from_min_size(ui.cursor().min, vec2(col_w, row_h));
+                let cell_events: Vec<&AgendaEventItem> = week_events[day_idx]
+                    .iter()
+                    .filter(|e| e.hour == hour)
+                    .collect();
+
+                let cell_id = ui.id().with(("week_cell", date.to_string(), hour));
+                let cell_resp = ui.interact(cell_rect, cell_id, egui::Sense::click());
+
+                let is_hovered = cell_resp.hovered();
+                let bg_color = if is_hovered && cell_events.is_empty() {
+                    cp.surface_hover
+                } else {
+                    cp.surface
+                };
+
+                Frame::new()
+                    .fill(bg_color)
+                    .stroke(Stroke::new(0.5, cp.outline.gamma_multiply(0.5)))
+                    .corner_radius(CornerRadius::same(4))
+                    .inner_margin(Margin::symmetric(3, 3))
+                    .show(ui, |ui| {
+                        ui.set_width(col_w - 6.0);
+                        ui.set_height(row_h - 6.0);
+
+                        if cell_events.is_empty() {
+                            if is_hovered {
+                                ui.vertical_centered(|ui| {
+                                    ui.add_space(12.0);
+                                    ui.label(RichText::new("+ Agendar").size(10.5).color(cp.accent));
+                                });
+                            }
+                        } else {
+                            for ev in cell_events.iter().take(2) {
+                                let ev_chip = egui::Button::new(
+                                    RichText::new(format!(
+                                        "{} {:02}:{:02} {}",
+                                        if ev.kind == "call" {
+                                            "📞"
+                                        } else if ev.kind == "task" {
+                                            "✓"
+                                        } else {
+                                            "🔔"
+                                        },
+                                        ev.hour,
+                                        ev.minute,
+                                        ev.title
+                                    ))
+                                    .size(10.5)
+                                    .strong()
+                                    .color(ev.color_fg),
+                                )
+                                .fill(ev.color_bg.gamma_multiply(0.35))
+                                .stroke(Stroke::new(1.0, ev.color_bg))
+                                .corner_radius(CornerRadius::same(4));
+
+                                if ui
+                                    .add_sized([col_w - 8.0, 20.0], ev_chip)
+                                    .on_hover_text(format!(
+                                        "{}\n{}: {}",
+                                        ev.title, ev.kind, ev.subtitle
+                                    ))
+                                    .clicked()
+                                {
+                                    if let Some(ref t) = ev.raw_task {
+                                        *draft = TaskDraft {
+                                            id: Some(t.id.clone()),
+                                            title: t.title.clone(),
+                                            description: t.description.clone(),
+                                            priority: t.priority.clone(),
+                                            status: if matches!(
+                                                t.status.as_str(),
+                                                "todo" | "doing" | "review"
+                                            ) && matches!(
+                                                t.kind.as_str(),
+                                                "call" | "conversation"
+                                            ) {
+                                                "scheduled".into()
+                                            } else {
+                                                t.status.clone()
+                                            },
+                                            assignee: t.assignee.clone(),
+                                            kind: t.kind.clone(),
+                                            duration_minutes: t.duration_minutes.unwrap_or(30),
+                                            call_result: t.call_result.clone(),
+                                            next_step: t.next_step.clone(),
+                                            revenue_reais: format_revenue_input(t.revenue_cents),
+                                            project_id: t.project_id.clone(),
+                                            has_due: t.due_at.is_some(),
+                                            due_date: *date,
+                                            due_hour: ev.hour,
+                                            due_minute: ev.minute,
+                                            chat_id: t.chat_id.clone(),
+                                            link_chat: t.chat_id.is_some(),
+                                        };
+                                        *show_modal = true;
+                                    }
+                                }
+                            }
+                            if cell_events.len() > 2 {
+                                ui.label(
+                                    RichText::new(format!("+{} mais", cell_events.len() - 2))
+                                        .size(9.5)
+                                        .color(cp.dim),
+                                );
+                            }
+                        }
+                    });
+
+                if cell_resp.clicked() && cell_events.is_empty() {
+                    *draft = TaskDraft {
+                        due_date: *date,
+                        due_hour: hour,
+                        due_minute: 0,
+                        has_due: true,
+                        kind: "call".into(),
+                        status: "scheduled".into(),
+                        duration_minutes: 30,
+                        ..TaskDraft::default()
+                    };
+                    *show_modal = true;
+                }
+            }
+        });
+    }
+}
+
+fn render_agenda_month_view(
+    app: &mut App,
+    ui: &mut egui::Ui,
+    cp: &CrmPalette,
+    anchor_date: Date,
+    today: Date,
+    _now: i64,
+    draft: &mut TaskDraft,
+    show_modal: &mut bool,
+) {
+    let avail_w = ui.available_width();
+    let col_w = ((avail_w - 24.0) / 7.0).max(65.0);
+    let cell_h = 88.0;
+
+    let first = anchor_date.first_of_month();
+    let lead = usize::try_from(first.weekday().to_monday_zero_offset()).unwrap_or(0);
+    let days_in_month = first.days_in_month() as usize;
+    let cells_count = (lead + days_in_month).div_ceil(7) * 7;
+
+    ui.horizontal(|ui| {
+        for i in 0..7 {
+            ui.add_sized(
+                [col_w, 24.0],
+                egui::Label::new(
+                    RichText::new(pt_weekday_short(i))
+                        .size(12.0)
+                        .strong()
+                        .color(cp.dim),
+                ),
+            );
+        }
+    });
+
+    ui.add_space(4.0);
+
+    for row_idx in 0..(cells_count / 7) {
+        ui.horizontal(|ui| {
+            for col_idx in 0..7 {
+                let cell_idx = row_idx * 7 + col_idx;
+                if cell_idx < lead || cell_idx >= lead + days_in_month {
+                    Frame::new()
+                        .fill(cp.panel.gamma_multiply(0.4))
+                        .stroke(Stroke::new(0.5, cp.outline.gamma_multiply(0.3)))
+                        .corner_radius(CornerRadius::same(4))
+                        .show(ui, |ui| {
+                            ui.set_width(col_w - 4.0);
+                            ui.set_height(cell_h - 4.0);
+                        });
+                } else {
+                    let day = (cell_idx - lead + 1) as i8;
+                    if let Ok(date) = Date::new(anchor_date.year(), anchor_date.month(), day) {
+                        let is_today = date == today;
+                        let day_events = get_day_events(app, date);
+
+                        let cell_id = ui.id().with(("month_cell", date.to_string()));
+                        let cell_rect =
+                            egui::Rect::from_min_size(ui.cursor().min, vec2(col_w, cell_h));
+                        let cell_resp = ui.interact(cell_rect, cell_id, egui::Sense::click());
+
+                        let bg_color = if cell_resp.hovered() {
+                            cp.surface_hover
+                        } else if is_today {
+                            cp.surface_hover.gamma_multiply(0.9)
+                        } else {
+                            cp.surface
+                        };
+
+                        let border_stroke = if is_today {
+                            Stroke::new(1.5, cp.accent)
+                        } else {
+                            Stroke::new(0.5, cp.outline)
+                        };
+
+                        Frame::new()
+                            .fill(bg_color)
+                            .stroke(border_stroke)
+                            .corner_radius(CornerRadius::same(6))
+                            .inner_margin(Margin::symmetric(5, 5))
+                            .show(ui, |ui| {
+                                ui.set_width(col_w - 4.0);
+                                ui.set_height(cell_h - 4.0);
+
+                                ui.horizontal(|ui| {
+                                    if is_today {
+                                        Frame::new()
+                                            .fill(cp.accent)
+                                            .corner_radius(CornerRadius::same(9))
+                                            .inner_margin(Margin::symmetric(6, 1))
+                                            .show(ui, |ui| {
+                                                ui.label(
+                                                    RichText::new(day.to_string())
+                                                        .size(11.5)
+                                                        .strong()
+                                                        .color(cp.on_accent),
+                                                );
+                                            });
+                                    } else {
+                                        ui.label(
+                                            RichText::new(day.to_string())
+                                                .size(12.0)
+                                                .strong()
+                                                .color(cp.text),
+                                        );
+                                    }
+                                });
+
+                                ui.add_space(2.0);
+
+                                for ev in day_events.iter().take(3) {
+                                    let chip_btn = egui::Button::new(
+                                        RichText::new(format!(
+                                            "{} {:02}:{:02} {}",
+                                            if ev.kind == "call" {
+                                                "📞"
+                                            } else if ev.kind == "task" {
+                                                "✓"
+                                            } else {
+                                                "🔔"
+                                            },
+                                            ev.hour,
+                                            ev.minute,
+                                            ev.title
+                                        ))
+                                        .size(10.0)
+                                        .color(ev.color_fg),
+                                    )
+                                    .fill(ev.color_bg.gamma_multiply(0.35))
+                                    .corner_radius(CornerRadius::same(3));
+
+                                    if ui
+                                        .add_sized([col_w - 8.0, 16.0], chip_btn)
+                                        .on_hover_text(format!("{}\n{}", ev.title, ev.subtitle))
+                                        .clicked()
+                                    {
+                                        if let Some(ref t) = ev.raw_task {
+                                            *draft = TaskDraft {
+                                                id: Some(t.id.clone()),
+                                                title: t.title.clone(),
+                                                description: t.description.clone(),
+                                                priority: t.priority.clone(),
+                                                status: if matches!(
+                                                    t.status.as_str(),
+                                                    "todo" | "doing" | "review"
+                                                ) && matches!(
+                                                    t.kind.as_str(),
+                                                    "call" | "conversation"
+                                                ) {
+                                                    "scheduled".into()
+                                                } else {
+                                                    t.status.clone()
+                                                },
+                                                assignee: t.assignee.clone(),
+                                                kind: t.kind.clone(),
+                                                duration_minutes: t.duration_minutes.unwrap_or(30),
+                                                call_result: t.call_result.clone(),
+                                                next_step: t.next_step.clone(),
+                                                revenue_reais: format_revenue_input(
+                                                    t.revenue_cents,
+                                                ),
+                                                project_id: t.project_id.clone(),
+                                                has_due: t.due_at.is_some(),
+                                                due_date: date,
+                                                due_hour: ev.hour,
+                                                due_minute: ev.minute,
+                                                chat_id: t.chat_id.clone(),
+                                                link_chat: t.chat_id.is_some(),
+                                            };
+                                            *show_modal = true;
+                                        }
+                                    }
+                                }
+
+                                if day_events.len() > 3 {
+                                    ui.label(
+                                        RichText::new(format!("+{} mais", day_events.len() - 3))
+                                            .size(9.0)
+                                            .color(cp.dim),
+                                    );
+                                }
+                            });
+
+                        if cell_resp.clicked() {
+                            *draft = TaskDraft {
+                                due_date: date,
+                                due_hour: 9,
+                                due_minute: 0,
+                                has_due: true,
+                                kind: "call".into(),
+                                status: "scheduled".into(),
+                                duration_minutes: 30,
+                                ..TaskDraft::default()
+                            };
+                            *show_modal = true;
+                        }
+                    }
+                }
+            }
+        });
+        ui.add_space(3.0);
+    }
+}
+
 pub fn show_agenda_workspace(app: &mut App, ui: &mut egui::Ui) {
     let cp = CrmPalette::from_app(&app.palette);
+    let now = crate::util::now();
+    let today = crate::util::today();
     let account_id = app.id.as_str().to_owned();
-    let draft_id = ui.id().with(("crm-task-draft", &account_id));
-    let calendar_id = ui.id().with(("crm-calendar-open", &account_id));
+
+    let view_mode_id = ui.id().with(("crm-agenda-view-mode", &account_id));
+    let anchor_date_id = ui.id().with(("crm-agenda-anchor-date", &account_id));
+    let draft_id = ui.id().with(("crm-agenda-draft", &account_id));
+    let modal_id = ui.id().with(("crm-agenda-modal-open", &account_id));
+
+    let mut view_mode = ui.data_mut(|d| {
+        d.get_temp::<AgendaViewMode>(view_mode_id)
+            .unwrap_or(AgendaViewMode::Week)
+    });
+    let mut anchor_date = ui.data_mut(|d| d.get_temp::<Date>(anchor_date_id).unwrap_or(today));
     let mut draft = ui.data_mut(|d| d.get_temp::<TaskDraft>(draft_id).unwrap_or_default());
-    let mut calendar_open = ui.data_mut(|d| d.get_temp::<bool>(calendar_id).unwrap_or(false));
+    let mut show_modal = ui.data_mut(|d| d.get_temp::<bool>(modal_id).unwrap_or(false));
 
-    let avail = ui.available_width();
-    let (btn_fill, btn_color) = if calendar_open {
-        (cp.accent, cp.on_accent)
-    } else {
-        (cp.surface, cp.text)
-    };
-    let toggle_btn = egui::Button::new(
-        RichText::new(if calendar_open {
-            "Fechar calendário"
-        } else {
-            "📅 Escolher data"
-        })
-        .size(13.0)
-        .strong()
-        .color(btn_color),
-    )
-    .fill(btn_fill)
-    .stroke(Stroke::new(
-        1.0,
-        if calendar_open { cp.accent } else { cp.outline },
-    ))
-    .corner_radius(CornerRadius::same(8))
-    .min_size(vec2(140.0, 32.0));
-
-    if avail < 560.0 {
+    let bar_avail = ui.available_width();
+    if bar_avail < 620.0 {
         ui.vertical(|ui| {
-            if ui.add(toggle_btn).clicked() {
-                calendar_open = !calendar_open;
-                ui.ctx().request_repaint();
-            }
-            ui.add_space(4.0);
-            ui.add(
-                egui::Label::new(
-                    RichText::new(
-                        "O calendário expande somente quando você desejar navegar por outros meses e dias.",
-                    )
-                    .size(12.0)
-                    .color(cp.dim),
+            ui.horizontal(|ui| {
+                let today_btn = egui::Button::new(
+                    RichText::new("Hoje").size(12.5).strong().color(
+                        if anchor_date == today {
+                            cp.on_accent
+                        } else {
+                            cp.text
+                        },
+                    ),
                 )
-                .wrap(),
-            );
+                .fill(if anchor_date == today {
+                    cp.accent
+                } else {
+                    cp.surface
+                })
+                .stroke(Stroke::new(
+                    1.0,
+                    if anchor_date == today {
+                        cp.accent
+                    } else {
+                        cp.outline
+                    },
+                ))
+                .corner_radius(CornerRadius::same(6))
+                .min_size(vec2(54.0, 30.0));
+                if ui
+                    .add(today_btn)
+                    .on_hover_text("Ir para a data de hoje")
+                    .clicked()
+                {
+                    anchor_date = today;
+                    ui.ctx().request_repaint();
+                }
+
+                let prev_btn =
+                    egui::Button::new(RichText::new("‹").size(16.0).strong().color(cp.text))
+                        .fill(cp.surface)
+                        .stroke(Stroke::new(1.0, cp.outline))
+                        .corner_radius(CornerRadius::same(6))
+                        .min_size(vec2(30.0, 30.0));
+                if ui.add(prev_btn).clicked() {
+                    anchor_date = match view_mode {
+                        AgendaViewMode::Day => day_step(anchor_date, -1),
+                        AgendaViewMode::Week => day_step(anchor_date, -7),
+                        AgendaViewMode::Month => crate::util::month_step(anchor_date, -1),
+                    };
+                    ui.ctx().request_repaint();
+                }
+
+                let next_btn =
+                    egui::Button::new(RichText::new("›").size(16.0).strong().color(cp.text))
+                        .fill(cp.surface)
+                        .stroke(Stroke::new(1.0, cp.outline))
+                        .corner_radius(CornerRadius::same(6))
+                        .min_size(vec2(30.0, 30.0));
+                if ui.add(next_btn).clicked() {
+                    anchor_date = match view_mode {
+                        AgendaViewMode::Day => day_step(anchor_date, 1),
+                        AgendaViewMode::Week => day_step(anchor_date, 7),
+                        AgendaViewMode::Month => crate::util::month_step(anchor_date, 1),
+                    };
+                    ui.ctx().request_repaint();
+                }
+
+                for (mode, label) in [
+                    (AgendaViewMode::Day, "Dia"),
+                    (AgendaViewMode::Week, "Semana"),
+                    (AgendaViewMode::Month, "Mês"),
+                ] {
+                    let is_sel = view_mode == mode;
+                    let btn = egui::Button::new(
+                        RichText::new(label).size(12.0).strong().color(if is_sel {
+                            cp.on_accent
+                        } else {
+                            cp.secondary
+                        }),
+                    )
+                    .fill(if is_sel { cp.accent } else { cp.surface })
+                    .stroke(Stroke::new(1.0, if is_sel { cp.accent } else { cp.outline }))
+                    .corner_radius(CornerRadius::same(6))
+                    .min_size(vec2(52.0, 30.0));
+                    if ui.add(btn).clicked() {
+                        view_mode = mode;
+                        ui.ctx().request_repaint();
+                    }
+                }
+            });
+
+            let range_title = format_range_title(view_mode, anchor_date);
+            ui.label(RichText::new(range_title).size(15.0).strong().color(cp.text));
         });
     } else {
         ui.horizontal(|ui| {
-            if ui.add(toggle_btn).clicked() {
-                calendar_open = !calendar_open;
+            let today_btn = egui::Button::new(
+                RichText::new("Hoje").size(13.0).strong().color(
+                    if anchor_date == today {
+                        cp.on_accent
+                    } else {
+                        cp.text
+                    },
+                ),
+            )
+            .fill(if anchor_date == today {
+                cp.accent
+            } else {
+                cp.surface
+            })
+            .stroke(Stroke::new(
+                1.0,
+                if anchor_date == today {
+                    cp.accent
+                } else {
+                    cp.outline
+                },
+            ))
+            .corner_radius(CornerRadius::same(6))
+            .min_size(vec2(58.0, 32.0));
+            if ui
+                .add(today_btn)
+                .on_hover_text("Ir para a data de hoje")
+                .clicked()
+            {
+                anchor_date = today;
                 ui.ctx().request_repaint();
             }
+
+            ui.add_space(3.0);
+
+            let prev_btn = egui::Button::new(RichText::new("‹").size(17.0).strong().color(cp.text))
+                .fill(cp.surface)
+                .stroke(Stroke::new(1.0, cp.outline))
+                .corner_radius(CornerRadius::same(6))
+                .min_size(vec2(32.0, 32.0));
+            if ui.add(prev_btn).clicked() {
+                anchor_date = match view_mode {
+                    AgendaViewMode::Day => day_step(anchor_date, -1),
+                    AgendaViewMode::Week => day_step(anchor_date, -7),
+                    AgendaViewMode::Month => crate::util::month_step(anchor_date, -1),
+                };
+                ui.ctx().request_repaint();
+            }
+
+            let next_btn = egui::Button::new(RichText::new("›").size(17.0).strong().color(cp.text))
+                .fill(cp.surface)
+                .stroke(Stroke::new(1.0, cp.outline))
+                .corner_radius(CornerRadius::same(6))
+                .min_size(vec2(32.0, 32.0));
+            if ui.add(next_btn).clicked() {
+                anchor_date = match view_mode {
+                    AgendaViewMode::Day => day_step(anchor_date, 1),
+                    AgendaViewMode::Week => day_step(anchor_date, 7),
+                    AgendaViewMode::Month => crate::util::month_step(anchor_date, 1),
+                };
+                ui.ctx().request_repaint();
+            }
+
             ui.add_space(8.0);
-            ui.add(
-                egui::Label::new(
-                    RichText::new(
-                        "O calendário expande somente quando você desejar navegar por outros meses e dias.",
-                    )
-                    .size(12.5)
-                    .color(cp.dim),
+
+            let range_title = format_range_title(view_mode, anchor_date);
+            ui.label(RichText::new(range_title).size(16.0).strong().color(cp.text));
+
+            ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
+                let new_btn = egui::Button::new(
+                    RichText::new("+ Novo Agendamento")
+                        .size(13.0)
+                        .strong()
+                        .color(cp.on_accent),
                 )
-                .wrap(),
-            );
+                .fill(cp.accent)
+                .corner_radius(CornerRadius::same(6))
+                .min_size(vec2(145.0, 32.0));
+                if ui.add(new_btn).clicked() {
+                    draft = TaskDraft {
+                        due_date: anchor_date,
+                        due_hour: 9,
+                        due_minute: 0,
+                        has_due: true,
+                        kind: "call".into(),
+                        status: "scheduled".into(),
+                        duration_minutes: 30,
+                        ..TaskDraft::default()
+                    };
+                    show_modal = true;
+                    ui.ctx().request_repaint();
+                }
+
+                ui.add_space(8.0);
+
+                for (mode, label) in [
+                    (AgendaViewMode::Month, "Mês"),
+                    (AgendaViewMode::Week, "Semana"),
+                    (AgendaViewMode::Day, "Dia"),
+                ] {
+                    let is_sel = view_mode == mode;
+                    let btn = egui::Button::new(
+                        RichText::new(label).size(12.5).strong().color(if is_sel {
+                            cp.on_accent
+                        } else {
+                            cp.secondary
+                        }),
+                    )
+                    .fill(if is_sel { cp.accent } else { cp.surface })
+                    .stroke(Stroke::new(1.0, if is_sel { cp.accent } else { cp.outline }))
+                    .corner_radius(CornerRadius::same(6))
+                    .min_size(vec2(64.0, 32.0));
+                    if ui.add(btn).clicked() {
+                        view_mode = mode;
+                        ui.ctx().request_repaint();
+                    }
+                }
+            });
         });
     }
-    ui.add_space(10.0);
-    if calendar_open {
-        show_calendar(app, ui, crate::util::now(), &mut draft);
-    } else {
-        show_day(
-            app,
-            ui,
-            crate::util::today(),
-            crate::util::now(),
-            &mut draft,
-        );
+
+    ui.add_space(4.0);
+    ui.horizontal(|ui| {
+        ui.label(RichText::new("Legenda:").size(11.5).color(cp.dim));
+
+        Frame::new()
+            .fill(Color32::from_rgb(0x02, 0x84, 0xc7).gamma_multiply(0.2))
+            .corner_radius(CornerRadius::same(4))
+            .inner_margin(Margin::symmetric(6, 2))
+            .show(ui, |ui| {
+                ui.label(
+                    RichText::new("📞 Calls de Venda")
+                        .size(11.0)
+                        .strong()
+                        .color(Color32::from_rgb(0x38, 0xbd, 0xf8)),
+                );
+            });
+
+        Frame::new()
+            .fill(Color32::from_rgb(0x04, 0x78, 0x57).gamma_multiply(0.2))
+            .corner_radius(CornerRadius::same(4))
+            .inner_margin(Margin::symmetric(6, 2))
+            .show(ui, |ui| {
+                ui.label(
+                    RichText::new("✓ Tarefas")
+                        .size(11.0)
+                        .strong()
+                        .color(Color32::from_rgb(0x34, 0xd3, 0x99)),
+                );
+            });
+
+        Frame::new()
+            .fill(Color32::from_rgb(0xb4, 0x53, 0x09).gamma_multiply(0.2))
+            .corner_radius(CornerRadius::same(4))
+            .inner_margin(Margin::symmetric(6, 2))
+            .show(ui, |ui| {
+                ui.label(
+                    RichText::new("🔔 Follow-ups")
+                        .size(11.0)
+                        .strong()
+                        .color(Color32::from_rgb(0xfb, 0xbf, 0x24)),
+                );
+            });
+    });
+
+    ui.add_space(8.0);
+    ui.separator();
+    ui.add_space(6.0);
+
+    egui::ScrollArea::vertical()
+        .auto_shrink([false, false])
+        .show(ui, |ui| match view_mode {
+            AgendaViewMode::Day => {
+                render_agenda_day_view(app, ui, &cp, anchor_date, now, &mut draft, &mut show_modal);
+            }
+            AgendaViewMode::Week => {
+                render_agenda_week_view(
+                    app,
+                    ui,
+                    &cp,
+                    anchor_date,
+                    today,
+                    now,
+                    &mut draft,
+                    &mut show_modal,
+                );
+            }
+            AgendaViewMode::Month => {
+                render_agenda_month_view(
+                    app,
+                    ui,
+                    &cp,
+                    anchor_date,
+                    today,
+                    now,
+                    &mut draft,
+                    &mut show_modal,
+                );
+            }
+        });
+
+    if show_modal {
+        let mut is_open = true;
+        let title = if draft.id.is_some() {
+            if draft.kind == "call" {
+                "Editar Call de Venda"
+            } else {
+                "Editar Tarefa"
+            }
+        } else if draft.kind == "call" {
+            "Nova Call de Venda"
+        } else {
+            "Nova Tarefa"
+        };
+        egui::Window::new(title)
+            .id(ui.id().with("crm-agenda-floating-modal"))
+            .open(&mut is_open)
+            .collapsible(false)
+            .resizable(false)
+            .fixed_size(vec2(520.0, 580.0))
+            .anchor(egui::Align2::CENTER_CENTER, vec2(0.0, 0.0))
+            .frame(
+                Frame::new()
+                    .fill(cp.panel)
+                    .stroke(Stroke::new(1.0, cp.outline))
+                    .corner_radius(CornerRadius::same(12))
+                    .inner_margin(Margin::same(18)),
+            )
+            .show(ui.ctx(), |ui| {
+                if draft.id.is_none() {
+                    ui.horizontal(|ui| {
+                        let is_call = draft.kind == "call";
+                        if ui.selectable_label(is_call, "📞 Call de Venda").clicked() {
+                            draft.kind = "call".into();
+                            draft.status = "scheduled".into();
+                        }
+                        if ui.selectable_label(!is_call, "✓ Tarefa").clicked() {
+                            draft.kind = "task".into();
+                            draft.status = "todo".into();
+                        }
+                    });
+                    ui.add_space(8.0);
+                }
+                egui::ScrollArea::vertical()
+                    .max_height(500.0)
+                    .show(ui, |ui| {
+                        if draft.kind == "call" {
+                            render_call_modal(app, ui, &cp, &mut draft, now, &mut show_modal);
+                        } else {
+                            render_task_form_modal(app, ui, &cp, &mut draft, now, &mut show_modal);
+                        }
+                    });
+            });
+        if !is_open {
+            show_modal = false;
+        }
     }
+
     ui.data_mut(|d| {
+        d.insert_temp(view_mode_id, view_mode);
+        d.insert_temp(anchor_date_id, anchor_date);
         d.insert_temp(draft_id, draft);
-        d.insert_temp(calendar_id, calendar_open);
+        d.insert_temp(modal_id, show_modal);
     });
 }
 
@@ -492,6 +1587,7 @@ pub fn show_calls_workspace(app: &mut App, ui: &mut egui::Ui) {
     let status_text = match status_filter.as_str() {
         "scheduled" => "Agendadas",
         "held" => "Realizadas",
+        "lost" => "Perdidas",
         "no_show" => "No-show",
         "cancelled" => "Canceladas",
         "closed" => "Fechamentos",
@@ -534,13 +1630,16 @@ pub fn show_calls_workspace(app: &mut App, ui: &mut egui::Ui) {
                 if ui.selectable_value(&mut status_filter, "held".into(), "Realizadas").clicked() {
                     ui.ctx().request_repaint();
                 }
+                if ui.selectable_value(&mut status_filter, "closed".into(), "Fechamentos").clicked() {
+                    ui.ctx().request_repaint();
+                }
+                if ui.selectable_value(&mut status_filter, "lost".into(), "Perdidas").clicked() {
+                    ui.ctx().request_repaint();
+                }
                 if ui.selectable_value(&mut status_filter, "no_show".into(), "No-show").clicked() {
                     ui.ctx().request_repaint();
                 }
                 if ui.selectable_value(&mut status_filter, "cancelled".into(), "Canceladas").clicked() {
-                    ui.ctx().request_repaint();
-                }
-                if ui.selectable_value(&mut status_filter, "closed".into(), "Fechamentos").clicked() {
                     ui.ctx().request_repaint();
                 }
             });
@@ -705,8 +1804,10 @@ pub fn show_calls_workspace(app: &mut App, ui: &mut egui::Ui) {
             .id(ui.id().with("crm-call-floating-modal"))
             .open(&mut is_open)
             .collapsible(false)
-            .resizable(false)
-            .fixed_size(vec2(480.0, 540.0))
+            .resizable(true)
+            .default_width(520.0)
+            .default_height(620.0)
+            .max_height(760.0)
             .anchor(egui::Align2::CENTER_CENTER, vec2(0.0, 0.0))
             .frame(
                 Frame::new()
@@ -830,6 +1931,11 @@ fn call_status_pill(ui: &mut egui::Ui, status: &str, cp: &CrmPalette) {
             Color32::from_rgb(0xf8, 0x71, 0x71),
             "Cancelada",
         ),
+        "lost" => (
+            Color32::from_rgb(0x45, 0x0a, 0x0a),
+            Color32::from_rgb(0xf8, 0x71, 0x71),
+            "Perdida",
+        ),
         "closed" => (cp.accent.gamma_multiply(0.18), cp.accent, "Fechamento"),
         _ => (cp.surface_hover, cp.dim, status),
     };
@@ -926,7 +2032,11 @@ fn render_call_card(
                                     title: call.title.clone(),
                                     description: call.description.clone(),
                                     priority: call.priority.clone(),
-                                    status: call.status.clone(),
+                                    status: if matches!(call.status.as_str(), "todo" | "doing" | "review") {
+                                        "scheduled".into()
+                                    } else {
+                                        call.status.clone()
+                                    },
                                     assignee: call.assignee.clone(),
                                     kind: "call".into(),
                                     duration_minutes: call.duration_minutes.unwrap_or(30),
@@ -1072,7 +2182,11 @@ fn render_call_card(
                                     title: call.title.clone(),
                                     description: call.description.clone(),
                                     priority: call.priority.clone(),
-                                    status: call.status.clone(),
+                                    status: if matches!(call.status.as_str(), "todo" | "doing" | "review") {
+                                        "scheduled".into()
+                                    } else {
+                                        call.status.clone()
+                                    },
                                     assignee: call.assignee.clone(),
                                     kind: "call".into(),
                                     duration_minutes: call.duration_minutes.unwrap_or(30),
@@ -1227,8 +2341,220 @@ fn render_call_card(
                     ui.add_space(2.0);
                     ui.label(RichText::new(&call.description).size(11.5).color(cp.dim));
                 }
+
+                render_call_outcome_bar(app, ui, cp, call);
             });
         });
+}
+
+fn render_call_outcome_bar(app: &mut App, ui: &mut egui::Ui, cp: &CrmPalette, call: &CrmTask) {
+    let win_id = egui::Id::new(("call-win-prompt", &call.id));
+    let lost_id = egui::Id::new(("call-lost-prompt", &call.id));
+    let mut show_win = ui.data_mut(|d| d.get_temp::<bool>(win_id).unwrap_or(false));
+    let mut show_lost = ui.data_mut(|d| d.get_temp::<bool>(lost_id).unwrap_or(false));
+
+    ui.add_space(8.0);
+    ui.horizontal_wrapped(|ui| {
+        ui.label(RichText::new("Ações rápidas:").size(11.5).color(cp.dim));
+
+        // 1. Realizada
+        let is_held = call.status == "held";
+        let held_btn = egui::Button::new(
+            RichText::new(if is_held { "✓ Realizada" } else { "Realizada" })
+                .size(11.5)
+                .strong()
+                .color(if is_held { cp.on_accent } else { cp.text }),
+        )
+        .fill(if is_held { Color32::from_rgb(0x06, 0x4e, 0x3b) } else { cp.surface_hover })
+        .stroke(Stroke::new(1.0, if is_held { Color32::from_rgb(0x34, 0xd3, 0x99) } else { cp.outline }))
+        .corner_radius(CornerRadius::same(5));
+        if ui.add(held_btn).on_hover_text("Marcar esta call como Realizada").clicked() {
+            let mut updated = call.clone();
+            updated.status = "held".into();
+            if updated.call_result.is_empty() {
+                updated.call_result = "Realizada".into();
+            }
+            updated.completed_at = Some(crate::util::now());
+            updated.updated_at = crate::util::now();
+            app.actions.push(Action::SaveCrmTask(updated));
+            app.toast("Call marcada como Realizada!");
+            ui.ctx().request_repaint();
+        }
+
+        // 2. Venda Fechada
+        let is_closed = call.status == "closed";
+        let won_btn = egui::Button::new(
+            RichText::new(if is_closed { "💰 Venda fechada ✓" } else { "💰 Venda fechada" })
+                .size(11.5)
+                .strong()
+                .color(if is_closed { cp.on_accent } else { cp.accent }),
+        )
+        .fill(if is_closed { cp.accent } else { cp.accent.gamma_multiply(0.16) })
+        .stroke(Stroke::new(1.0, cp.accent))
+        .corner_radius(CornerRadius::same(5));
+        if ui.add(won_btn).on_hover_text("Registrar venda ganha, informar valor e atualizar funil/receita").clicked() {
+            show_win = !show_win;
+            show_lost = false;
+            ui.data_mut(|d| {
+                d.insert_temp(win_id, show_win);
+                d.insert_temp(lost_id, false);
+            });
+            ui.ctx().request_repaint();
+        }
+
+        // 3. Perdida
+        let is_lost = call.status == "lost";
+        let lost_btn = egui::Button::new(
+            RichText::new(if is_lost { "✕ Perdida ✓" } else { "✕ Perdida" })
+                .size(11.5)
+                .strong()
+                .color(if is_lost { Color32::WHITE } else { cp.danger }),
+        )
+        .fill(if is_lost { cp.danger } else { cp.danger.gamma_multiply(0.14) })
+        .stroke(Stroke::new(1.0, cp.danger))
+        .corner_radius(CornerRadius::same(5));
+        if ui.add(lost_btn).on_hover_text("Registrar perda da oportunidade com motivo").clicked() {
+            show_lost = !show_lost;
+            show_win = false;
+            ui.data_mut(|d| {
+                d.insert_temp(lost_id, show_lost);
+                d.insert_temp(win_id, false);
+            });
+            ui.ctx().request_repaint();
+        }
+    });
+
+    if show_win {
+        let val_id = egui::Id::new(("call-win-val", &call.id));
+        let default_val = if call.revenue_cents > 0 {
+            format_revenue_input(call.revenue_cents)
+        } else if let Some(chat_id) = &call.chat_id {
+            app.crm_deals.get(chat_id).map(|d| format_revenue_input(d.value_cents)).unwrap_or_default()
+        } else {
+            String::new()
+        };
+        let mut val_str = ui.data_mut(|d| d.get_temp::<String>(val_id).unwrap_or(default_val));
+
+        ui.add_space(4.0);
+        Frame::new()
+            .fill(cp.surface_hover)
+            .stroke(Stroke::new(1.0, cp.accent))
+            .corner_radius(CornerRadius::same(6))
+            .inner_margin(Margin::symmetric(10, 8))
+            .show(ui, |ui| {
+                ui.horizontal(|ui| {
+                    ui.label(RichText::new("Valor da Venda (R$):").size(12.0).strong().color(cp.text));
+                    ui.add(egui::TextEdit::singleline(&mut val_str).hint_text("0,00").desired_width(110.0));
+
+                    let confirm_btn = egui::Button::new(
+                        RichText::new("✓ Confirmar Fechamento").size(12.0).strong().color(cp.on_accent)
+                    ).fill(cp.accent).corner_radius(CornerRadius::same(5));
+
+                    if ui.add(confirm_btn).clicked() {
+                        let cents = parse_revenue_cents(&val_str);
+                        let now = crate::util::now();
+                        let mut updated_call = call.clone();
+                        updated_call.status = "closed".into();
+                        updated_call.call_result = "Venda Fechada".into();
+                        updated_call.revenue_cents = cents;
+                        updated_call.completed_at = Some(now);
+                        updated_call.updated_at = now;
+                        app.actions.push(Action::SaveCrmTask(updated_call));
+
+                        if let Some(chat_id) = &call.chat_id {
+                            let mut deal = app.crm_deals.get(chat_id).cloned().unwrap_or_else(|| CrmDeal {
+                                chat_id: chat_id.clone(),
+                                column_id: "close".into(),
+                                value_cents: cents,
+                                notes: String::new(),
+                                tags: Vec::new(),
+                                updated_at: now,
+                            });
+                            deal.value_cents = cents;
+                            if let Some(close_col) = app.crm_columns.iter().find(|c| c.id == "close" || c.title.to_lowercase().contains("fechamento") || c.title.to_lowercase().contains("ganho")) {
+                                deal.column_id = close_col.id.clone();
+                            }
+                            let formatted_val = format_revenue_input(cents);
+                            let entry = format!("💰 Venda fechada via Call '{}': R$ {}\n", call.title, formatted_val);
+                            deal.notes = format!("{entry}{}", deal.notes);
+                            deal.updated_at = now;
+                            app.actions.push(Action::SaveCrmDeal(deal));
+                        }
+                        app.toast("Venda fechada! Receita, funil e histórico do cliente atualizados.");
+                        ui.data_mut(|d| d.insert_temp(win_id, false));
+                        ui.ctx().request_repaint();
+                    }
+
+                    if ui.small_button("Cancelar").clicked() {
+                        ui.data_mut(|d| d.insert_temp(win_id, false));
+                        ui.ctx().request_repaint();
+                    }
+                });
+            });
+        ui.data_mut(|d| d.insert_temp(val_id, val_str));
+    }
+
+    if show_lost {
+        let reason_id = egui::Id::new(("call-lost-reason", &call.id));
+        let mut reason_str = ui.data_mut(|d| d.get_temp::<String>(reason_id).unwrap_or_default());
+
+        ui.add_space(4.0);
+        Frame::new()
+            .fill(cp.surface_hover)
+            .stroke(Stroke::new(1.0, cp.danger))
+            .corner_radius(CornerRadius::same(6))
+            .inner_margin(Margin::symmetric(10, 8))
+            .show(ui, |ui| {
+                ui.vertical(|ui| {
+                    ui.horizontal(|ui| {
+                        ui.label(RichText::new("Motivo da Perda:").size(12.0).strong().color(cp.text));
+                        ui.add(egui::TextEdit::singleline(&mut reason_str).hint_text("Ex: Preço alto, escolheu concorrente...").desired_width(240.0));
+
+                        let confirm_btn = egui::Button::new(
+                            RichText::new("✓ Registrar Perda").size(12.0).strong().color(Color32::WHITE)
+                        ).fill(cp.danger).corner_radius(CornerRadius::same(5));
+
+                        if ui.add(confirm_btn).clicked() {
+                            let now = crate::util::now();
+                            let reason = if reason_str.trim().is_empty() { "Não informado".to_string() } else { reason_str.trim().to_string() };
+                            let mut updated_call = call.clone();
+                            updated_call.status = "lost".into();
+                            updated_call.call_result = format!("Perdida: {reason}");
+                            updated_call.next_step = format!("Perda: {reason}");
+                            updated_call.completed_at = Some(now);
+                            updated_call.updated_at = now;
+                            app.actions.push(Action::SaveCrmTask(updated_call));
+
+                            if let Some(chat_id) = &call.chat_id {
+                                if let Some(mut deal) = app.crm_deals.get(chat_id).cloned() {
+                                    deal.notes = format!("✕ Call perdida '{}' - Motivo: {reason}\n{}", call.title, deal.notes);
+                                    deal.updated_at = now;
+                                    app.actions.push(Action::SaveCrmDeal(deal));
+                                }
+                            }
+                            app.toast("Call registrada como Perdida.");
+                            ui.data_mut(|d| d.insert_temp(lost_id, false));
+                            ui.ctx().request_repaint();
+                        }
+
+                        if ui.small_button("Cancelar").clicked() {
+                            ui.data_mut(|d| d.insert_temp(lost_id, false));
+                            ui.ctx().request_repaint();
+                        }
+                    });
+
+                    ui.horizontal(|ui| {
+                        ui.label(RichText::new("Sugestões:").size(11.0).color(cp.dim));
+                        for chip in ["Preço / Sem orçamento", "Optou por concorrente", "Sem interesse no momento", "Não respondeu"] {
+                            if ui.small_button(chip).clicked() {
+                                reason_str = chip.to_string();
+                            }
+                        }
+                    });
+                });
+            });
+        ui.data_mut(|d| d.insert_temp(reason_id, reason_str));
+    }
 }
 
 fn render_call_modal(
@@ -1243,156 +2569,338 @@ fn render_call_modal(
     let show_err = ui.data_mut(|d| d.get_temp::<bool>(err_id).unwrap_or(false));
 
     ui.vertical(|ui| {
-        ui.label(
-            RichText::new("Título da call *")
-                .size(12.0)
-                .strong()
-                .color(cp.secondary),
-        );
-        ui.add_space(2.0);
-        let title_stroke = if show_err && draft.title.trim().is_empty() {
-            Stroke::new(1.0, cp.danger)
-        } else {
-            Stroke::new(1.0, cp.outline)
-        };
-        Frame::new()
-            .fill(cp.surface)
-            .stroke(title_stroke)
-            .corner_radius(CornerRadius::same(6))
-            .inner_margin(Margin::symmetric(8, 6))
-            .show(ui, |ui| {
-                ui.add(
-                    egui::TextEdit::singleline(&mut draft.title)
-                        .hint_text("Ex.: Reunião de Alinhamento Comercial")
-                        .desired_width(ui.available_width())
-                        .frame(Frame::NONE),
-                );
-            });
-        if show_err && draft.title.trim().is_empty() {
+    egui::ScrollArea::vertical()
+        .max_height(480.0)
+        .auto_shrink([false, false])
+        .show(ui, |ui| {
             ui.label(
-                RichText::new("O título é obrigatório")
-                    .size(11.0)
-                    .color(cp.danger),
+                RichText::new("Título da call *")
+                    .size(12.0)
+                    .strong()
+                    .color(cp.secondary),
             );
-        }
-
-        ui.add_space(10.0);
-
-        ui.columns(2, |uis| {
-            uis[0].vertical(|ui| {
+            ui.add_space(2.0);
+            let title_stroke = if show_err && draft.title.trim().is_empty() {
+                Stroke::new(1.0, cp.danger)
+            } else {
+                Stroke::new(1.0, cp.outline)
+            };
+            Frame::new()
+                .fill(cp.surface)
+                .stroke(title_stroke)
+                .corner_radius(CornerRadius::same(6))
+                .inner_margin(Margin::symmetric(8, 6))
+                .show(ui, |ui| {
+                    ui.add(
+                        egui::TextEdit::singleline(&mut draft.title)
+                            .hint_text("Ex.: Reunião de Alinhamento Comercial")
+                            .desired_width(ui.available_width())
+                            .frame(Frame::NONE),
+                    );
+                });
+            if show_err && draft.title.trim().is_empty() {
                 ui.label(
-                    RichText::new("Status da call")
+                    RichText::new("O título é obrigatório")
+                        .size(11.0)
+                        .color(cp.danger),
+                );
+            }
+
+            ui.add_space(10.0);
+
+            ui.columns(2, |uis| {
+                uis[0].vertical(|ui| {
+                    ui.label(
+                        RichText::new("Status da call")
+                            .size(12.0)
+                            .strong()
+                            .color(cp.secondary),
+                    );
+                    ui.add_space(2.0);
+                    egui::ComboBox::from_id_salt("modal-call-status")
+                        .selected_text(match draft.status.as_str() {
+                            "scheduled" | "todo" | "doing" | "review" => "Agendada",
+                            "held" | "done" => "Realizada",
+                            "closed" => "Fechamento / Vendida",
+                            "lost" => "Perdida",
+                            "no_show" => "No-show",
+                            "cancelled" => "Cancelada",
+                            _ => "Agendada",
+                        })
+                        .width(ui.available_width() - 8.0)
+                        .show_ui(ui, |ui| {
+                            for (value, label) in [
+                                ("scheduled", "Agendada"),
+                                ("held", "Realizada"),
+                                ("closed", "Fechamento / Vendida"),
+                                ("lost", "Perdida"),
+                                ("no_show", "No-show"),
+                                ("cancelled", "Cancelada"),
+                            ] {
+                                ui.selectable_value(&mut draft.status, value.into(), label);
+                            }
+                        });
+                });
+
+                uis[1].vertical(|ui| {
+                    ui.label(
+                        RichText::new("Duração")
+                            .size(12.0)
+                            .strong()
+                            .color(cp.secondary),
+                    );
+                    ui.add_space(2.0);
+                    egui::ComboBox::from_id_salt("modal-call-duration")
+                        .selected_text(format!("{} min", draft.duration_minutes))
+                        .width(ui.available_width() - 8.0)
+                        .show_ui(ui, |ui| {
+                            for minutes in [15, 30, 45, 60, 90, 120] {
+                                ui.selectable_value(
+                                    &mut draft.duration_minutes,
+                                    minutes,
+                                    format!("{minutes} min"),
+                                );
+                            }
+                        });
+                });
+            });
+
+            if draft.status == "lost" {
+                ui.add_space(8.0);
+                Frame::new()
+                    .fill(cp.surface_hover)
+                    .stroke(Stroke::new(1.0, cp.danger.gamma_multiply(0.7)))
+                    .corner_radius(CornerRadius::same(6))
+                    .inner_margin(Margin::same(8))
+                    .show(ui, |ui| {
+                        ui.label(RichText::new("Motivo da Perda / Descarte *").size(12.0).strong().color(cp.danger));
+                        ui.add_space(3.0);
+                        ui.add(
+                            egui::TextEdit::singleline(&mut draft.next_step)
+                                .hint_text("Descreva o motivo principal do descarte...")
+                                .desired_width(ui.available_width())
+                        );
+                        ui.add_space(4.0);
+                        ui.horizontal_wrapped(|ui| {
+                            ui.label(RichText::new("Sugestões:").size(11.0).color(cp.dim));
+                            for chip in ["Preço / Sem orçamento", "Optou por concorrente", "Sem interesse no momento", "Não respondeu"] {
+                                if ui.small_button(chip).clicked() {
+                                    draft.next_step = chip.to_string();
+                                    if draft.call_result.is_empty() {
+                                        draft.call_result = format!("Perdida: {chip}");
+                                    }
+                                }
+                            }
+                        });
+                    });
+            }
+
+            if draft.status == "closed" {
+                ui.add_space(8.0);
+                Frame::new()
+                    .fill(cp.surface_hover)
+                    .stroke(Stroke::new(1.0, cp.accent.gamma_multiply(0.7)))
+                    .corner_radius(CornerRadius::same(6))
+                    .inner_margin(Margin::same(8))
+                    .show(ui, |ui| {
+                        ui.label(RichText::new("💰 Valor Fechado da Venda (R$)").size(12.0).strong().color(cp.accent));
+                        ui.add_space(3.0);
+                        ui.add(
+                            egui::TextEdit::singleline(&mut draft.revenue_reais)
+                                .hint_text("0,00")
+                                .desired_width(ui.available_width())
+                        );
+                    });
+            }
+
+            ui.add_space(10.0);
+
+            ui.columns(2, |uis| {
+                uis[0].vertical(|ui| {
+                    ui.label(
+                        RichText::new("Cliente / Contato")
+                            .size(12.0)
+                            .strong()
+                            .color(cp.secondary),
+                    );
+                    ui.add_space(2.0);
+                    let current_client = draft
+                        .chat_id
+                        .as_ref()
+                        .and_then(|id| app.chat(id))
+                        .map(|c| app.chat_title(c))
+                        .unwrap_or_else(|| {
+                            if draft.chat_id.is_some() {
+                                "Cliente selecionado".into()
+                            } else {
+                                "Nenhum cliente (Geral)".into()
+                            }
+                        });
+
+                    egui::ComboBox::from_id_salt("modal-call-client")
+                        .selected_text(current_client)
+                        .width(ui.available_width() - 8.0)
+                        .show_ui(ui, |ui| {
+                            ui.selectable_value(&mut draft.chat_id, None, "Nenhum cliente (Geral)");
+                            for chat in &app.chats {
+                                let title = app.chat_title(chat);
+                                ui.selectable_value(&mut draft.chat_id, Some(chat.id.clone()), title);
+                            }
+                        });
+                });
+
+                uis[1].vertical(|ui| {
+                    ui.label(
+                        RichText::new("Projeto vinculado")
+                            .size(12.0)
+                            .strong()
+                            .color(cp.secondary),
+                    );
+                    ui.add_space(2.0);
+                    let current_proj_name = draft
+                        .project_id
+                        .as_ref()
+                        .and_then(|id| app.crm_projects.iter().find(|p| &p.id == id))
+                        .map_or("Sem projeto", |p| p.name.as_str());
+
+                    egui::ComboBox::from_id_salt("modal-call-project")
+                        .selected_text(current_proj_name)
+                        .width(ui.available_width() - 8.0)
+                        .show_ui(ui, |ui| {
+                            ui.selectable_value(&mut draft.project_id, None, "Sem projeto");
+                            for p in &app.crm_projects {
+                                ui.selectable_value(&mut draft.project_id, Some(p.id.clone()), &p.name);
+                            }
+                        });
+                });
+            });
+
+            ui.add_space(10.0);
+
+            ui.vertical(|ui| {
+                ui.label(
+                    RichText::new("Responsável")
                         .size(12.0)
                         .strong()
                         .color(cp.secondary),
                 );
                 ui.add_space(2.0);
-                egui::ComboBox::from_id_salt("modal-call-status")
-                    .selected_text(status_label(&draft.status))
-                    .width(ui.available_width() - 8.0)
-                    .show_ui(ui, |ui| {
-                        for (value, label) in [
-                            ("scheduled", "Agendada"),
-                            ("held", "Realizada"),
-                            ("no_show", "No-show"),
-                            ("cancelled", "Cancelada"),
-                            ("closed", "Fechamento"),
-                        ] {
-                            ui.selectable_value(&mut draft.status, value.into(), label);
-                        }
+                Frame::new()
+                    .fill(cp.surface)
+                    .stroke(Stroke::new(1.0, cp.outline))
+                    .corner_radius(CornerRadius::same(6))
+                    .inner_margin(Margin::symmetric(8, 6))
+                    .show(ui, |ui| {
+                        ui.add(
+                            egui::TextEdit::singleline(&mut draft.assignee)
+                                .hint_text("Nome do consultor")
+                                .desired_width(ui.available_width())
+                                .frame(Frame::NONE),
+                        );
                     });
             });
 
-            uis[1].vertical(|ui| {
-                ui.label(
-                    RichText::new("Duração")
-                        .size(12.0)
-                        .strong()
-                        .color(cp.secondary),
-                );
-                ui.add_space(2.0);
-                egui::ComboBox::from_id_salt("modal-call-duration")
-                    .selected_text(format!("{} min", draft.duration_minutes))
-                    .width(ui.available_width() - 8.0)
-                    .show_ui(ui, |ui| {
-                        for minutes in [15, 30, 45, 60, 90, 120] {
-                            ui.selectable_value(
-                                &mut draft.duration_minutes,
-                                minutes,
-                                format!("{minutes} min"),
-                            );
-                        }
-                    });
-            });
-        });
+            ui.add_space(10.0);
 
-        ui.add_space(10.0);
-
-        ui.columns(2, |uis| {
-            uis[0].vertical(|ui| {
-                ui.label(
-                    RichText::new("Cliente / Contato")
-                        .size(12.0)
-                        .strong()
-                        .color(cp.secondary),
-                );
-                ui.add_space(2.0);
-                let current_client = draft
-                    .chat_id
-                    .as_ref()
-                    .and_then(|id| app.chat(id))
-                    .map(|c| app.chat_title(c))
-                    .unwrap_or_else(|| {
-                        if draft.chat_id.is_some() {
-                            "Cliente selecionado".into()
-                        } else {
-                            "Nenhum cliente (Geral)".into()
-                        }
-                    });
-
-                egui::ComboBox::from_id_salt("modal-call-client")
-                    .selected_text(current_client)
-                    .width(ui.available_width() - 8.0)
-                    .show_ui(ui, |ui| {
-                        ui.selectable_value(&mut draft.chat_id, None, "Nenhum cliente (Geral)");
-                        for chat in &app.chats {
-                            let title = app.chat_title(chat);
-                            ui.selectable_value(&mut draft.chat_id, Some(chat.id.clone()), title);
-                        }
-                    });
-            });
-
-            uis[1].vertical(|ui| {
-                ui.label(
-                    RichText::new("Projeto vinculado")
-                        .size(12.0)
-                        .strong()
-                        .color(cp.secondary),
-                );
-                ui.add_space(2.0);
-                let current_proj_name = draft
-                    .project_id
-                    .as_ref()
-                    .and_then(|id| app.crm_projects.iter().find(|p| &p.id == id))
-                    .map_or("Sem projeto", |p| p.name.as_str());
-
-                egui::ComboBox::from_id_salt("modal-call-project")
-                    .selected_text(current_proj_name)
-                    .width(ui.available_width() - 8.0)
-                    .show_ui(ui, |ui| {
-                        ui.selectable_value(&mut draft.project_id, None, "Sem projeto");
-                        for p in &app.crm_projects {
-                            ui.selectable_value(&mut draft.project_id, Some(p.id.clone()), &p.name);
-                        }
-                    });
-            });
-        });
-
-        ui.add_space(10.0);
-
-        ui.vertical(|ui| {
             ui.label(
-                RichText::new("Responsável")
+                RichText::new("Data e horário da call")
+                    .size(12.0)
+                    .strong()
+                    .color(cp.secondary),
+            );
+            ui.add_space(2.0);
+            let cal_open_id = ui.id().with("modal-call-cal-open");
+            let mut cal_open = ui.data_mut(|d| d.get_temp::<bool>(cal_open_id).unwrap_or(false));
+            let date_str = format!(
+                "📅 {:02}/{:02}/{} às {:02}:{:02}",
+                draft.due_date.day(),
+                draft.due_date.month(),
+                draft.due_date.year(),
+                draft.due_hour,
+                draft.due_minute
+            );
+            if ui
+                .button(RichText::new(date_str).color(cp.accent))
+                .clicked()
+            {
+                cal_open = !cal_open;
+            }
+
+            if cal_open {
+                ui.add_space(4.0);
+                Frame::new()
+                    .fill(cp.surface)
+                    .stroke(Stroke::new(1.0, cp.outline))
+                    .corner_radius(CornerRadius::same(8))
+                    .inner_margin(Margin::same(8))
+                    .show(ui, |ui| {
+                        super::dialogs::date_time_picker(
+                            ui,
+                            app.locale,
+                            &app.palette,
+                            "crm-sales-call-date",
+                            &mut draft.due_date,
+                            &mut draft.due_hour,
+                            &mut draft.due_minute,
+                        );
+                    });
+            }
+            ui.data_mut(|d| d.insert_temp(cal_open_id, cal_open));
+
+            ui.add_space(10.0);
+
+            ui.columns(2, |uis| {
+                uis[0].vertical(|ui| {
+                    ui.label(
+                        RichText::new("Resultado da call")
+                            .size(12.0)
+                            .strong()
+                            .color(cp.secondary),
+                    );
+                    ui.add_space(2.0);
+                    Frame::new()
+                        .fill(cp.surface)
+                        .stroke(Stroke::new(1.0, cp.outline))
+                        .corner_radius(CornerRadius::same(6))
+                        .inner_margin(Margin::symmetric(8, 6))
+                        .show(ui, |ui| {
+                            ui.add(
+                                egui::TextEdit::singleline(&mut draft.call_result)
+                                    .hint_text("Ex.: Apresentada proposta")
+                                    .desired_width(ui.available_width())
+                                    .frame(Frame::NONE),
+                            );
+                        });
+                });
+
+                uis[1].vertical(|ui| {
+                    ui.label(
+                        RichText::new("Receita fechada (R$)")
+                            .size(12.0)
+                            .strong()
+                            .color(cp.secondary),
+                    );
+                    ui.add_space(2.0);
+                    Frame::new()
+                        .fill(cp.surface)
+                        .stroke(Stroke::new(1.0, cp.outline))
+                        .corner_radius(CornerRadius::same(6))
+                        .inner_margin(Margin::symmetric(8, 6))
+                        .show(ui, |ui| {
+                            ui.add(
+                                egui::TextEdit::singleline(&mut draft.revenue_reais)
+                                    .hint_text("Ex.: 2500,00")
+                                    .desired_width(ui.available_width())
+                                    .frame(Frame::NONE),
+                            );
+                        });
+                });
+            });
+
+            ui.add_space(10.0);
+
+            ui.label(
+                RichText::new("Próximo passo comercial")
                     .size(12.0)
                     .strong()
                     .color(cp.secondary),
@@ -1405,159 +2913,39 @@ fn render_call_modal(
                 .inner_margin(Margin::symmetric(8, 6))
                 .show(ui, |ui| {
                     ui.add(
-                        egui::TextEdit::singleline(&mut draft.assignee)
-                            .hint_text("Nome do consultor")
+                        egui::TextEdit::singleline(&mut draft.next_step)
+                            .hint_text("Ex.: Follow-up na sexta-feira às 14h")
                             .desired_width(ui.available_width())
+                            .frame(Frame::NONE),
+                    );
+                });
+
+            ui.add_space(10.0);
+
+            ui.label(
+                RichText::new("Anotações da reunião")
+                    .size(12.0)
+                    .strong()
+                    .color(cp.secondary),
+            );
+            ui.add_space(2.0);
+            Frame::new()
+                .fill(cp.surface)
+                .stroke(Stroke::new(1.0, cp.outline))
+                .corner_radius(CornerRadius::same(6))
+                .inner_margin(Margin::symmetric(8, 6))
+                .show(ui, |ui| {
+                    ui.add(
+                        egui::TextEdit::multiline(&mut draft.description)
+                            .hint_text("Pontos discutidos, dores do cliente, objeções...")
+                            .desired_width(ui.available_width())
+                            .desired_rows(2)
                             .frame(Frame::NONE),
                     );
                 });
         });
 
-        ui.add_space(10.0);
-
-        ui.label(
-            RichText::new("Data e horário da call")
-                .size(12.0)
-                .strong()
-                .color(cp.secondary),
-        );
-        ui.add_space(2.0);
-        let cal_open_id = ui.id().with("modal-call-cal-open");
-        let mut cal_open = ui.data_mut(|d| d.get_temp::<bool>(cal_open_id).unwrap_or(false));
-        let date_str = format!(
-            "📅 {:02}/{:02}/{} às {:02}:{:02}",
-            draft.due_date.day(),
-            draft.due_date.month(),
-            draft.due_date.year(),
-            draft.due_hour,
-            draft.due_minute
-        );
-        if ui
-            .button(RichText::new(date_str).color(cp.accent))
-            .clicked()
-        {
-            cal_open = !cal_open;
-        }
-
-        if cal_open {
-            ui.add_space(4.0);
-            Frame::new()
-                .fill(cp.surface)
-                .stroke(Stroke::new(1.0, cp.outline))
-                .corner_radius(CornerRadius::same(8))
-                .inner_margin(Margin::same(8))
-                .show(ui, |ui| {
-                    super::dialogs::date_time_picker(
-                        ui,
-                        app.locale,
-                        &app.palette,
-                        "crm-sales-call-date",
-                        &mut draft.due_date,
-                        &mut draft.due_hour,
-                        &mut draft.due_minute,
-                    );
-                });
-        }
-        ui.data_mut(|d| d.insert_temp(cal_open_id, cal_open));
-
-        ui.add_space(10.0);
-
-        ui.columns(2, |uis| {
-            uis[0].vertical(|ui| {
-                ui.label(
-                    RichText::new("Resultado da call")
-                        .size(12.0)
-                        .strong()
-                        .color(cp.secondary),
-                );
-                ui.add_space(2.0);
-                Frame::new()
-                    .fill(cp.surface)
-                    .stroke(Stroke::new(1.0, cp.outline))
-                    .corner_radius(CornerRadius::same(6))
-                    .inner_margin(Margin::symmetric(8, 6))
-                    .show(ui, |ui| {
-                        ui.add(
-                            egui::TextEdit::singleline(&mut draft.call_result)
-                                .hint_text("Ex.: Apresentada proposta")
-                                .desired_width(ui.available_width())
-                                .frame(Frame::NONE),
-                        );
-                    });
-            });
-
-            uis[1].vertical(|ui| {
-                ui.label(
-                    RichText::new("Receita fechada (R$)")
-                        .size(12.0)
-                        .strong()
-                        .color(cp.secondary),
-                );
-                ui.add_space(2.0);
-                Frame::new()
-                    .fill(cp.surface)
-                    .stroke(Stroke::new(1.0, cp.outline))
-                    .corner_radius(CornerRadius::same(6))
-                    .inner_margin(Margin::symmetric(8, 6))
-                    .show(ui, |ui| {
-                        ui.add(
-                            egui::TextEdit::singleline(&mut draft.revenue_reais)
-                                .hint_text("Ex.: 2500,00")
-                                .desired_width(ui.available_width())
-                                .frame(Frame::NONE),
-                        );
-                    });
-            });
-        });
-
-        ui.add_space(10.0);
-
-        ui.label(
-            RichText::new("Próximo passo comercial")
-                .size(12.0)
-                .strong()
-                .color(cp.secondary),
-        );
-        ui.add_space(2.0);
-        Frame::new()
-            .fill(cp.surface)
-            .stroke(Stroke::new(1.0, cp.outline))
-            .corner_radius(CornerRadius::same(6))
-            .inner_margin(Margin::symmetric(8, 6))
-            .show(ui, |ui| {
-                ui.add(
-                    egui::TextEdit::singleline(&mut draft.next_step)
-                        .hint_text("Ex.: Follow-up na sexta-feira às 14h")
-                        .desired_width(ui.available_width())
-                        .frame(Frame::NONE),
-                );
-            });
-
-        ui.add_space(10.0);
-
-        ui.label(
-            RichText::new("Anotações da reunião")
-                .size(12.0)
-                .strong()
-                .color(cp.secondary),
-        );
-        ui.add_space(2.0);
-        Frame::new()
-            .fill(cp.surface)
-            .stroke(Stroke::new(1.0, cp.outline))
-            .corner_radius(CornerRadius::same(6))
-            .inner_margin(Margin::symmetric(8, 6))
-            .show(ui, |ui| {
-                ui.add(
-                    egui::TextEdit::multiline(&mut draft.description)
-                        .hint_text("Pontos discutidos, dores do cliente, objeções...")
-                        .desired_width(ui.available_width())
-                        .desired_rows(2)
-                        .frame(Frame::NONE),
-                );
-            });
-
-        ui.add_space(14.0);
+        ui.add_space(12.0);
 
         ui.horizontal(|ui| {
             if ui
@@ -1600,33 +2988,71 @@ fn render_call_modal(
                         .as_ref()
                         .and_then(|id| app.crm_tasks.iter().find(|task| &task.id == id));
 
+                    let target_chat = draft.chat_id.clone().or_else(|| app.open_chat.clone());
+                    let rev_cents = parse_revenue_cents(&draft.revenue_reais);
+                    let mut final_status = draft.status.clone();
+                    if matches!(final_status.as_str(), "todo" | "doing" | "review") {
+                        final_status = "scheduled".into();
+                    }
+
                     app.actions.push(Action::SaveCrmTask(CrmTask {
                         id: draft.id.clone().unwrap_or_else(new_task_id),
-                        chat_id: draft.chat_id.clone().or_else(|| app.open_chat.clone()),
+                        chat_id: target_chat.clone(),
                         project_id: draft.project_id.clone(),
                         title: draft.title.trim().into(),
                         description: draft.description.trim().into(),
-                        status: draft.status.clone(),
+                        status: final_status.clone(),
                         priority: "normal".into(),
                         kind: "call".into(),
                         duration_minutes: Some(draft.duration_minutes),
                         assignee: draft.assignee.trim().into(),
                         call_result: draft.call_result.trim().into(),
                         next_step: draft.next_step.trim().into(),
-                        revenue_cents: parse_revenue_cents(&draft.revenue_reais),
+                        revenue_cents: rev_cents,
                         due_at: crate::util::to_unix_seconds(
                             draft.due_date,
                             draft.due_hour,
                             draft.due_minute,
                         ),
                         completed_at: matches!(
-                            draft.status.as_str(),
-                            "held" | "no_show" | "cancelled" | "closed"
+                            final_status.as_str(),
+                            "held" | "no_show" | "cancelled" | "closed" | "lost"
                         )
                         .then_some(now),
                         created_at: old.map_or(now, |task| task.created_at),
                         updated_at: now,
                     }));
+
+                    if let Some(ref chat_id) = target_chat {
+                        if final_status == "closed" || rev_cents > 0 {
+                            let mut deal = app.crm_deals.get(chat_id).cloned().unwrap_or_else(|| CrmDeal {
+                                chat_id: chat_id.clone(),
+                                column_id: "close".into(),
+                                value_cents: rev_cents,
+                                notes: String::new(),
+                                tags: Vec::new(),
+                                updated_at: now,
+                            });
+                            if rev_cents > 0 {
+                                deal.value_cents = rev_cents;
+                            }
+                            if let Some(close_col) = app.crm_columns.iter().find(|c| c.id == "close" || c.title.to_lowercase().contains("fechamento") || c.title.to_lowercase().contains("ganho")) {
+                                deal.column_id = close_col.id.clone();
+                            }
+                            let formatted_val = format_revenue_input(rev_cents);
+                            let entry = format!("💰 Venda fechada via Call '{}': R$ {}\n", draft.title, formatted_val);
+                            deal.notes = format!("{entry}{}", deal.notes);
+                            deal.updated_at = now;
+                            app.actions.push(Action::SaveCrmDeal(deal));
+                        } else if final_status == "lost" {
+                            if let Some(mut deal) = app.crm_deals.get(chat_id).cloned() {
+                                let entry = format!("✕ Call perdida '{}' (Resultado: {}): {}\n", draft.title, draft.call_result, draft.next_step);
+                                deal.notes = format!("{entry}{}", deal.notes);
+                                deal.updated_at = now;
+                                app.actions.push(Action::SaveCrmDeal(deal));
+                            }
+                        }
+                    }
 
                     *draft = TaskDraft {
                         kind: "call".into(),
@@ -3704,6 +5130,7 @@ fn status_label(value: &str) -> &str {
         "done" => "Concluída",
         "scheduled" => "Agendada",
         "held" => "Realizada",
+        "lost" => "Perdida",
         "no_show" => "No-show",
         "cancelled" => "Cancelada",
         "closed" => "Fechamento",

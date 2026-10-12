@@ -64,15 +64,14 @@ impl Default for QuickWorkDraft {
 pub fn show(app: &mut App, ui: &mut egui::Ui, chat: &Chat) {
     let palette = crm_palette(&app.palette);
     let avail = ui.available_width();
-    let min = MIN_WIDTH.min(avail * 0.5);
-    let max = (avail - 80.0).max(min).min(MAX_WIDTH);
+    let min = MIN_WIDTH.min(avail * 0.45);
+    let max = (avail - 100.0).max(min).min(MAX_WIDTH);
     let wanted = app.settings.crm_sidecar_width.clamp(min, max);
     let id = egui::Id::new("crm_sidecar_panel");
 
     let response = egui::Panel::right(id)
-        .resizable(true)
-        .default_size(wanted)
-        .size_range(min..=max)
+        .exact_size(wanted)
+        .resizable(false)
         .show_separator_line(false)
         .frame(Frame::new().fill(palette.panel).inner_margin(Margin::ZERO))
         .show(ui, |ui| {
@@ -80,19 +79,65 @@ pub fn show(app: &mut App, ui: &mut egui::Ui, chat: &Chat) {
         });
 
     let rect = response.response.rect;
-    let width = rect.width();
-    if (width - app.settings.crm_sidecar_width).abs() > 1.0 {
-        app.settings.crm_sidecar_width = width;
-        app.actions.push(Action::SettingsChanged);
+
+    // Draggable Splitter Handle along the left edge
+    let splitter_w = 10.0;
+    let splitter_rect = Rect::from_min_max(
+        pos2(rect.left() - splitter_w * 0.5, rect.top()),
+        pos2(rect.left() + splitter_w * 0.5, rect.bottom()),
+    );
+    let splitter_id = id.with("splitter_handle");
+    let splitter_resp = ui.interact(splitter_rect, splitter_id, egui::Sense::click_and_drag());
+
+    if splitter_resp.hovered() || splitter_resp.dragged() {
+        ui.ctx().set_cursor_icon(egui::CursorIcon::ResizeHorizontal);
     }
 
+    if splitter_resp.dragged() {
+        let delta = splitter_resp.drag_delta().x;
+        let new_w = (app.settings.crm_sidecar_width - delta).clamp(min, max);
+        if (new_w - app.settings.crm_sidecar_width).abs() > 0.2 {
+            app.settings.crm_sidecar_width = new_w;
+            app.actions.push(Action::SettingsChanged);
+            ui.ctx().request_repaint();
+        }
+    } else if splitter_resp.double_clicked() {
+        app.settings.crm_sidecar_width = 340.0;
+        app.actions.push(Action::SettingsChanged);
+        ui.ctx().request_repaint();
+    }
+
+    let is_active = splitter_resp.hovered() || splitter_resp.dragged();
+    splitter_resp.on_hover_text("Arraste para ajustar largura (duplo clique para restaurar 340px)");
+
+    // Visual Splitter Hairline & Handle
+    let line_color = if is_active { palette.accent } else { palette.outline };
     ui.painter().rect_filled(
         Rect::from_min_max(
-            pos2(rect.left(), rect.top()),
-            pos2(rect.left() + 1.0, rect.bottom()),
+            pos2(rect.left() - 0.5, rect.top()),
+            pos2(rect.left() + 0.5, rect.bottom()),
         ),
         0.0,
-        palette.outline,
+        line_color,
+    );
+
+    // Visible centered grip pill
+    let pill_h = 42.0;
+    let pill_w = if is_active { 5.0 } else { 3.5 };
+    let pill_center_y = rect.center().y;
+    let pill_rect = Rect::from_center_size(
+        pos2(rect.left(), pill_center_y),
+        vec2(pill_w, pill_h),
+    );
+    let pill_color = if is_active {
+        palette.accent
+    } else {
+        palette.dim.gamma_multiply(0.8)
+    };
+    ui.painter().rect_filled(
+        pill_rect,
+        CornerRadius::same(2),
+        pill_color,
     );
 }
 
@@ -511,11 +556,24 @@ fn render_header(app: &mut App, ui: &mut egui::Ui, palette: &Palette, chat: &Cha
     ui.horizontal(|ui| {
         // Right action buttons first: guaranteed to anchor at the right border without clipping
         ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-            // Close button
+            // Close / Collapse button
+            if theme::icon_button(
+                ui,
+                Icon::ChevronRight,
+                16.0,
+                palette.secondary,
+                palette.accent,
+                "Recolher lateral",
+            )
+            .clicked()
+            {
+                app.actions.push(Action::ToggleCrmSidecar);
+            }
+
             if theme::icon_button(
                 ui,
                 Icon::X,
-                16.0,
+                15.0,
                 palette.dim,
                 palette.text,
                 "Fechar painel",
