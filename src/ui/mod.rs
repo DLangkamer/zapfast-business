@@ -89,7 +89,8 @@ pub fn show(app: &mut App, ui: &mut egui::Ui) {
     } else {
         pane::show(app, ui)
     };
-    if app.show_crm_sidecar && app.page == Page::Chats {
+    let is_small_window = ctx.content_rect().width() < 860.0;
+    if app.show_crm_sidecar && app.page == Page::Chats && !is_small_window {
         if let Some(chat) = app.current_chat().cloned() {
             crm_sidecar::show(app, ui, &chat);
         }
@@ -102,6 +103,11 @@ pub fn show(app: &mut App, ui: &mut egui::Ui) {
             Page::Crm => crm_workspace::show(app, ui),
             Page::Wallpaper => settings::wallpaper_show(app, ui),
         });
+    if app.show_crm_sidecar && app.page == Page::Chats && is_small_window {
+        if let Some(chat) = app.current_chat().cloned() {
+            crm_sidecar::show_overlay(app, ctx, &chat);
+        }
+    }
     if let Some(region) = search_overlay {
         pane::show_overlay(app, ctx, region);
     }

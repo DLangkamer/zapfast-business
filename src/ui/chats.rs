@@ -183,6 +183,7 @@ fn header(app: &mut App, ui: &mut egui::Ui) {
                         .clicked()
                         {
                             app.actions.push(Action::Open(Page::Crm));
+                            ui.ctx().request_repaint();
                         }
                         if theme::icon_button(
                             ui,

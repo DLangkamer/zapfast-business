@@ -199,45 +199,58 @@ pub fn show(app: &mut App, ui: &mut egui::Ui) {
     let gap = ui.spacing().item_spacing.x;
     let (sidebar_width, content_width) = workspace_widths(available.x, gap);
 
+    let is_compact_sidebar = sidebar_width <= 70.0;
     ui.horizontal(|ui| {
         ui.allocate_ui_with_layout(
             vec2(sidebar_width, available.y),
             Layout::top_down(Align::Min),
             |ui| {
+                let pad_x = if is_compact_sidebar { 6 } else { 14 };
+                let pad_y = if is_compact_sidebar { 10 } else { 14 };
                 Frame::new()
                     .fill(cp.panel)
                     .stroke(Stroke::new(1.0, cp.outline))
                     .corner_radius(CornerRadius::same(12))
-                    .inner_margin(Margin::same(14))
+                    .inner_margin(Margin::symmetric(pad_x, pad_y))
                     .show(ui, |ui| {
-                        ui.set_width((sidebar_width - 28.0).max(140.0));
-                        ui.set_min_height((available.y - 28.0).max(320.0));
-                        ui.horizontal(|ui| {
-                            theme::icon(ui, Icon::ListChecks, 24.0, cp.accent);
+                        ui.set_width((sidebar_width - (pad_x * 2) as f32).max(36.0));
+                        ui.set_min_height((available.y - (pad_y * 2) as f32).max(320.0));
+                        if is_compact_sidebar {
+                            ui.vertical_centered(|ui| {
+                                let (_rect, resp) = ui.allocate_exact_size(Vec2::splat(28.0), egui::Sense::hover());
+                                theme::icon(ui, Icon::ListChecks, 22.0, cp.accent);
+                                resp.on_hover_text("ZapFast CRM • Central de Operações");
+                            });
+                        } else {
+                            ui.horizontal(|ui| {
+                                theme::icon(ui, Icon::ListChecks, 24.0, cp.accent);
+                                ui.add_space(2.0);
+                                ui.label(
+                                    RichText::new("ZapFast CRM")
+                                        .size(19.0)
+                                        .strong()
+                                        .color(cp.text),
+                                );
+                            });
                             ui.add_space(2.0);
                             ui.label(
-                                RichText::new("ZapFast CRM")
-                                    .size(19.0)
-                                    .strong()
-                                    .color(cp.text),
+                                RichText::new("Central de Operações")
+                                    .size(12.0)
+                                    .color(cp.dim),
                             );
-                        });
-                        ui.add_space(2.0);
-                        ui.label(
-                            RichText::new("Central de Operações")
-                                .size(12.0)
-                                .color(cp.dim),
-                        );
-                        ui.add_space(14.0);
+                        }
+                        ui.add_space(if is_compact_sidebar { 8.0 } else { 14.0 });
                         let cur = ui.cursor();
                         ui.painter().hline(
                             cur.left()..=(cur.left() + ui.available_width()),
                             cur.top(),
                             Stroke::new(1.0, cp.outline),
                         );
-                        ui.add_space(14.0);
-                        ui.label(RichText::new("OPERAÇÕES").size(10.5).strong().color(cp.dim));
-                        ui.add_space(6.0);
+                        ui.add_space(if is_compact_sidebar { 8.0 } else { 14.0 });
+                        if !is_compact_sidebar {
+                            ui.label(RichText::new("OPERAÇÕES").size(10.5).strong().color(cp.dim));
+                            ui.add_space(6.0);
+                        }
                         nav_item(
                             ui,
                             &mut view,
@@ -295,27 +308,42 @@ pub fn show(app: &mut App, ui: &mut egui::Ui) {
                             &cp,
                         );
                         ui.with_layout(Layout::bottom_up(Align::Min), |ui| {
-                            ui.add_space(4.0);
-                            ui.horizontal(|ui| {
-                                theme::icon(ui, Icon::Lock, 13.0, cp.dim);
-                                ui.label(
-                                    RichText::new("Dados criptografados")
-                                        .size(11.0)
-                                        .color(cp.dim),
-                                );
-                            });
-                            ui.add_space(6.0);
-                            let back_btn = egui::Button::new(
-                                RichText::new("← Voltar às Conversas")
-                                    .size(13.0)
-                                    .color(cp.secondary),
-                            )
-                            .fill(cp.surface)
-                            .stroke(Stroke::new(1.0, cp.outline))
-                            .corner_radius(CornerRadius::same(8))
-                            .min_size(vec2(ui.available_width(), 38.0));
-                            if ui.add(back_btn).clicked() {
-                                app.actions.push(Action::Open(Page::Chats));
+                            if is_compact_sidebar {
+                                let back_btn = egui::Button::new(
+                                    RichText::new("←").size(15.0).strong().color(cp.secondary),
+                                )
+                                .fill(cp.surface)
+                                .stroke(Stroke::new(1.0, cp.outline))
+                                .corner_radius(CornerRadius::same(8))
+                                .min_size(vec2(ui.available_width(), 34.0));
+                                if ui.add(back_btn).on_hover_text("Voltar às Conversas").clicked() {
+                                    app.actions.push(Action::Open(Page::Chats));
+                                    ui.ctx().request_repaint();
+                                }
+                            } else {
+                                ui.add_space(4.0);
+                                ui.horizontal(|ui| {
+                                    theme::icon(ui, Icon::Lock, 13.0, cp.dim);
+                                    ui.label(
+                                        RichText::new("Dados criptografados")
+                                            .size(11.0)
+                                            .color(cp.dim),
+                                    );
+                                });
+                                ui.add_space(6.0);
+                                let back_btn = egui::Button::new(
+                                    RichText::new("← Voltar às Conversas")
+                                        .size(13.0)
+                                        .color(cp.secondary),
+                                )
+                                .fill(cp.surface)
+                                .stroke(Stroke::new(1.0, cp.outline))
+                                .corner_radius(CornerRadius::same(8))
+                                .min_size(vec2(ui.available_width(), 38.0));
+                                if ui.add(back_btn).clicked() {
+                                    app.actions.push(Action::Open(Page::Chats));
+                                    ui.ctx().request_repaint();
+                                }
                             }
                         });
                     });
@@ -374,6 +402,23 @@ pub fn show(app: &mut App, ui: &mut egui::Ui) {
                                 .min_size(vec2(130.0, 34.0));
                                 if ui.add(btn).clicked() {
                                     view = WorkspaceView::Tasks;
+                                    ui.ctx().request_repaint();
+                                }
+                            }
+                            WorkspaceView::Calls => {
+                                let btn = egui::Button::new(
+                                    RichText::new("+ Nova call")
+                                        .size(13.0)
+                                        .strong()
+                                        .color(cp.on_accent),
+                                )
+                                .fill(cp.accent)
+                                .corner_radius(CornerRadius::same(8))
+                                .min_size(vec2(130.0, 34.0));
+                                let form_id = ui.id().with(("crm-call-form", app.id.as_str()));
+                                if ui.add(btn).clicked() {
+                                    ui.ctx().data_mut(|d| d.insert_temp(form_id, true));
+                                    ui.ctx().request_repaint();
                                 }
                             }
                             WorkspaceView::Funnel => {
@@ -398,6 +443,7 @@ pub fn show(app: &mut App, ui: &mut egui::Ui) {
                                     .min_size(vec2(120.0, 34.0));
                                     if ui.add(btn_stage).clicked() {
                                         add_stage_open = !add_stage_open;
+                                        ui.ctx().request_repaint();
                                     }
 
                                     let btn_deal = egui::Button::new(
@@ -411,6 +457,7 @@ pub fn show(app: &mut App, ui: &mut egui::Ui) {
                                     .min_size(vec2(140.0, 34.0));
                                     if ui.add(btn_deal).clicked() {
                                         add_deal_open = !add_deal_open;
+                                        ui.ctx().request_repaint();
                                     }
                                 });
 
@@ -425,7 +472,9 @@ pub fn show(app: &mut App, ui: &mut egui::Ui) {
                         ScrollArea::vertical().auto_shrink([false, false]).show(
                             ui,
                             |ui| match view {
-                                WorkspaceView::Overview => overview(app, ui, &mut view, &cp),
+                                WorkspaceView::Overview => {
+                                    overview(app, ui, &mut view, &mut selected, &cp)
+                                }
                                 WorkspaceView::Projects => {
                                     projects(app, ui, &mut draft, &mut selected, &cp)
                                 }
@@ -549,7 +598,7 @@ fn crm_header<F>(
             });
 
             ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-                ui.add_space(8.0);
+                ui.add_space(16.0);
                 render_controls(ui);
             });
         });
@@ -713,15 +762,35 @@ fn timeline(app: &mut App, ui: &mut egui::Ui, cp: &CrmPalette) {
     let account_id = app.id.as_str().to_owned();
     let filter_type_id = ui.id().with(("crm-timeline-type", &account_id));
     let search_id = ui.id().with(("crm-timeline-search", &account_id));
+    let client_filter_id = ui.id().with(("crm-timeline-client", &account_id));
 
     let mut type_filter = ui.data_mut(|d| {
         d.get_temp::<String>(filter_type_id)
             .unwrap_or_else(|| "all".into())
     });
     let mut search = ui.data_mut(|d| d.get_temp::<String>(search_id).unwrap_or_default());
+    let mut client_filter = ui.data_mut(|d| {
+        d.get_temp::<String>(client_filter_id)
+            .unwrap_or_else(|| "all".into())
+    });
 
-    // 1. Filter bar at top
-    ui.horizontal(|ui| {
+    let mut client_options: Vec<String> = Vec::new();
+    for p in &app.crm_projects {
+        if !p.client_name.trim().is_empty() && !client_options.contains(&p.client_name) {
+            client_options.push(p.client_name.clone());
+        }
+    }
+    for c in &app.chats {
+        let t = app.chat_title(c);
+        if !t.trim().is_empty() && !client_options.contains(&t) {
+            client_options.push(t);
+        }
+    }
+    client_options.sort();
+
+    // 1. Filter bar at top (Responsive: never clips on narrow screens)
+    let avail = ui.available_width();
+    let render_type_buttons = |ui: &mut egui::Ui, tf: &mut String| {
         let types = [
             ("all", "Todos"),
             ("message", "Mensagens"),
@@ -731,45 +800,116 @@ fn timeline(app: &mut App, ui: &mut egui::Ui, cp: &CrmPalette) {
         ];
 
         for (val, label) in types {
-            let selected = type_filter == val;
+            let selected = *tf == val;
             let (fill, text_color) = if selected {
                 (cp.accent, cp.on_accent)
             } else {
                 (cp.surface, cp.secondary)
             };
 
-            let btn = egui::Button::new(RichText::new(label).size(12.5).strong().color(text_color))
+            let btn = egui::Button::new(RichText::new(label).size(12.0).strong().color(text_color))
                 .fill(fill)
                 .stroke(Stroke::new(
                     1.0,
                     if selected { cp.accent } else { cp.outline },
                 ))
-                .corner_radius(CornerRadius::same(7))
-                .min_size(vec2(72.0, 30.0));
+                .corner_radius(CornerRadius::same(6))
+                .min_size(vec2(66.0, 28.0));
 
             if ui.add(btn).clicked() {
-                type_filter = val.into();
+                *tf = val.into();
+                ui.ctx().request_repaint();
             }
         }
+    };
 
-        ui.add_space(8.0);
+    if avail < 720.0 {
+        ui.horizontal_wrapped(|ui| {
+            render_type_buttons(ui, &mut type_filter);
+        });
+        ui.add_space(6.0);
+        ui.horizontal(|ui| {
+            egui::ComboBox::from_id_salt(("timeline-client-filter", &account_id))
+                .selected_text(if client_filter == "all" {
+                    "Todos os clientes".to_owned()
+                } else {
+                    client_filter.clone()
+                })
+                .width(150.0)
+                .show_ui(ui, |ui| {
+                    if ui.selectable_value(&mut client_filter, "all".into(), "Todos os clientes").clicked() {
+                        ui.ctx().request_repaint();
+                    }
+                    for c_name in &client_options {
+                        if ui.selectable_value(&mut client_filter, c_name.clone(), c_name).clicked() {
+                            ui.ctx().request_repaint();
+                        }
+                    }
+                });
 
-        ui.add(
-            egui::TextEdit::singleline(&mut search)
-                .hint_text("Buscar por cliente, projeto, assunto...")
-                .desired_width(240.0),
-        );
+            let search_w = (ui.available_width() - 36.0).max(100.0);
+            ui.add(
+                egui::TextEdit::singleline(&mut search)
+                    .hint_text("Buscar…")
+                    .desired_width(search_w),
+            );
 
-        if !search.is_empty() {
-            let clear_btn = egui::Button::new(RichText::new("✕").size(11.0).color(cp.dim))
-                .fill(cp.surface)
-                .corner_radius(CornerRadius::same(6))
-                .min_size(vec2(24.0, 24.0));
-            if ui.add(clear_btn).clicked() {
-                search.clear();
+            if !search.is_empty() {
+                let clear_btn = egui::Button::new(RichText::new("✕").size(11.0).color(cp.dim))
+                    .fill(cp.surface)
+                    .corner_radius(CornerRadius::same(6))
+                    .min_size(vec2(24.0, 24.0));
+                if ui.add(clear_btn).clicked() {
+                    search.clear();
+                    ui.ctx().request_repaint();
+                }
             }
-        }
-    });
+        });
+    } else {
+        ui.horizontal(|ui| {
+            render_type_buttons(ui, &mut type_filter);
+
+            ui.add_space(8.0);
+
+            egui::ComboBox::from_id_salt(("timeline-client-filter", &account_id))
+                .selected_text(if client_filter == "all" {
+                    "Todos os clientes".to_owned()
+                } else {
+                    client_filter.clone()
+                })
+                .width(160.0)
+                .show_ui(ui, |ui| {
+                    if ui.selectable_value(&mut client_filter, "all".into(), "Todos os clientes").clicked() {
+                        ui.ctx().request_repaint();
+                    }
+                    for c_name in &client_options {
+                        if ui.selectable_value(&mut client_filter, c_name.clone(), c_name).clicked() {
+                            ui.ctx().request_repaint();
+                        }
+                    }
+                });
+
+            ui.add_space(4.0);
+
+            let search_w = (avail - 540.0).clamp(140.0, 260.0);
+            ui.add(
+                egui::TextEdit::singleline(&mut search)
+                    .hint_text("Buscar evento…")
+                    .desired_width(search_w),
+            );
+
+            if !search.is_empty() {
+                let clear_btn = egui::Button::new(RichText::new("✕").size(11.0).color(cp.dim))
+                    .fill(cp.surface)
+                    .corner_radius(CornerRadius::same(6))
+                    .min_size(vec2(24.0, 24.0));
+                if ui.add(clear_btn).clicked() {
+                    search.clear();
+                    ui.ctx().request_repaint();
+                }
+            }
+        });
+    }
 
     ui.add_space(14.0);
 
@@ -943,6 +1083,11 @@ fn timeline(app: &mut App, ui: &mut egui::Ui, cp: &CrmPalette) {
 
     // 3. Filter events
     let search_lower = search.trim().to_lowercase();
+    let client_lower = if client_filter == "all" {
+        String::new()
+    } else {
+        client_filter.to_lowercase()
+    };
     let filtered: Vec<_> = events
         .into_iter()
         .filter(|e| {
@@ -950,11 +1095,14 @@ fn timeline(app: &mut App, ui: &mut egui::Ui, cp: &CrmPalette) {
                 "all" => true,
                 other => e.kind.filter_category() == other,
             };
+            let matches_client = client_lower.is_empty()
+                || e.entity.to_lowercase().contains(&client_lower)
+                || e.title.to_lowercase().contains(&client_lower);
             let matches_search = search_lower.is_empty()
                 || e.entity.to_lowercase().contains(&search_lower)
                 || e.title.to_lowercase().contains(&search_lower)
                 || e.summary.to_lowercase().contains(&search_lower);
-            matches_type && matches_search
+            matches_type && matches_client && matches_search
         })
         .collect();
 
@@ -968,10 +1116,13 @@ fn timeline(app: &mut App, ui: &mut egui::Ui, cp: &CrmPalette) {
             Some("Limpar filtros"),
         ) {
             type_filter = "all".into();
+            client_filter = "all".into();
             search.clear();
+            ui.ctx().request_repaint();
         }
         ui.data_mut(|d| {
             d.insert_temp(filter_type_id, type_filter);
+            d.insert_temp(client_filter_id, client_filter);
             d.insert_temp(search_id, search);
         });
         return;
@@ -1121,6 +1272,7 @@ fn timeline(app: &mut App, ui: &mut egui::Ui, cp: &CrmPalette) {
 
     ui.data_mut(|d| {
         d.insert_temp(filter_type_id, type_filter);
+        d.insert_temp(client_filter_id, client_filter);
         d.insert_temp(search_id, search);
     });
 }
@@ -2047,15 +2199,23 @@ fn render_deal_card(
         .data_mut(|d| d.insert_temp(confirm_deal_delete_id, confirm_del));
 }
 
-fn overview(app: &mut App, ui: &mut egui::Ui, view: &mut WorkspaceView, cp: &CrmPalette) {
+fn overview(
+    app: &mut App,
+    ui: &mut egui::Ui,
+    view: &mut WorkspaceView,
+    selected: &mut Option<String>,
+    cp: &CrmPalette,
+) {
     let now = crate::util::now();
     let today = crate::util::today();
 
-    let active_projects = app
+    let active_projects: Vec<_> = app
         .crm_projects
         .iter()
         .filter(|p| p.status == "active")
-        .count();
+        .cloned()
+        .collect();
+
     let late_tasks: Vec<_> = app
         .crm_tasks
         .iter()
@@ -2069,6 +2229,21 @@ fn overview(app: &mut App, ui: &mut egui::Ui, view: &mut WorkspaceView, cp: &Crm
         .iter()
         .filter(|t| {
             t.status != "done"
+                && t.kind == "task"
+                && t.due_at.is_some_and(|d| {
+                    crate::util::local_datetime(d)
+                        .map(|(date, _, _)| date == today)
+                        .unwrap_or(false)
+                })
+        })
+        .cloned()
+        .collect();
+
+    let today_calls: Vec<_> = app
+        .crm_tasks
+        .iter()
+        .filter(|t| {
+            matches!(t.kind.as_str(), "call" | "conversation")
                 && t.due_at.is_some_and(|d| {
                     crate::util::local_datetime(d)
                         .map(|(date, _, _)| date == today)
@@ -2085,7 +2260,7 @@ fn overview(app: &mut App, ui: &mut egui::Ui, view: &mut WorkspaceView, cp: &Crm
         .cloned()
         .collect();
 
-    // 1. Top Metrics Bar
+    // 1. Top Metrics Bar (Responsive wrapping)
     let metric_width = ((ui.available_width() - 36.0) / 4.0).max(145.0);
     ui.horizontal_wrapped(|ui| {
         metric_str(
@@ -2100,16 +2275,16 @@ fn overview(app: &mut App, ui: &mut egui::Ui, view: &mut WorkspaceView, cp: &Crm
             ui,
             cp,
             Icon::Clock,
-            "Hoje",
+            "Tarefas Hoje",
             &today_tasks.len().to_string(),
             metric_width,
         );
         metric_str(
             ui,
             cp,
-            Icon::Bell,
-            "Follow-ups",
-            &open_followups.len().to_string(),
+            Icon::Phone,
+            "Calls Hoje",
+            &today_calls.len().to_string(),
             metric_width,
         );
         metric_str(
@@ -2117,7 +2292,7 @@ fn overview(app: &mut App, ui: &mut egui::Ui, view: &mut WorkspaceView, cp: &Crm
             cp,
             Icon::Users,
             "Projetos Ativos",
-            &active_projects.to_string(),
+            &active_projects.len().to_string(),
             metric_width,
         );
     });
@@ -2133,6 +2308,7 @@ fn overview(app: &mut App, ui: &mut egui::Ui, view: &mut WorkspaceView, cp: &Crm
             .min_size(vec2(130.0, 32.0));
         if ui.add(btn_task).clicked() {
             *view = WorkspaceView::Tasks;
+            ui.ctx().request_repaint();
         }
 
         let btn_call =
@@ -2143,6 +2319,18 @@ fn overview(app: &mut App, ui: &mut egui::Ui, view: &mut WorkspaceView, cp: &Crm
                 .min_size(vec2(130.0, 32.0));
         if ui.add(btn_call).clicked() {
             *view = WorkspaceView::Calls;
+            ui.ctx().request_repaint();
+        }
+
+        let btn_agenda =
+            egui::Button::new(RichText::new("📅 Ver Agenda").size(12.5).color(cp.text))
+                .fill(cp.surface)
+                .stroke(Stroke::new(1.0, cp.outline))
+                .corner_radius(CornerRadius::same(8))
+                .min_size(vec2(125.0, 32.0));
+        if ui.add(btn_agenda).clicked() {
+            *view = WorkspaceView::Agenda;
+            ui.ctx().request_repaint();
         }
 
         let btn_funnel =
@@ -2153,6 +2341,7 @@ fn overview(app: &mut App, ui: &mut egui::Ui, view: &mut WorkspaceView, cp: &Crm
                 .min_size(vec2(140.0, 32.0));
         if ui.add(btn_funnel).clicked() {
             *view = WorkspaceView::Funnel;
+            ui.ctx().request_repaint();
         }
 
         let btn_proj =
@@ -2163,6 +2352,7 @@ fn overview(app: &mut App, ui: &mut egui::Ui, view: &mut WorkspaceView, cp: &Crm
                 .min_size(vec2(130.0, 32.0));
         if ui.add(btn_proj).clicked() {
             *view = WorkspaceView::Projects;
+            ui.ctx().request_repaint();
         }
     });
 
@@ -2216,6 +2406,7 @@ fn overview(app: &mut App, ui: &mut egui::Ui, view: &mut WorkspaceView, cp: &Crm
                             updated.completed_at = Some(now);
                             updated.updated_at = now;
                             to_complete = Some(updated);
+                            ui.ctx().request_repaint();
                         }
 
                         ui.add_space(4.0);
@@ -2235,6 +2426,7 @@ fn overview(app: &mut App, ui: &mut egui::Ui, view: &mut WorkspaceView, cp: &Crm
                         }
 
                         ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
+                            ui.add_space(16.0);
                             if let Some(due) = task.due_at {
                                 if let Some((date, _, _)) = crate::util::local_datetime(due) {
                                     ui.label(
@@ -2257,17 +2449,18 @@ fn overview(app: &mut App, ui: &mut egui::Ui, view: &mut WorkspaceView, cp: &Crm
         ui.add_space(18.0);
     }
 
-    // 4. Programação de Hoje (Tarefas e Calls de Hoje)
+    // 4. Agenda do Dia (Programação Completa de Hoje: Tarefas e Calls)
     ui.horizontal(|ui| {
         ui.label(
-            RichText::new("Programação de Hoje")
+            RichText::new("Agenda do Dia")
                 .size(17.0)
                 .strong()
                 .color(cp.text),
         );
         ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
+            ui.add_space(16.0);
             let see_all = egui::Button::new(
-                RichText::new("Ver todas as tarefas →")
+                RichText::new("Ver agenda completa →")
                     .size(12.5)
                     .strong()
                     .color(cp.accent),
@@ -2276,38 +2469,55 @@ fn overview(app: &mut App, ui: &mut egui::Ui, view: &mut WorkspaceView, cp: &Crm
             .stroke(Stroke::new(1.0, cp.outline))
             .corner_radius(CornerRadius::same(6));
             if ui.add(see_all).clicked() {
-                *view = WorkspaceView::Tasks;
+                *view = WorkspaceView::Agenda;
+                ui.ctx().request_repaint();
             }
         });
     });
 
     ui.add_space(8.0);
 
-    if today_tasks.is_empty() {
+    // Combine and sort today's tasks and calls
+    let mut today_items: Vec<(Option<(u8, u8)>, bool, CrmTask)> = Vec::new();
+    for t in &today_tasks {
+        let time = t.due_at.and_then(crate::util::local_datetime).map(|(_, h, m)| (h, m));
+        today_items.push((time, false, t.clone()));
+    }
+    for c in &today_calls {
+        let time = c.due_at.and_then(crate::util::local_datetime).map(|(_, h, m)| (h, m));
+        today_items.push((time, true, c.clone()));
+    }
+    today_items.sort_by_key(|(time, _, _)| time.map(|(h, m)| h as u32 * 60 + m as u32).unwrap_or(u32::MAX));
+
+    if today_items.is_empty() {
         Frame::new()
             .fill(cp.surface)
             .stroke(Stroke::new(1.0, cp.outline))
             .corner_radius(CornerRadius::same(8))
-            .inner_margin(Margin::same(12))
+            .inner_margin(Margin::same(14))
             .show(ui, |ui| {
                 ui.horizontal(|ui| {
                     theme::icon(ui, Icon::CircleCheck, 16.0, cp.accent);
                     ui.label(
-                        RichText::new("Nenhuma tarefa com prazo para hoje. Tudo sob controle!")
+                        RichText::new("Nenhum compromisso agendado para hoje. Aproveite para planejar novos negócios!")
                             .size(13.0)
                             .color(cp.secondary),
                     );
                 });
             });
     } else {
-        for task in &today_tasks {
-            let project_name = task
+        for (time, is_call, item) in &today_items {
+            let project_name = item
                 .project_id
                 .as_ref()
                 .and_then(|id| app.crm_projects.iter().find(|p| &p.id == id))
                 .map(|p| p.name.clone());
 
-            let is_call = matches!(task.kind.as_str(), "call" | "conversation");
+            let client_name = item
+                .chat_id
+                .as_ref()
+                .and_then(|id| app.chat(id))
+                .map(|c| app.chat_title(c));
 
             Frame::new()
                 .fill(cp.surface)
@@ -2316,49 +2526,238 @@ fn overview(app: &mut App, ui: &mut egui::Ui, view: &mut WorkspaceView, cp: &Crm
                 .inner_margin(Margin::symmetric(14, 10))
                 .show(ui, |ui| {
                     ui.horizontal(|ui| {
-                        let check_btn =
-                            egui::Button::new(RichText::new("□").size(14.0).color(cp.accent))
-                                .fill(cp.surface_hover)
-                                .corner_radius(CornerRadius::same(4))
-                                .min_size(vec2(24.0, 24.0));
-                        if ui.add(check_btn).on_hover_text("Concluir tarefa").clicked() {
-                            let mut updated = task.clone();
-                            updated.status = "done".into();
-                            updated.completed_at = Some(now);
-                            updated.updated_at = now;
-                            to_complete = Some(updated);
-                        }
+                        // Time label badge
+                        let time_str = if let Some((h, m)) = time {
+                            format!("{:02}:{:02}", h, m)
+                        } else {
+                            "Hoje".to_owned()
+                        };
+                        Frame::new()
+                            .fill(cp.surface_hover)
+                            .corner_radius(CornerRadius::same(4))
+                            .inner_margin(Margin::symmetric(7, 2))
+                            .show(ui, |ui| {
+                                ui.label(
+                                    RichText::new(time_str)
+                                        .size(11.5)
+                                        .strong()
+                                        .color(cp.accent),
+                                );
+                            });
 
                         ui.add_space(6.0);
 
-                        if is_call {
+                        if *is_call {
                             theme::icon(ui, Icon::Phone, 14.0, cp.accent);
                             ui.add_space(2.0);
+                            Frame::new()
+                                .fill(cp.accent.gamma_multiply(0.12))
+                                .corner_radius(CornerRadius::same(4))
+                                .inner_margin(Margin::symmetric(5, 1))
+                                .show(ui, |ui| {
+                                    ui.label(RichText::new("Call").size(10.5).strong().color(cp.accent));
+                                });
+                        } else {
+                            let check_btn = egui::Button::new(RichText::new("□").size(14.0).color(cp.accent))
+                                .fill(cp.surface_hover)
+                                .corner_radius(CornerRadius::same(4))
+                                .min_size(vec2(22.0, 22.0));
+                            if ui.add(check_btn).on_hover_text("Concluir tarefa").clicked() {
+                                let mut updated = item.clone();
+                                updated.status = "done".into();
+                                updated.completed_at = Some(now);
+                                updated.updated_at = now;
+                                to_complete = Some(updated);
+                                ui.ctx().request_repaint();
+                            }
                         }
 
+                        ui.add_space(4.0);
                         ui.label(
-                            RichText::new(&task.title)
+                            RichText::new(&item.title)
                                 .size(13.5)
                                 .strong()
                                 .color(cp.text),
                         );
 
-                        if let Some(p_name) = &project_name {
+                        if let Some(c_name) = &client_name {
                             ui.label(
-                                RichText::new(format!("📁 {}", p_name))
+                                RichText::new(format!("• 👤 {}", c_name))
+                                    .size(12.0)
+                                    .color(cp.secondary),
+                            );
+                        } else if let Some(p_name) = &project_name {
+                            ui.label(
+                                RichText::new(format!("• 📁 {}", p_name))
                                     .size(12.0)
                                     .color(cp.secondary),
                             );
                         }
 
                         ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-                            if let Some(due) = task.due_at {
-                                if let Some((_, hour, minute)) = crate::util::local_datetime(due) {
-                                    ui.label(
-                                        RichText::new(format!("Hoje às {:02}:{:02}", hour, minute))
-                                            .size(12.0)
-                                            .color(cp.accent),
-                                    );
+                            ui.add_space(16.0);
+                            if let Some(chat_id) = &item.chat_id {
+                                let chat_btn = egui::Button::new(
+                                    RichText::new("💬 Chat").size(11.5).color(cp.accent),
+                                )
+                                .fill(cp.surface_hover)
+                                .corner_radius(CornerRadius::same(4));
+                                if ui.add(chat_btn).clicked() {
+                                    app.actions.push(Action::OpenChat(chat_id.clone()));
+                                    ui.ctx().request_repaint();
+                                }
+                            }
+                            if *is_call {
+                                if let Some(dur) = item.duration_minutes {
+                                    ui.label(RichText::new(format!("{} min", dur)).size(11.5).color(cp.dim));
+                                }
+                            } else {
+                                let (p_bg, p_fg, p_txt) = match item.priority.as_str() {
+                                    "high" => (cp.danger.gamma_multiply(0.15), cp.danger, "Alta"),
+                                    "low" => (cp.surface_hover, cp.dim, "Baixa"),
+                                    _ => (cp.accent.gamma_multiply(0.12), cp.accent, "Normal"),
+                                };
+                                Frame::new()
+                                    .fill(p_bg)
+                                    .corner_radius(CornerRadius::same(4))
+                                    .inner_margin(Margin::symmetric(5, 1))
+                                    .show(ui, |ui| {
+                                        ui.label(RichText::new(p_txt).size(10.5).color(p_fg));
+                                    });
+                            }
+                        });
+                    });
+                });
+            ui.add_space(6.0);
+        }
+    }
+
+    ui.add_space(20.0);
+
+    // 5. Resumo de Calls de Venda
+    ui.horizontal(|ui| {
+        ui.label(
+            RichText::new("Resumo de Calls de Venda")
+                .size(17.0)
+                .strong()
+                .color(cp.text),
+        );
+        ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
+            ui.add_space(16.0);
+            let btn = egui::Button::new(
+                RichText::new("Ver todas as calls →")
+                    .size(12.5)
+                    .strong()
+                    .color(cp.accent),
+            )
+            .fill(cp.surface)
+            .stroke(Stroke::new(1.0, cp.outline))
+            .corner_radius(CornerRadius::same(6));
+            if ui.add(btn).clicked() {
+                *view = WorkspaceView::Calls;
+                ui.ctx().request_repaint();
+            }
+        });
+    });
+
+    ui.add_space(8.0);
+
+    let all_calls_count = app.crm_tasks.iter().filter(|t| matches!(t.kind.as_str(), "call" | "conversation")).count();
+    let closed_calls_count = app.crm_tasks.iter().filter(|t| matches!(t.kind.as_str(), "call" | "conversation") && (t.status == "closed" || t.revenue_cents > 0)).count();
+    let total_calls_rev: i64 = app.crm_tasks.iter().filter(|t| matches!(t.kind.as_str(), "call" | "conversation")).map(|t| t.revenue_cents).sum();
+
+    let call_kpi_w = ((ui.available_width() - 24.0) / 3.0).max(130.0);
+    ui.horizontal_wrapped(|ui| {
+        metric_str(ui, cp, Icon::Phone, "Hoje / Total", &format!("{}/{}", today_calls.len(), all_calls_count), call_kpi_w);
+        metric_str(ui, cp, Icon::CircleCheck, "Fechamentos", &closed_calls_count.to_string(), call_kpi_w);
+        metric_str(ui, cp, Icon::Tag, "Receita de Calls", &format_currency(total_calls_rev), call_kpi_w);
+    });
+
+    ui.add_space(10.0);
+
+    let display_calls: Vec<_> = if !today_calls.is_empty() {
+        today_calls.clone()
+    } else {
+        app.crm_tasks
+            .iter()
+            .filter(|t| matches!(t.kind.as_str(), "call" | "conversation"))
+            .rev()
+            .take(4)
+            .cloned()
+            .collect()
+    };
+
+    if display_calls.is_empty() {
+        Frame::new()
+            .fill(cp.surface)
+            .stroke(Stroke::new(1.0, cp.outline))
+            .corner_radius(CornerRadius::same(8))
+            .inner_margin(Margin::same(12))
+            .show(ui, |ui| {
+                ui.horizontal(|ui| {
+                    theme::icon(ui, Icon::Phone, 16.0, cp.accent);
+                    ui.label(
+                        RichText::new("Nenhuma call cadastrada ainda. Agende sua primeira reunião para alavancar conversões!")
+                            .size(13.0)
+                            .color(cp.secondary),
+                    );
+                });
+            });
+    } else {
+        for call in &display_calls {
+            let client_name = call
+                .chat_id
+                .as_ref()
+                .and_then(|id| app.chat(id))
+                .map(|c| app.chat_title(c));
+
+            Frame::new()
+                .fill(cp.surface)
+                .stroke(Stroke::new(1.0, cp.outline))
+                .corner_radius(CornerRadius::same(8))
+                .inner_margin(Margin::symmetric(14, 10))
+                .show(ui, |ui| {
+                    ui.horizontal(|ui| {
+                        theme::icon(ui, Icon::Phone, 14.0, cp.accent);
+                        ui.add_space(4.0);
+                        ui.label(RichText::new(&call.title).size(13.5).strong().color(cp.text));
+                        if let Some(c_name) = &client_name {
+                            ui.label(RichText::new(format!("• 👤 {}", c_name)).size(12.0).color(cp.secondary));
+                        }
+                        if let Some(dur) = call.duration_minutes {
+                            ui.label(RichText::new(format!("• {} min", dur)).size(11.5).color(cp.dim));
+                        }
+                        if !call.call_result.is_empty() {
+                            Frame::new()
+                                .fill(cp.surface_hover)
+                                .corner_radius(CornerRadius::same(4))
+                                .inner_margin(Margin::symmetric(6, 2))
+                                .show(ui, |ui| {
+                                    ui.label(RichText::new(&call.call_result).size(10.5).color(cp.secondary));
+                                });
+                        }
+                        if call.revenue_cents > 0 {
+                            ui.label(RichText::new(format_currency(call.revenue_cents)).size(12.5).strong().color(cp.accent));
+                        }
+                        ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
+                            ui.add_space(16.0);
+                            if let Some(chat_id) = &call.chat_id {
+                                let chat_btn = egui::Button::new(RichText::new("💬 Chat").size(11.5).color(cp.accent))
+                                    .fill(cp.surface_hover)
+                                    .corner_radius(CornerRadius::same(4));
+                                if ui.add(chat_btn).clicked() {
+                                    app.actions.push(Action::OpenChat(chat_id.clone()));
+                                    ui.ctx().request_repaint();
+                                }
+                            }
+                            if let Some(due) = call.due_at {
+                                if let Some((date, h, m)) = crate::util::local_datetime(due) {
+                                    let dt_str = if date == today {
+                                        format!("Hoje às {:02}:{:02}", h, m)
+                                    } else {
+                                        format!("{:02}/{:02} {:02}:{:02}", date.day(), date.month(), h, m)
+                                    };
+                                    ui.label(RichText::new(dt_str).size(12.0).color(cp.secondary));
                                 }
                             }
                         });
@@ -2368,9 +2767,155 @@ fn overview(app: &mut App, ui: &mut egui::Ui, view: &mut WorkspaceView, cp: &Crm
         }
     }
 
-    ui.add_space(18.0);
+    ui.add_space(20.0);
 
-    // 5. Próximos Follow-ups
+    // 6. Projetos Ativos
+    ui.horizontal(|ui| {
+        ui.label(
+            RichText::new("Projetos Ativos")
+                .size(17.0)
+                .strong()
+                .color(cp.text),
+        );
+        ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
+            ui.add_space(16.0);
+            let btn = egui::Button::new(
+                RichText::new("Ver todos os projetos →")
+                    .size(12.5)
+                    .strong()
+                    .color(cp.accent),
+            )
+            .fill(cp.surface)
+            .stroke(Stroke::new(1.0, cp.outline))
+            .corner_radius(CornerRadius::same(6));
+            if ui.add(btn).clicked() {
+                *view = WorkspaceView::Projects;
+                ui.ctx().request_repaint();
+            }
+        });
+    });
+
+    ui.add_space(8.0);
+
+    if active_projects.is_empty() {
+        Frame::new()
+            .fill(cp.surface)
+            .stroke(Stroke::new(1.0, cp.outline))
+            .corner_radius(CornerRadius::same(8))
+            .inner_margin(Margin::same(12))
+            .show(ui, |ui| {
+                ui.horizontal(|ui| {
+                    theme::icon(ui, Icon::Users, 16.0, cp.accent);
+                    ui.label(
+                        RichText::new("Nenhum projeto ativo no momento. Crie um novo projeto para organizar entregas e clientes.")
+                            .size(13.0)
+                            .color(cp.secondary),
+                    );
+                });
+            });
+    } else {
+        let avail_w = ui.available_width();
+        let num_cols = if avail_w > 900.0 { 3 } else if avail_w > 540.0 { 2 } else { 1 };
+        let gap = 12.0;
+        let card_w = ((avail_w - (num_cols as f32 - 1.0) * gap) / num_cols as f32).max(220.0);
+
+        for row_projs in active_projects.chunks(num_cols) {
+            ui.horizontal(|ui| {
+                ui.spacing_mut().item_spacing.x = gap;
+                for proj in row_projs {
+                    let total_t = app.crm_tasks.iter().filter(|t| t.project_id.as_deref() == Some(&proj.id)).count();
+                    let done_t = app.crm_tasks.iter().filter(|t| t.project_id.as_deref() == Some(&proj.id) && t.status == "done").count();
+                    let prog = if total_t == 0 { 0.0 } else { done_t as f32 / total_t as f32 };
+
+                    Frame::new()
+                        .fill(cp.surface)
+                        .stroke(Stroke::new(1.0, cp.outline))
+                        .corner_radius(CornerRadius::same(10))
+                        .inner_margin(Margin::same(14))
+                        .show(ui, |ui| {
+                            ui.set_width(card_w - 28.0);
+                            ui.vertical(|ui| {
+                                ui.horizontal(|ui| {
+                                    let (status_bg, status_fg, status_txt) = match proj.status.as_str() {
+                                        "active" => (cp.accent.gamma_multiply(0.15), cp.accent, "Ativo"),
+                                        "paused" => (cp.warning.gamma_multiply(0.15), cp.warning, "Pausado"),
+                                        _ => (cp.surface_hover, cp.dim, "Arquivado"),
+                                    };
+                                    Frame::new()
+                                        .fill(status_bg)
+                                        .corner_radius(CornerRadius::same(4))
+                                        .inner_margin(Margin::symmetric(6, 2))
+                                        .show(ui, |ui| {
+                                            ui.label(RichText::new(status_txt).size(10.5).strong().color(status_fg));
+                                        });
+
+                                    ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
+                                        let open_btn = egui::Button::new(RichText::new("Abrir →").size(11.5).strong().color(cp.accent))
+                                            .fill(cp.surface_hover)
+                                            .corner_radius(CornerRadius::same(5));
+                                        if ui.add(open_btn).clicked() {
+                                            *selected = Some(proj.id.clone());
+                                            *view = WorkspaceView::Projects;
+                                            ui.ctx().request_repaint();
+                                        }
+                                    });
+                                });
+
+                                ui.add_space(6.0);
+                                ui.add(
+                                    egui::Label::new(RichText::new(&proj.name).size(14.5).strong().color(cp.text))
+                                        .truncate(),
+                                );
+
+                                if !proj.client_name.is_empty() {
+                                    ui.add_space(2.0);
+                                    ui.horizontal(|ui| {
+                                        theme::icon(ui, Icon::User, 12.0, cp.secondary);
+                                        ui.add(
+                                            egui::Label::new(RichText::new(&proj.client_name).size(12.0).color(cp.secondary))
+                                                .truncate(),
+                                        );
+                                        if !proj.client_phone.is_empty() {
+                                            ui.label(RichText::new(format!("• {}", proj.client_phone)).size(11.0).color(cp.dim));
+                                        }
+                                    });
+                                }
+
+                                if let Some(due) = proj.due_at {
+                                    if let Some((d, _, _)) = crate::util::local_datetime(due) {
+                                        let is_late = due < now && proj.status != "completed";
+                                        ui.add_space(2.0);
+                                        ui.horizontal(|ui| {
+                                            theme::icon(ui, Icon::Clock, 12.0, if is_late { cp.danger } else { cp.dim });
+                                            ui.label(
+                                                RichText::new(format!("Prazo: {:02}/{:02}/{}", d.day(), d.month(), d.year()))
+                                                    .size(11.5)
+                                                    .color(if is_late { cp.danger } else { cp.secondary }),
+                                            );
+                                        });
+                                    }
+                                }
+
+                                ui.add_space(6.0);
+                                ui.horizontal(|ui| {
+                                    ui.label(RichText::new(format!("{done_t}/{total_t} tarefas")).size(11.0).color(cp.dim));
+                                    ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
+                                        ui.label(RichText::new(format!("{:.0}%", prog * 100.0)).size(11.0).strong().color(cp.accent));
+                                    });
+                                });
+                                ui.add_space(2.0);
+                                ui.add_sized([ui.available_width(), 4.0], egui::ProgressBar::new(prog).fill(cp.accent).animate(false));
+                            });
+                        });
+                }
+            });
+            ui.add_space(gap);
+        }
+    }
+
+    ui.add_space(20.0);
+
+    // 7. Próximos Follow-ups
     ui.horizontal(|ui| {
         ui.label(
             RichText::new("Próximos Follow-ups")
@@ -2379,6 +2924,7 @@ fn overview(app: &mut App, ui: &mut egui::Ui, view: &mut WorkspaceView, cp: &Crm
                 .color(cp.text),
         );
         ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
+            ui.add_space(16.0);
             ui.label(
                 RichText::new(format!("{} pendente(s)", open_followups.len()))
                     .size(12.5)
@@ -2434,6 +2980,7 @@ fn overview(app: &mut App, ui: &mut egui::Ui, view: &mut WorkspaceView, cp: &Crm
                         );
 
                         ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
+                            ui.add_space(16.0);
                             let open_btn = egui::Button::new(
                                 RichText::new("Abrir Chat").size(11.5).color(cp.accent),
                             )
@@ -2441,6 +2988,7 @@ fn overview(app: &mut App, ui: &mut egui::Ui, view: &mut WorkspaceView, cp: &Crm
                             .corner_radius(CornerRadius::same(4));
                             if ui.add(open_btn).clicked() {
                                 app.actions.push(Action::OpenChat(followup.chat_id.clone()));
+                                ui.ctx().request_repaint();
                             }
 
                             let complete_btn = egui::Button::new(
@@ -2451,6 +2999,7 @@ fn overview(app: &mut App, ui: &mut egui::Ui, view: &mut WorkspaceView, cp: &Crm
                             if ui.add(complete_btn).clicked() {
                                 app.actions
                                     .push(Action::CompleteCrmFollowup(followup.id.clone()));
+                                ui.ctx().request_repaint();
                             }
                         });
                     });
@@ -2461,6 +3010,7 @@ fn overview(app: &mut App, ui: &mut egui::Ui, view: &mut WorkspaceView, cp: &Crm
 
     if let Some(t) = to_complete {
         app.actions.push(Action::SaveCrmTask(t));
+        ui.ctx().request_repaint();
     }
 }
 
@@ -3228,9 +3778,9 @@ fn project_detail(
         .data(|d| d.get_temp::<ProjectDetailTab>(tab_id))
         .unwrap_or_default();
 
-    // 1. Top Header Bar (Responsive: never clips action buttons)
+    // 1. Top Header Bar (Responsive: never clips action buttons, never overlaps scrollbar)
     let header_avail = ui.available_width();
-    if header_avail < 540.0 {
+    if header_avail < 640.0 {
         ui.horizontal(|ui| {
             let back_btn =
                 egui::Button::new(RichText::new("← Projetos").size(12.5).color(cp.secondary))
@@ -3240,6 +3790,7 @@ fn project_detail(
                     .min_size(vec2(85.0, 30.0));
             if ui.add(back_btn).clicked() {
                 *selected = None;
+                ui.ctx().request_repaint();
             }
 
             ui.add_space(4.0);
@@ -3268,11 +3819,21 @@ fn project_detail(
                 });
 
             ui.add_space(4.0);
-            ui.label(
-                RichText::new(&project.name)
-                    .size(16.5)
-                    .strong()
-                    .color(cp.text),
+            let title_w = (header_avail - 190.0).max(80.0);
+            ui.allocate_ui_with_layout(
+                vec2(title_w, 28.0),
+                Layout::left_to_right(Align::Center),
+                |ui| {
+                    ui.add(
+                        egui::Label::new(
+                            RichText::new(&project.name)
+                                .size(16.0)
+                                .strong()
+                                .color(cp.text),
+                        )
+                        .truncate(),
+                    );
+                },
             );
         });
         ui.add_space(6.0);
@@ -3284,6 +3845,7 @@ fn project_detail(
                 .min_size(vec2(85.0, 30.0));
             if ui.add(edit_btn).clicked() {
                 edit.open = true;
+                ui.ctx().request_repaint();
             }
 
             ui.add_space(6.0);
@@ -3295,6 +3857,7 @@ fn project_detail(
                 .min_size(vec2(85.0, 30.0));
             if ui.add(del_btn).clicked() {
                 confirm_delete = true;
+                ui.ctx().request_repaint();
             }
         });
     } else {
@@ -3307,6 +3870,7 @@ fn project_detail(
                     .min_size(vec2(95.0, 32.0));
             if ui.add(back_btn).clicked() {
                 *selected = None;
+                ui.ctx().request_repaint();
             }
 
             ui.add_space(6.0);
@@ -3334,9 +3898,10 @@ fn project_detail(
                     );
                 });
 
-            ui.add_space(4.0);
+            ui.add_space(6.0);
 
-            let title_max_w = (header_avail - 290.0).max(100.0);
+            // Reserve 220px for the right buttons + 190px for back_btn and status
+            let title_max_w = (header_avail - 420.0).max(100.0);
             ui.allocate_ui_with_layout(
                 vec2(title_max_w, 32.0),
                 Layout::left_to_right(Align::Center),
@@ -3344,26 +3909,28 @@ fn project_detail(
                     ui.add(
                         egui::Label::new(
                             RichText::new(&project.name)
-                                .size(19.0)
+                                .size(18.0)
                                 .strong()
                                 .color(cp.text),
                         )
                         .truncate(),
                     );
+                    if project.kind == "internal" {
+                        ui.add_space(4.0);
+                        Frame::new()
+                            .fill(cp.surface_hover)
+                            .corner_radius(CornerRadius::same(4))
+                            .inner_margin(Margin::symmetric(6, 2))
+                            .show(ui, |ui| {
+                                ui.label(RichText::new("Interno").size(11.0).color(cp.secondary));
+                            });
+                    }
                 },
             );
 
-            if project.kind == "internal" {
-                Frame::new()
-                    .fill(cp.surface_hover)
-                    .corner_radius(CornerRadius::same(4))
-                    .inner_margin(Margin::symmetric(6, 2))
-                    .show(ui, |ui| {
-                        ui.label(RichText::new("Interno").size(11.0).color(cp.secondary));
-                    });
-            }
-
             ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
+                ui.add_space(16.0); // Safe right margin away from vertical scrollbar!
+
                 // Delete project button
                 let del_btn =
                     egui::Button::new(RichText::new("🗑 Excluir").size(12.5).color(cp.danger))
@@ -3373,6 +3940,7 @@ fn project_detail(
                         .min_size(vec2(85.0, 32.0));
                 if ui.add(del_btn).clicked() {
                     confirm_delete = true;
+                    ui.ctx().request_repaint();
                 }
 
                 ui.add_space(6.0);
@@ -3386,12 +3954,13 @@ fn project_detail(
                         .min_size(vec2(85.0, 32.0));
                 if ui.add(edit_btn).clicked() {
                     edit.open = true;
+                    ui.ctx().request_repaint();
                 }
             });
         });
     }
 
-    // Fluxo Style KPI & Metadata Summary Card
+    // Fluxo Style KPI & Metadata Summary Card (Responsive: 4 cols or 2x2 grid)
     let total_tasks = app
         .crm_tasks
         .iter()
@@ -3416,10 +3985,9 @@ fn project_detail(
         .inner_margin(Margin::same(14))
         .show(ui, |ui| {
             let card_avail = ui.available_width();
-            let col_w = ((card_avail - 40.0) / 4.0).max(110.0);
-            ui.horizontal(|ui| {
-                // Col 1: Cliente
-                ui.allocate_ui_with_layout(vec2(col_w, 64.0), Layout::top_down(Align::Min), |ui| {
+
+            let render_col_cliente = |ui: &mut egui::Ui, w: f32, app: &mut App| {
+                ui.allocate_ui_with_layout(vec2(w, 68.0), Layout::top_down(Align::Min), |ui| {
                     ui.horizontal(|ui| {
                         theme::icon(ui, Icon::Users, 14.0, cp.accent);
                         ui.label(RichText::new("CLIENTE").size(10.5).strong().color(cp.dim));
@@ -3441,26 +4009,39 @@ fn project_detail(
                         .truncate(),
                     );
                     if !project.client_phone.is_empty() {
+                        ui.horizontal(|ui| {
+                            ui.add(
+                                egui::Label::new(
+                                    RichText::new(&project.client_phone)
+                                        .size(11.0)
+                                        .color(cp.secondary),
+                                )
+                                .truncate(),
+                            );
+                            let chat_target = project.chat_ids.first().cloned().unwrap_or_else(|| project.client_phone.clone());
+                            let wa_btn = egui::Button::new(RichText::new("💬 Chat").size(10.5).color(cp.accent))
+                                .fill(cp.surface_hover)
+                                .corner_radius(CornerRadius::same(4));
+                            if ui.add(wa_btn).clicked() {
+                                app.actions.push(Action::OpenChat(chat_target));
+                                ui.ctx().request_repaint();
+                            }
+                        });
+                    } else if !project.client_email.is_empty() {
                         ui.add(
                             egui::Label::new(
-                                RichText::new(&project.client_phone)
-                                    .size(11.0)
-                                    .color(cp.secondary),
+                                RichText::new(&project.client_email)
+                                    .size(10.5)
+                                    .color(cp.dim),
                             )
                             .truncate(),
                         );
                     }
                 });
+            };
 
-                ui.painter().vline(
-                    ui.cursor().left(),
-                    ui.cursor().top()..=(ui.cursor().top() + 60.0),
-                    Stroke::new(1.0, cp.outline),
-                );
-                ui.add_space(8.0);
-
-                // Col 2: Prazo
-                ui.allocate_ui_with_layout(vec2(col_w, 64.0), Layout::top_down(Align::Min), |ui| {
+            let render_col_prazo = |ui: &mut egui::Ui, w: f32, app: &App| {
+                ui.allocate_ui_with_layout(vec2(w, 68.0), Layout::top_down(Align::Min), |ui| {
                     let now = crate::util::now();
                     let is_overdue = project
                         .due_at
@@ -3480,8 +4061,7 @@ fn project_detail(
                         );
                     });
                     ui.add_space(4.0);
-                    if let Some((date, _, _)) = project.due_at.and_then(crate::util::local_datetime)
-                    {
+                    if let Some((date, _, _)) = project.due_at.and_then(crate::util::local_datetime) {
                         let date_str = crate::util::long_date(app.locale, date);
                         let (txt, color) = if is_overdue {
                             (format!("{} (Atrasado)", date_str), cp.danger)
@@ -3495,9 +4075,7 @@ fn project_detail(
                     } else {
                         ui.label(RichText::new("Sem prazo").size(13.0).color(cp.dim));
                     }
-                    if let Some((s_date, _, _)) =
-                        project.start_at.and_then(crate::util::local_datetime)
-                    {
+                    if let Some((s_date, _, _)) = project.start_at.and_then(crate::util::local_datetime) {
                         ui.add(
                             egui::Label::new(
                                 RichText::new(format!(
@@ -3511,16 +4089,10 @@ fn project_detail(
                         );
                     }
                 });
+            };
 
-                ui.painter().vline(
-                    ui.cursor().left(),
-                    ui.cursor().top()..=(ui.cursor().top() + 60.0),
-                    Stroke::new(1.0, cp.outline),
-                );
-                ui.add_space(8.0);
-
-                // Col 3: Responsável
-                ui.allocate_ui_with_layout(vec2(col_w, 64.0), Layout::top_down(Align::Min), |ui| {
+            let render_col_responsavel = |ui: &mut egui::Ui, w: f32| {
+                ui.allocate_ui_with_layout(vec2(w, 68.0), Layout::top_down(Align::Min), |ui| {
                     ui.horizontal(|ui| {
                         theme::icon(ui, Icon::User, 14.0, cp.accent);
                         ui.label(
@@ -3548,16 +4120,10 @@ fn project_detail(
                     );
                     ui.label(RichText::new("Responsável direto").size(11.0).color(cp.dim));
                 });
+            };
 
-                ui.painter().vline(
-                    ui.cursor().left(),
-                    ui.cursor().top()..=(ui.cursor().top() + 60.0),
-                    Stroke::new(1.0, cp.outline),
-                );
-                ui.add_space(8.0);
-
-                // Col 4: Progresso
-                ui.allocate_ui_with_layout(vec2(col_w, 64.0), Layout::top_down(Align::Min), |ui| {
+            let render_col_progresso = |ui: &mut egui::Ui, w: f32| {
+                ui.allocate_ui_with_layout(vec2(w, 68.0), Layout::top_down(Align::Min), |ui| {
                     ui.horizontal(|ui| {
                         theme::icon(ui, Icon::ListChecks, 14.0, cp.accent);
                         ui.label(RichText::new("PROGRESSO").size(10.5).strong().color(cp.dim));
@@ -3580,7 +4146,58 @@ fn project_detail(
                             .animate(false),
                     );
                 });
-            });
+            };
+
+            if card_avail < 640.0 {
+                let half_w = ((card_avail - 16.0) / 2.0).max(120.0);
+                ui.vertical(|ui| {
+                    ui.horizontal(|ui| {
+                        render_col_cliente(ui, half_w, app);
+                        ui.add_space(8.0);
+                        render_col_prazo(ui, half_w, app);
+                    });
+                    ui.add_space(8.0);
+                    ui.separator();
+                    ui.add_space(8.0);
+                    ui.horizontal(|ui| {
+                        render_col_responsavel(ui, half_w);
+                        ui.add_space(8.0);
+                        render_col_progresso(ui, half_w);
+                    });
+                });
+            } else {
+                let col_w = ((card_avail - 40.0) / 4.0).max(110.0);
+                ui.horizontal(|ui| {
+                    render_col_cliente(ui, col_w, app);
+
+                    ui.painter().vline(
+                        ui.cursor().left(),
+                        ui.cursor().top()..=(ui.cursor().top() + 60.0),
+                        Stroke::new(1.0, cp.outline),
+                    );
+                    ui.add_space(8.0);
+
+                    render_col_prazo(ui, col_w, app);
+
+                    ui.painter().vline(
+                        ui.cursor().left(),
+                        ui.cursor().top()..=(ui.cursor().top() + 60.0),
+                        Stroke::new(1.0, cp.outline),
+                    );
+                    ui.add_space(8.0);
+
+                    render_col_responsavel(ui, col_w);
+
+                    ui.painter().vline(
+                        ui.cursor().left(),
+                        ui.cursor().top()..=(ui.cursor().top() + 60.0),
+                        Stroke::new(1.0, cp.outline),
+                    );
+                    ui.add_space(8.0);
+
+                    render_col_progresso(ui, col_w);
+                });
+            }
         });
 
     // 2. Standardized Deletion Confirmation Banner
@@ -3683,8 +4300,9 @@ fn project_detail(
         })
         .count();
 
-    ui.horizontal(|ui| {
+    ui.horizontal_wrapped(|ui| {
         ui.spacing_mut().item_spacing.x = 8.0;
+        ui.spacing_mut().item_spacing.y = 6.0;
 
         let tabs = [
             (ProjectDetailTab::Overview, "📋 Resumo".to_owned()),
@@ -3718,6 +4336,7 @@ fn project_detail(
 
             if ui.add(tab_btn).clicked() {
                 current_tab = tab_type;
+                ui.ctx().request_repaint();
             }
         }
     });
@@ -3729,7 +4348,7 @@ fn project_detail(
     // 5. Active Tab Body Content
     match current_tab {
         ProjectDetailTab::Overview => {
-            render_project_tab_overview(app, ui, cp, &mut project);
+            render_project_tab_overview(app, ui, cp, &mut project, tab_id);
         }
         ProjectDetailTab::Tasks => {
             render_project_tab_tasks(app, ui, cp, &project);
@@ -3982,6 +4601,7 @@ fn render_project_tab_overview(
     ui: &mut egui::Ui,
     cp: &CrmPalette,
     project: &mut CrmProject,
+    tab_id: egui::Id,
 ) {
     let total_tasks = app
         .crm_tasks
@@ -4064,36 +4684,87 @@ fn render_project_tab_overview(
                 ui.columns(2, |uis| {
                     uis[0].vertical(|ui| {
                         if !project.client_name.is_empty() {
-                            ui.label(
-                                RichText::new(format!("Cliente: {}", project.client_name))
-                                    .size(13.0)
-                                    .color(cp.text),
-                            );
+                            ui.horizontal(|ui| {
+                                theme::icon(ui, Icon::User, 14.0, cp.accent);
+                                ui.label(
+                                    RichText::new(format!("Cliente: {}", project.client_name))
+                                        .size(13.5)
+                                        .strong()
+                                        .color(cp.text),
+                                );
+                            });
                             ui.add_space(4.0);
                         }
                         if !project.assignee.is_empty() {
-                            ui.label(
-                                RichText::new(format!("Responsável: {}", project.assignee))
-                                    .size(13.0)
-                                    .color(cp.secondary),
-                            );
+                            ui.horizontal(|ui| {
+                                theme::icon(ui, Icon::User, 14.0, cp.secondary);
+                                ui.label(
+                                    RichText::new(format!("Responsável: {}", project.assignee))
+                                        .size(13.0)
+                                        .color(cp.secondary),
+                                );
+                            });
                             ui.add_space(4.0);
                         }
                         if !project.client_phone.is_empty() {
-                            ui.label(
-                                RichText::new(format!("WhatsApp: {}", project.client_phone))
-                                    .size(13.0)
-                                    .color(cp.secondary),
-                            );
+                            ui.horizontal(|ui| {
+                                theme::icon(ui, Icon::Phone, 14.0, cp.accent);
+                                ui.label(
+                                    RichText::new(&project.client_phone)
+                                        .size(13.0)
+                                        .strong()
+                                        .color(cp.text),
+                                );
+                                let copy_btn = egui::Button::new(
+                                    RichText::new("📋 Copiar").size(11.0).color(cp.secondary),
+                                )
+                                .fill(cp.surface_hover)
+                                .corner_radius(CornerRadius::same(4));
+                                if ui.add(copy_btn).clicked() {
+                                    ui.ctx().copy_text(project.client_phone.clone());
+                                    ui.ctx().request_repaint();
+                                }
+                                if let Some(first_chat) = project.chat_ids.first() {
+                                    let chat_btn = egui::Button::new(
+                                        RichText::new("💬 WhatsApp").size(11.0).color(cp.accent),
+                                    )
+                                    .fill(cp.surface_hover)
+                                    .corner_radius(CornerRadius::same(4));
+                                    if ui.add(chat_btn).clicked() {
+                                        app.actions.push(Action::OpenChat(first_chat.clone()));
+                                        ui.ctx().request_repaint();
+                                    }
+                                }
+                            });
                             ui.add_space(4.0);
                         }
                         if !project.client_email.is_empty() {
-                            ui.label(
-                                RichText::new(format!("E-mail: {}", project.client_email))
-                                    .size(13.0)
-                                    .color(cp.secondary),
-                            );
+                            ui.horizontal(|ui| {
+                                theme::icon(ui, Icon::Send, 14.0, cp.accent);
+                                ui.label(
+                                    RichText::new(&project.client_email)
+                                        .size(13.0)
+                                        .color(cp.secondary),
+                                );
+                                let copy_btn = egui::Button::new(
+                                    RichText::new("📋 Copiar").size(11.0).color(cp.secondary),
+                                )
+                                .fill(cp.surface_hover)
+                                .corner_radius(CornerRadius::same(4));
+                                if ui.add(copy_btn).clicked() {
+                                    ui.ctx().copy_text(project.client_email.clone());
+                                    ui.ctx().request_repaint();
+                                }
+                            });
                             ui.add_space(4.0);
+                        }
+                        if project.client_phone.is_empty() && project.client_email.is_empty() {
+                            ui.label(
+                                RichText::new("Nenhum contato do cliente cadastrado")
+                                    .size(12.0)
+                                    .italics()
+                                    .color(cp.dim),
+                            );
                         }
                     });
 
@@ -4193,7 +4864,293 @@ fn render_project_tab_overview(
 
     ui.add_space(14.0);
 
-    // 3. Linked Chats Card
+    // 3. Tarefas do Cliente / Projeto
+    let project_tasks: Vec<_> = app
+        .crm_tasks
+        .iter()
+        .filter(|t| t.project_id.as_deref() == Some(&project.id) && t.kind == "task")
+        .cloned()
+        .collect();
+    let (done_tasks, pending_tasks): (Vec<_>, Vec<_>) =
+        project_tasks.into_iter().partition(|t| t.status == "done");
+
+    Frame::new()
+        .fill(cp.surface)
+        .stroke(Stroke::new(1.0, cp.outline))
+        .corner_radius(CornerRadius::same(10))
+        .inner_margin(Margin::same(16))
+        .show(ui, |ui| {
+            ui.vertical(|ui| {
+                ui.horizontal(|ui| {
+                    theme::icon(ui, Icon::ListChecks, 16.0, cp.accent);
+                    ui.label(
+                        RichText::new("Tarefas do Cliente / Projeto")
+                            .size(14.5)
+                            .strong()
+                            .color(cp.text),
+                    );
+                    ui.label(
+                        RichText::new(format!(
+                            "({} pendentes • {} concluídas)",
+                            pending_tasks.len(),
+                            done_tasks.len()
+                        ))
+                        .size(12.5)
+                        .color(cp.secondary),
+                    );
+
+                    ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
+                        let view_tasks_btn = egui::Button::new(
+                            RichText::new("Ver todas as tarefas →").size(12.0).color(cp.accent),
+                        )
+                        .fill(cp.surface_hover)
+                        .corner_radius(CornerRadius::same(4));
+                        if ui.add(view_tasks_btn).clicked() {
+                            ui.ctx().data_mut(|d| d.insert_temp(tab_id, ProjectDetailTab::Tasks));
+                            ui.ctx().request_repaint();
+                        }
+                    });
+                });
+
+                ui.add_space(10.0);
+
+                // Quick Add inline
+                let quick_task_id = ui.id().with(("overview-quick-task", &project.id));
+                let mut quick_task = ui
+                    .ctx()
+                    .data(|d| d.get_temp::<String>(quick_task_id))
+                    .unwrap_or_default();
+                ui.horizontal(|ui| {
+                    let task_input_w = (ui.available_width() - 130.0).max(120.0);
+                    ui.add(
+                        egui::TextEdit::singleline(&mut quick_task)
+                            .hint_text("Adicionar nova tarefa...")
+                            .desired_width(task_input_w),
+                    );
+                    let add_btn = egui::Button::new(
+                        RichText::new("＋ Adicionar").size(12.0).strong().color(cp.on_accent),
+                    )
+                    .fill(cp.accent)
+                    .corner_radius(CornerRadius::same(6))
+                    .min_size(vec2(110.0, 28.0));
+                    if ui.add_enabled(!quick_task.trim().is_empty(), add_btn).clicked() {
+                        let nonce = std::time::SystemTime::now()
+                            .duration_since(std::time::UNIX_EPOCH)
+                            .unwrap_or_default()
+                            .as_nanos();
+                        let now = crate::util::now();
+                        app.actions.push(Action::SaveCrmTask(CrmTask {
+                            id: format!("task-{nonce}"),
+                            chat_id: project.chat_ids.first().cloned(),
+                            project_id: Some(project.id.clone()),
+                            title: quick_task.trim().into(),
+                            description: String::new(),
+                            status: "todo".into(),
+                            priority: "normal".into(),
+                            kind: "task".into(),
+                            duration_minutes: None,
+                            assignee: project.assignee.clone(),
+                            call_result: String::new(),
+                            next_step: String::new(),
+                            revenue_cents: 0,
+                            due_at: None,
+                            completed_at: None,
+                            created_at: now,
+                            updated_at: now,
+                        }));
+                        quick_task.clear();
+                        ui.ctx().request_repaint();
+                    }
+                });
+                ui.ctx().data_mut(|d| d.insert_temp(quick_task_id, quick_task));
+
+                ui.add_space(8.0);
+
+                if pending_tasks.is_empty() {
+                    ui.label(
+                        RichText::new("Nenhuma tarefa pendente neste projeto.")
+                            .size(13.0)
+                            .color(cp.dim),
+                    );
+                } else {
+                    for task in pending_tasks.iter().take(5) {
+                        render_project_task_row(app, ui, cp, task, true);
+                        ui.add_space(4.0);
+                    }
+                    if pending_tasks.len() > 5 {
+                        ui.label(
+                            RichText::new(format!(
+                                "+ {} outras tarefas pendentes",
+                                pending_tasks.len() - 5
+                            ))
+                            .size(12.0)
+                            .color(cp.secondary),
+                        );
+                    }
+                }
+            });
+        });
+
+    ui.add_space(14.0);
+
+    // 4. Calls & Reuniões do Cliente
+    let project_calls: Vec<_> = app
+        .crm_tasks
+        .iter()
+        .filter(|t| {
+            t.project_id.as_deref() == Some(&project.id)
+                && matches!(t.kind.as_str(), "call" | "conversation")
+        })
+        .cloned()
+        .collect();
+
+    Frame::new()
+        .fill(cp.surface)
+        .stroke(Stroke::new(1.0, cp.outline))
+        .corner_radius(CornerRadius::same(10))
+        .inner_margin(Margin::same(16))
+        .show(ui, |ui| {
+            ui.vertical(|ui| {
+                ui.horizontal(|ui| {
+                    theme::icon(ui, Icon::Phone, 16.0, cp.accent);
+                    ui.label(
+                        RichText::new("Calls & Reuniões do Cliente")
+                            .size(14.5)
+                            .strong()
+                            .color(cp.text),
+                    );
+                    ui.label(
+                        RichText::new(format!("({} registradas)", project_calls.len()))
+                            .size(12.5)
+                            .color(cp.secondary),
+                    );
+
+                    ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
+                        let view_calls_btn = egui::Button::new(
+                            RichText::new("Ver todas as calls →").size(12.0).color(cp.accent),
+                        )
+                        .fill(cp.surface_hover)
+                        .corner_radius(CornerRadius::same(4));
+                        if ui.add(view_calls_btn).clicked() {
+                            ui.ctx().data_mut(|d| d.insert_temp(tab_id, ProjectDetailTab::Calls));
+                            ui.ctx().request_repaint();
+                        }
+                    });
+                });
+
+                ui.add_space(10.0);
+
+                if project_calls.is_empty() {
+                    ui.horizontal(|ui| {
+                        ui.label(
+                            RichText::new("Nenhuma call ou reunião registrada para este projeto.")
+                                .size(13.0)
+                                .color(cp.dim),
+                        );
+                        let schedule_btn = egui::Button::new(
+                            RichText::new("＋ Agendar Call").size(12.0).color(cp.accent),
+                        )
+                        .fill(cp.surface_hover)
+                        .corner_radius(CornerRadius::same(4));
+                        if ui.add(schedule_btn).clicked() {
+                            ui.ctx().data_mut(|d| d.insert_temp(tab_id, ProjectDetailTab::Calls));
+                            ui.ctx().request_repaint();
+                        }
+                    });
+                } else {
+                    for call in project_calls.iter().take(4) {
+                        Frame::new()
+                            .fill(cp.panel)
+                            .stroke(Stroke::new(1.0, cp.outline))
+                            .corner_radius(CornerRadius::same(6))
+                            .inner_margin(Margin::symmetric(12, 8))
+                            .show(ui, |ui| {
+                                ui.horizontal(|ui| {
+                                    theme::icon(ui, Icon::Phone, 14.0, cp.accent);
+                                    ui.add_space(4.0);
+                                    ui.label(
+                                        RichText::new(&call.title)
+                                            .size(13.0)
+                                            .strong()
+                                            .color(cp.text),
+                                    );
+                                    if let Some(dur) = call.duration_minutes {
+                                        ui.label(
+                                            RichText::new(format!("• {dur} min"))
+                                                .size(12.0)
+                                                .color(cp.secondary),
+                                        );
+                                    }
+                                    if !call.call_result.is_empty() {
+                                        Frame::new()
+                                            .fill(cp.surface_hover)
+                                            .corner_radius(CornerRadius::same(4))
+                                            .inner_margin(Margin::symmetric(6, 2))
+                                            .show(ui, |ui| {
+                                                ui.label(
+                                                    RichText::new(&call.call_result)
+                                                        .size(11.0)
+                                                        .color(cp.secondary),
+                                                );
+                                            });
+                                    }
+                                    if call.revenue_cents > 0 {
+                                        ui.label(
+                                            RichText::new(format_currency(call.revenue_cents))
+                                                .size(12.0)
+                                                .strong()
+                                                .color(cp.accent),
+                                        );
+                                    }
+                                    ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
+                                        if let Some(chat_id) = &call.chat_id {
+                                            let chat_btn = egui::Button::new(
+                                                RichText::new("💬 Chat").size(11.0).color(cp.accent),
+                                            )
+                                            .fill(cp.surface_hover)
+                                            .corner_radius(CornerRadius::same(4));
+                                            if ui.add(chat_btn).clicked() {
+                                                app.actions.push(Action::OpenChat(chat_id.clone()));
+                                                ui.ctx().request_repaint();
+                                            }
+                                        }
+                                        if let Some(due) = call.due_at {
+                                            if let Some((d, h, m)) = crate::util::local_datetime(due) {
+                                                ui.label(
+                                                    RichText::new(format!(
+                                                        "{:02}/{:02} {:02}:{:02}",
+                                                        d.day(),
+                                                        d.month(),
+                                                        h,
+                                                        m
+                                                    ))
+                                                    .size(11.5)
+                                                    .color(cp.secondary),
+                                                );
+                                            }
+                                        }
+                                    });
+                                });
+                            });
+                        ui.add_space(4.0);
+                    }
+                    if project_calls.len() > 4 {
+                        ui.label(
+                            RichText::new(format!(
+                                "+ {} outras calls",
+                                project_calls.len() - 4
+                            ))
+                            .size(12.0)
+                            .color(cp.secondary),
+                        );
+                    }
+                }
+            });
+        });
+
+    ui.add_space(14.0);
+
+    // 5. Linked Chats Card
     Frame::new()
         .fill(cp.surface)
         .stroke(Stroke::new(1.0, cp.outline))
@@ -4861,112 +5818,663 @@ fn render_project_tab_calls(
     }
 }
 
+fn message_preview(content: &crate::model::Content) -> String {
+    match content {
+        crate::model::Content::Text { text, .. } => {
+            text.lines().next().unwrap_or("").chars().take(140).collect()
+        }
+        crate::model::Content::Interactive { text, .. } => {
+            text.lines().next().unwrap_or("").chars().take(140).collect()
+        }
+        crate::model::Content::Image { caption, .. } => {
+            caption.as_deref().unwrap_or("📷 Foto").chars().take(140).collect()
+        }
+        crate::model::Content::Video { caption, .. } => {
+            caption.as_deref().unwrap_or("🎥 Vídeo").chars().take(140).collect()
+        }
+        crate::model::Content::Audio { voice_note, .. } => {
+            if *voice_note {
+                "🎤 Mensagem de voz".into()
+            } else {
+                "🎵 Áudio".into()
+            }
+        }
+        crate::model::Content::Document { file_name, .. } => format!("📄 {file_name}"),
+        crate::model::Content::Sticker { .. } => "🏷️ Figurinha".into(),
+        crate::model::Content::Location { name, .. } => {
+            format!("📍 {}", name.as_deref().unwrap_or("Localização"))
+        }
+        crate::model::Content::Contact { display_name, .. } => format!("👤 Contato: {display_name}"),
+        crate::model::Content::Poll { question, .. } => format!("📊 Enquete: {question}"),
+        _ => "Mensagem".into(),
+    }
+}
+
 fn render_project_tab_timeline(
-    app: &App,
+    app: &mut App,
     ui: &mut egui::Ui,
     cp: &CrmPalette,
     project: &CrmProject,
 ) {
-    let mut events = Vec::new();
+    let filter_id = ui.id().with(("proj-timeline-filter", &project.id));
+    let search_id = ui.id().with(("proj-timeline-search", &project.id));
+    let mut current_filter = ui
+        .ctx()
+        .data(|d| d.get_temp::<String>(filter_id))
+        .unwrap_or_else(|| "all".to_string());
+    let mut search_query = ui
+        .ctx()
+        .data(|d| d.get_temp::<String>(search_id))
+        .unwrap_or_default();
 
-    // Start event
+    struct TimelineItem {
+        timestamp: i64,
+        category: &'static str,
+        icon: Icon,
+        icon_bg: Color32,
+        icon_fg: Color32,
+        title: String,
+        subtitle: Option<String>,
+        description: Option<String>,
+        tag: Option<(String, Color32, Color32)>,
+        chat_id: Option<String>,
+    }
+
+    let mut events: Vec<TimelineItem> = Vec::new();
+
+    // 1. Milestones
     if let Some(start) = project.start_at {
-        events.push((
-            start,
-            Icon::Calendar,
-            "Início do Projeto",
-            project.name.clone(),
-        ));
+        events.push(TimelineItem {
+            timestamp: start,
+            category: "milestones",
+            icon: Icon::Calendar,
+            icon_bg: cp.accent.gamma_multiply(0.15),
+            icon_fg: cp.accent,
+            title: "Início Oficial do Projeto".into(),
+            subtitle: Some(format!(
+                "Cliente: {}",
+                if project.client_name.is_empty() {
+                    "Não informado"
+                } else {
+                    &project.client_name
+                }
+            )),
+            description: None,
+            tag: Some(("Marco".into(), cp.surface_hover, cp.accent)),
+            chat_id: None,
+        });
     }
 
-    // Due date event
     if let Some(due) = project.due_at {
-        events.push((
-            due,
-            Icon::Clock,
-            "Prazo do Projeto",
-            format!("Prazo estipulado: {}", project.name),
-        ));
+        let is_overdue = due < crate::util::now() && project.status != "completed";
+        events.push(TimelineItem {
+            timestamp: due,
+            category: "milestones",
+            icon: Icon::Clock,
+            icon_bg: if is_overdue {
+                cp.danger.gamma_multiply(0.15)
+            } else {
+                cp.accent.gamma_multiply(0.15)
+            },
+            icon_fg: if is_overdue { cp.danger } else { cp.accent },
+            title: "Prazo de Entrega do Projeto".into(),
+            subtitle: Some(format!("Status atual: {}", project_status(&project.status))),
+            description: None,
+            tag: Some((
+                if is_overdue {
+                    "Atrasado".into()
+                } else {
+                    "Prazo".into()
+                },
+                if is_overdue {
+                    cp.danger.gamma_multiply(0.15)
+                } else {
+                    cp.surface_hover
+                },
+                if is_overdue { cp.danger } else { cp.accent },
+            )),
+            chat_id: None,
+        });
     }
 
-    // Tasks completed
+    if project.created_at > 0 {
+        events.push(TimelineItem {
+            timestamp: project.created_at,
+            category: "milestones",
+            icon: Icon::Calendar,
+            icon_bg: cp.surface_hover,
+            icon_fg: cp.secondary,
+            title: "Projeto Criado".into(),
+            subtitle: Some(format!(
+                "Responsável: {}",
+                if project.assignee.is_empty() {
+                    "Equipe"
+                } else {
+                    &project.assignee
+                }
+            )),
+            description: if !project.description.is_empty() {
+                Some(project.description.clone())
+            } else {
+                None
+            },
+            tag: Some(("Criação".into(), cp.surface_hover, cp.dim)),
+            chat_id: None,
+        });
+    }
+
+    // 2. Tasks
     for t in app
         .crm_tasks
         .iter()
-        .filter(|t| t.project_id.as_deref() == Some(&project.id))
+        .filter(|t| t.project_id.as_deref() == Some(&project.id) && t.kind == "task")
     {
         if let Some(c_at) = t.completed_at {
-            events.push((c_at, Icon::CircleCheck, "Tarefa Concluída", t.title.clone()));
+            events.push(TimelineItem {
+                timestamp: c_at,
+                category: "tasks",
+                icon: Icon::CircleCheck,
+                icon_bg: Color32::from_rgb(0x13, 0x2e, 0x1d),
+                icon_fg: Color32::from_rgb(0x4a, 0xc7, 0x6e),
+                title: format!("Tarefa Concluída: {}", t.title),
+                subtitle: Some(format!(
+                    "Prioridade: {} • Resp: {}",
+                    t.priority,
+                    if t.assignee.is_empty() {
+                        "Equipe"
+                    } else {
+                        &t.assignee
+                    }
+                )),
+                description: if !t.description.is_empty() {
+                    Some(t.description.clone())
+                } else {
+                    None
+                },
+                tag: Some((
+                    "Concluída".into(),
+                    Color32::from_rgb(0x13, 0x2e, 0x1d),
+                    Color32::from_rgb(0x4a, 0xc7, 0x6e),
+                )),
+                chat_id: t.chat_id.clone(),
+            });
         } else if let Some(due) = t.due_at {
-            events.push((due, Icon::ListChecks, "Prazo de Tarefa", t.title.clone()));
+            let is_overdue = due < crate::util::now();
+            events.push(TimelineItem {
+                timestamp: due,
+                category: "tasks",
+                icon: Icon::ListChecks,
+                icon_bg: if is_overdue {
+                    cp.danger.gamma_multiply(0.15)
+                } else {
+                    cp.warning.gamma_multiply(0.15)
+                },
+                icon_fg: if is_overdue { cp.danger } else { cp.warning },
+                title: format!("Prazo de Tarefa: {}", t.title),
+                subtitle: Some(format!("Status: {} • Prioridade: {}", t.status, t.priority)),
+                description: if !t.description.is_empty() {
+                    Some(t.description.clone())
+                } else {
+                    None
+                },
+                tag: Some((
+                    if is_overdue {
+                        "Atrasada".into()
+                    } else {
+                        "Pendente".into()
+                    },
+                    cp.surface_hover,
+                    if is_overdue { cp.danger } else { cp.warning },
+                )),
+                chat_id: t.chat_id.clone(),
+            });
+        } else if t.created_at > 0 {
+            events.push(TimelineItem {
+                timestamp: t.created_at,
+                category: "tasks",
+                icon: Icon::ListChecks,
+                icon_bg: cp.surface_hover,
+                icon_fg: cp.secondary,
+                title: format!("Tarefa Criada: {}", t.title),
+                subtitle: Some(format!("Prioridade: {}", t.priority)),
+                description: if !t.description.is_empty() {
+                    Some(t.description.clone())
+                } else {
+                    None
+                },
+                tag: Some(("Aberta".into(), cp.surface_hover, cp.dim)),
+                chat_id: t.chat_id.clone(),
+            });
         }
     }
 
-    // Calls
+    // 3. Calls
     for c in app.crm_tasks.iter().filter(|t| {
         t.project_id.as_deref() == Some(&project.id)
             && matches!(t.kind.as_str(), "call" | "conversation")
     }) {
-        if let Some(due) = c.due_at {
-            events.push((due, Icon::Phone, "Reunião / Call", c.title.clone()));
+        let ts = c.due_at.unwrap_or(c.created_at);
+        let res_label = if !c.call_result.is_empty() {
+            c.call_result.clone()
+        } else {
+            "Agendada".into()
+        };
+        let mut sub = format!("{} min", c.duration_minutes.unwrap_or(30));
+        if !c.assignee.is_empty() {
+            sub.push_str(&format!(" • Resp: {}", c.assignee));
+        }
+        if c.revenue_cents > 0 {
+            sub.push_str(&format!(" • {}", format_currency(c.revenue_cents)));
+        }
+        events.push(TimelineItem {
+            timestamp: ts,
+            category: "calls",
+            icon: Icon::Phone,
+            icon_bg: Color32::from_rgb(0x1a, 0x2e, 0x3d),
+            icon_fg: Color32::from_rgb(0x5c, 0xa7, 0xdb),
+            title: format!("Call / Reunião: {}", c.title),
+            subtitle: Some(sub),
+            description: if !c.description.is_empty() {
+                Some(c.description.clone())
+            } else if !c.next_step.is_empty() {
+                Some(format!("Próximo passo: {}", c.next_step))
+            } else {
+                None
+            },
+            tag: Some((res_label, cp.surface_hover, cp.accent)),
+            chat_id: c
+                .chat_id
+                .clone()
+                .or_else(|| project.chat_ids.first().cloned()),
+        });
+    }
+
+    // 4. Follow-ups
+    for f in &app.crm_followups {
+        if project.chat_ids.contains(&f.chat_id) {
+            events.push(TimelineItem {
+                timestamp: f.remind_at,
+                category: "milestones",
+                icon: Icon::Bell,
+                icon_bg: cp.warning.gamma_multiply(0.15),
+                icon_fg: cp.warning,
+                title: format!("Follow-up: {}", f.title),
+                subtitle: Some(if f.done {
+                    "Lembrete concluído".into()
+                } else {
+                    "Lembrete programado".into()
+                }),
+                description: None,
+                tag: Some(("Follow-up".into(), cp.surface_hover, cp.secondary)),
+                chat_id: Some(f.chat_id.clone()),
+            });
         }
     }
 
-    events.sort_by_key(|e| -e.0);
+    // 5. WhatsApp Messages from linked chats
+    for chat_id in &project.chat_ids {
+        if let Some(conv) = app.conversations.get(chat_id) {
+            for msg in conv.messages.iter().rev().take(30) {
+                let preview = message_preview(&msg.content);
+                if preview.is_empty() {
+                    continue;
+                }
+                events.push(TimelineItem {
+                    timestamp: msg.timestamp,
+                    category: "messages",
+                    icon: if msg.from_me {
+                        Icon::Send
+                    } else {
+                        Icon::MessageCircle
+                    },
+                    icon_bg: if msg.from_me {
+                        cp.accent.gamma_multiply(0.15)
+                    } else {
+                        cp.surface_hover
+                    },
+                    icon_fg: if msg.from_me { cp.accent } else { cp.text },
+                    title: if msg.from_me {
+                        "Mensagem Enviada (Você)".into()
+                    } else {
+                        format!(
+                            "Mensagem Recebida ({})",
+                            msg.sender_name.as_deref().unwrap_or("Cliente")
+                        )
+                    },
+                    subtitle: None,
+                    description: Some(preview),
+                    tag: Some((
+                        if msg.from_me {
+                            "Enviada"
+                        } else {
+                            "Recebida"
+                        }
+                        .into(),
+                        cp.surface_hover,
+                        cp.dim,
+                    )),
+                    chat_id: Some(chat_id.clone()),
+                });
+            }
+        }
+    }
 
-    if events.is_empty() {
+    // Sort newest first
+    events.sort_by_key(|e| -e.timestamp);
+
+    let all_count = events.len();
+    let calls_count = events.iter().filter(|e| e.category == "calls").count();
+    let tasks_count = events.iter().filter(|e| e.category == "tasks").count();
+    let messages_count = events.iter().filter(|e| e.category == "messages").count();
+    let milestones_count = events.iter().filter(|e| e.category == "milestones").count();
+
+    // Filter toolbar (responsive: stacks search below chips when narrow)
+    let avail_w = ui.available_width();
+    if avail_w < 680.0 {
+        ui.horizontal_wrapped(|ui| {
+            ui.spacing_mut().item_spacing = vec2(6.0, 6.0);
+            let filter_btns = [
+                ("all", format!("Todos ({all_count})")),
+                ("calls", format!("📞 Calls ({calls_count})")),
+                ("tasks", format!("✓ Tarefas ({tasks_count})")),
+                ("messages", format!("💬 Mensagens ({messages_count})")),
+                ("milestones", format!("🚩 Marcos ({milestones_count})")),
+            ];
+            for (key, label) in filter_btns {
+                let active = current_filter == key;
+                let btn = egui::Button::new(RichText::new(&label).size(12.0).color(if active {
+                    cp.on_accent
+                } else {
+                    cp.secondary
+                }))
+                .fill(if active { cp.accent } else { cp.surface })
+                .stroke(Stroke::new(
+                    1.0,
+                    if active { cp.accent } else { cp.outline },
+                ))
+                .corner_radius(CornerRadius::same(6));
+                if ui.add(btn).clicked() {
+                    current_filter = key.into();
+                    ui.ctx().request_repaint();
+                }
+            }
+        });
+
+        ui.add_space(6.0);
+
+        ui.add(
+            egui::TextEdit::singleline(&mut search_query)
+                .hint_text("🔍 Filtrar eventos...")
+                .desired_width(ui.available_width()),
+        );
+    } else {
+        ui.horizontal(|ui| {
+            ui.spacing_mut().item_spacing.x = 6.0;
+            let filter_btns = [
+                ("all", format!("Todos ({all_count})")),
+                ("calls", format!("📞 Calls ({calls_count})")),
+                ("tasks", format!("✓ Tarefas ({tasks_count})")),
+                ("messages", format!("💬 Mensagens ({messages_count})")),
+                ("milestones", format!("🚩 Marcos ({milestones_count})")),
+            ];
+            for (key, label) in filter_btns {
+                let active = current_filter == key;
+                let btn = egui::Button::new(RichText::new(&label).size(12.0).color(if active {
+                    cp.on_accent
+                } else {
+                    cp.secondary
+                }))
+                .fill(if active { cp.accent } else { cp.surface })
+                .stroke(Stroke::new(
+                    1.0,
+                    if active { cp.accent } else { cp.outline },
+                ))
+                .corner_radius(CornerRadius::same(6));
+                if ui.add(btn).clicked() {
+                    current_filter = key.into();
+                    ui.ctx().request_repaint();
+                }
+            }
+
+            ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
+                ui.add_space(8.0);
+                ui.add(
+                    egui::TextEdit::singleline(&mut search_query)
+                        .hint_text("🔍 Buscar na timeline...")
+                        .desired_width(200.0),
+                );
+            });
+        });
+    }
+
+    ui.ctx()
+        .data_mut(|d| d.insert_temp(filter_id, current_filter.clone()));
+    ui.ctx()
+        .data_mut(|d| d.insert_temp(search_id, search_query.clone()));
+
+    ui.add_space(12.0);
+
+    // Apply filtering
+    let filtered_events: Vec<_> = events
+        .into_iter()
+        .filter(|e| {
+            if current_filter != "all" && e.category != current_filter {
+                return false;
+            }
+            if !search_query.trim().is_empty() {
+                let q = search_query.trim().to_lowercase();
+                let in_title = e.title.to_lowercase().contains(&q);
+                let in_sub = e
+                    .subtitle
+                    .as_deref()
+                    .is_some_and(|s| s.to_lowercase().contains(&q));
+                let in_desc = e
+                    .description
+                    .as_deref()
+                    .is_some_and(|d| d.to_lowercase().contains(&q));
+                if !in_title && !in_sub && !in_desc {
+                    return false;
+                }
+            }
+            true
+        })
+        .collect();
+
+    if filtered_events.is_empty() {
         Frame::new()
             .fill(cp.surface)
             .stroke(Stroke::new(1.0, cp.outline))
             .corner_radius(CornerRadius::same(8))
-            .inner_margin(Margin::same(14))
+            .inner_margin(Margin::same(20))
             .show(ui, |ui| {
-                ui.label(
-                    RichText::new("Nenhum evento registrado na linha do tempo deste projeto.")
-                        .size(13.0)
-                        .color(cp.dim),
-                );
-            });
-    } else {
-        Frame::new()
-            .fill(cp.surface)
-            .stroke(Stroke::new(1.0, cp.outline))
-            .corner_radius(CornerRadius::same(10))
-            .inner_margin(Margin::same(16))
-            .show(ui, |ui| {
-                ui.vertical(|ui| {
-                    for (ts, icon, title, desc) in events {
-                        let date_str = crate::util::local_datetime(ts)
-                            .map(|(d, h, m)| {
-                                format!(
-                                    "{:02}/{:02}/{} {:02}:{:02}",
-                                    d.day(),
-                                    d.month(),
-                                    d.year(),
-                                    h,
-                                    m
-                                )
-                            })
-                            .unwrap_or_default();
-
-                        ui.horizontal(|ui| {
-                            theme::icon(ui, icon, 16.0, cp.accent);
-                            ui.add_space(4.0);
-                            ui.label(RichText::new(title).size(13.5).strong().color(cp.text));
-                            ui.label(
-                                RichText::new(format!("• {desc}"))
-                                    .size(13.0)
-                                    .color(cp.secondary),
-                            );
-
-                            ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-                                ui.label(RichText::new(date_str).size(12.0).color(cp.dim));
-                            });
-                        });
-                        ui.add_space(8.0);
-                    }
+                ui.vertical_centered(|ui| {
+                    theme::icon(ui, Icon::Clock, 24.0, cp.dim);
+                    ui.add_space(6.0);
+                    ui.label(
+                        RichText::new("Nenhum evento encontrado para os filtros selecionados.")
+                            .size(13.5)
+                            .color(cp.dim),
+                    );
                 });
             });
+    } else {
+        let today = crate::util::today();
+        let mut last_day: Option<jiff::civil::Date> = None;
+
+        for event in filtered_events {
+            let (date_opt, hour, min) = match crate::util::local_datetime(event.timestamp) {
+                Some((d, h, m)) => (Some(d), h, m),
+                None => (None, 0, 0),
+            };
+
+            // Day separator
+            if let Some(date) = date_opt {
+                if last_day != Some(date) {
+                    last_day = Some(date);
+                    ui.add_space(10.0);
+
+                    let day_diff = today
+                        .since(date)
+                        .map(|span| span.get_days())
+                        .unwrap_or(i32::MAX);
+
+                    let day_str = match day_diff {
+                        0 => "Hoje".to_string(),
+                        1 => "Ontem".to_string(),
+                        -1 => "Amanhã".to_string(),
+                        _ => format!("{:02}/{:02}/{}", date.day(), date.month(), date.year()),
+                    };
+
+                    ui.horizontal(|ui| {
+                        theme::icon(ui, Icon::Calendar, 14.0, cp.accent);
+                        ui.label(RichText::new(&day_str).size(13.0).strong().color(cp.text));
+                        ui.add_space(6.0);
+                        let sep_w = (ui.available_width() - 8.0).max(20.0);
+                        let (sep_rect, _) =
+                            ui.allocate_exact_size(vec2(sep_w, 1.0), egui::Sense::hover());
+                        ui.painter()
+                            .rect_filled(sep_rect, CornerRadius::ZERO, cp.outline);
+                    });
+                    ui.add_space(6.0);
+                }
+            }
+
+            // Event Card
+            Frame::new()
+                .fill(cp.surface)
+                .stroke(Stroke::new(1.0, cp.outline))
+                .corner_radius(CornerRadius::same(8))
+                .inner_margin(Margin::same(12))
+                .show(ui, |ui| {
+                    ui.vertical(|ui| {
+                        let header_w = ui.available_width();
+                        let is_narrow = header_w < 520.0;
+
+                        if is_narrow {
+                            ui.horizontal(|ui| {
+                                Frame::new()
+                                    .fill(event.icon_bg)
+                                    .corner_radius(CornerRadius::same(6))
+                                    .inner_margin(Margin::same(6))
+                                    .show(ui, |ui| {
+                                        theme::icon(ui, event.icon, 14.0, event.icon_fg);
+                                    });
+                                ui.label(
+                                    RichText::new(format!("{:02}:{:02}", hour, min))
+                                        .size(11.5)
+                                        .color(cp.secondary),
+                                );
+                                if let Some((tag_txt, tag_bg, tag_fg)) = &event.tag {
+                                    Frame::new()
+                                        .fill(*tag_bg)
+                                        .corner_radius(CornerRadius::same(4))
+                                        .inner_margin(Margin::symmetric(6, 2))
+                                        .show(ui, |ui| {
+                                            ui.label(
+                                                RichText::new(tag_txt).size(11.0).color(*tag_fg),
+                                            );
+                                        });
+                                }
+                            });
+                            ui.add_space(4.0);
+                            ui.add(
+                                egui::Label::new(
+                                    RichText::new(&event.title)
+                                        .size(13.5)
+                                        .strong()
+                                        .color(cp.text),
+                                )
+                                .wrap(),
+                            );
+                            if let Some(chat_id) = &event.chat_id {
+                                ui.add_space(4.0);
+                                let chat_btn = egui::Button::new(
+                                    RichText::new("💬 Abrir Conversa").size(11.5).color(cp.accent),
+                                )
+                                .fill(cp.surface_hover)
+                                .corner_radius(CornerRadius::same(4));
+                                if ui.add(chat_btn).clicked() {
+                                    app.actions.push(Action::OpenChat(chat_id.clone()));
+                                    ui.ctx().request_repaint();
+                                }
+                            }
+                        } else {
+                            ui.horizontal(|ui| {
+                                Frame::new()
+                                    .fill(event.icon_bg)
+                                    .corner_radius(CornerRadius::same(6))
+                                    .inner_margin(Margin::same(6))
+                                    .show(ui, |ui| {
+                                        theme::icon(ui, event.icon, 14.0, event.icon_fg);
+                                    });
+                                ui.label(
+                                    RichText::new(format!("{:02}:{:02}", hour, min))
+                                        .size(12.0)
+                                        .color(cp.secondary),
+                                );
+                                ui.add(
+                                    egui::Label::new(
+                                        RichText::new(&event.title)
+                                            .size(13.5)
+                                            .strong()
+                                            .color(cp.text),
+                                    )
+                                    .wrap(),
+                                );
+                                if let Some((tag_txt, tag_bg, tag_fg)) = &event.tag {
+                                    Frame::new()
+                                        .fill(*tag_bg)
+                                        .corner_radius(CornerRadius::same(4))
+                                        .inner_margin(Margin::symmetric(6, 2))
+                                        .show(ui, |ui| {
+                                            ui.label(
+                                                RichText::new(tag_txt).size(11.0).color(*tag_fg),
+                                            );
+                                        });
+                                }
+
+                                ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
+                                    if let Some(chat_id) = &event.chat_id {
+                                        let chat_btn = egui::Button::new(
+                                            RichText::new("💬 Abrir Conversa")
+                                                .size(11.5)
+                                                .color(cp.accent),
+                                        )
+                                        .fill(cp.surface_hover)
+                                        .corner_radius(CornerRadius::same(4));
+                                        if ui.add(chat_btn).clicked() {
+                                            app.actions.push(Action::OpenChat(chat_id.clone()));
+                                            ui.ctx().request_repaint();
+                                        }
+                                    }
+                                });
+                            });
+                        }
+
+                        if let Some(sub) = &event.subtitle {
+                            ui.add_space(4.0);
+                            ui.label(RichText::new(sub).size(12.0).color(cp.secondary));
+                        }
+
+                        if let Some(desc) = &event.description {
+                            ui.add_space(6.0);
+                            Frame::new()
+                                .fill(cp.panel)
+                                .corner_radius(CornerRadius::same(6))
+                                .inner_margin(Margin::symmetric(10, 6))
+                                .show(ui, |ui| {
+                                    ui.add(
+                                        egui::Label::new(
+                                            RichText::new(desc).size(12.5).color(cp.text),
+                                        )
+                                        .wrap(),
+                                    );
+                                });
+                        }
+                    });
+                });
+            ui.add_space(6.0);
+        }
     }
 }
 

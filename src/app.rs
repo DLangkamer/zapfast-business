@@ -4118,6 +4118,7 @@ impl App {
     }
 
     fn apply_actions(&mut self, ctx: &egui::Context) {
+        let had_deferred = !self.deferred_account_actions.is_empty();
         let deferred = std::mem::take(&mut self.deferred_account_actions);
         for (id, action) in deferred {
             let Some(index) = self.accounts.iter().position(|account| account.id == id) else {
@@ -4128,12 +4129,19 @@ impl App {
             self.apply(action, ctx);
             self.active = previous;
         }
+        let mut had_actions = !self.actions.is_empty() || had_deferred;
         let mut actions = std::mem::take(&mut self.actions);
         while !actions.is_empty() {
             for action in actions.drain(..) {
                 self.apply(action, ctx);
             }
             actions = std::mem::take(&mut self.actions);
+            if !actions.is_empty() {
+                had_actions = true;
+            }
+        }
+        if had_actions {
+            ctx.request_repaint();
         }
     }
 

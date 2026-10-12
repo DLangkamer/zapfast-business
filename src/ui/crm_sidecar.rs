@@ -96,6 +96,48 @@ pub fn show(app: &mut App, ui: &mut egui::Ui, chat: &Chat) {
     );
 }
 
+/// Shows the CRM sidecar as a floating overlay panel on small windows,
+/// avoiding squashing the chat conversation.
+pub fn show_overlay(app: &mut App, ctx: &egui::Context, chat: &Chat) {
+    let palette = crm_palette(&app.palette);
+    let screen = ctx.content_rect();
+    let panel_w = (screen.width() * 0.82).clamp(280.0, 380.0).min(screen.width() - 20.0);
+    let height = screen.height();
+    let id = egui::Id::new("crm_sidecar_overlay");
+
+    // Click outside scrim dismisses overlay
+    let scrim_id = id.with("scrim");
+    let response = egui::Area::new(scrim_id)
+        .order(egui::Order::Middle)
+        .fixed_pos(screen.min)
+        .interactable(true)
+        .show(ctx, |ui| {
+            let (rect, resp) = ui.allocate_exact_size(screen.size(), egui::Sense::click());
+            ui.painter().rect_filled(rect, 0.0, Color32::from_black_alpha(90));
+            resp
+        });
+    if response.inner.clicked() {
+        app.actions.push(Action::ToggleCrmSidecar);
+        ctx.request_repaint();
+    }
+
+    egui::Area::new(id)
+        .order(egui::Order::Foreground)
+        .fixed_pos(pos2(screen.right() - panel_w, screen.top()))
+        .show(ctx, |ui| {
+            Frame::new()
+                .fill(palette.panel)
+                .stroke(Stroke::new(1.0, palette.outline))
+                .shadow(palette.float_shadow())
+                .inner_margin(Margin::ZERO)
+                .show(ui, |ui| {
+                    ui.set_width(panel_w);
+                    ui.set_height(height);
+                    render_content(app, ui, chat);
+                });
+        });
+}
+
 fn render_content(app: &mut App, ui: &mut egui::Ui, chat: &Chat) {
     let palette = crm_palette(&app.palette);
     let existing_deal = app.crm_deals.get(&chat.id).cloned();
