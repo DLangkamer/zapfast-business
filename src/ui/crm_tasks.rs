@@ -184,7 +184,11 @@ fn format_range_title(view_mode: AgendaViewMode, anchor_date: Date) -> String {
             }
         }
         AgendaViewMode::Month => {
-            format!("{} de {}", pt_month_name(anchor_date.month()), anchor_date.year())
+            format!(
+                "{} de {}",
+                pt_month_name(anchor_date.month()),
+                anchor_date.year()
+            )
         }
     }
 }
@@ -232,7 +236,11 @@ fn get_day_events(app: &App, date: Date) -> Vec<AgendaEventItem> {
                         hour: h,
                         minute: m,
                         duration_minutes: task.duration_minutes.unwrap_or(30),
-                        kind: if is_call { "call".into() } else { "task".into() },
+                        kind: if is_call {
+                            "call".into()
+                        } else {
+                            "task".into()
+                        },
                         status: task.status.clone(),
                         color_bg: if is_call {
                             Color32::from_rgb(0x02, 0x84, 0xc7)
@@ -507,177 +515,198 @@ fn render_agenda_week_view(
             ui.set_min_width(total_week_w);
 
             ui.horizontal(|ui| {
-        ui.allocate_exact_size(vec2(time_col_w, 36.0), egui::Sense::hover());
-        for (i, d) in week_days.iter().enumerate() {
-            let is_today = *d == today;
-            let header_bg = if is_today {
-                cp.accent.gamma_multiply(0.18)
-            } else {
-                cp.surface
-            };
-            let border_stroke = if is_today {
-                Stroke::new(1.5, cp.accent)
-            } else {
-                Stroke::new(1.0, cp.outline)
-            };
-            Frame::new()
-                .fill(header_bg)
-                .stroke(border_stroke)
-                .corner_radius(CornerRadius::same(6))
-                .inner_margin(Margin::symmetric(4, 4))
-                .show(ui, |ui| {
-                    ui.set_width(col_w - 8.0);
-                    ui.vertical_centered(|ui| {
-                        ui.label(
-                            RichText::new(format!("{} {:02}", pt_weekday_short(i), d.day()))
-                                .size(12.5)
-                                .strong()
-                                .color(if is_today { cp.accent } else { cp.text }),
-                        );
-                    });
-                });
-        }
-    });
-
-    ui.add_space(4.0);
-
-    for hour in 8..=20 {
-        ui.horizontal(|ui| {
-            let (r, _) = ui.allocate_exact_size(vec2(time_col_w, row_h), egui::Sense::hover());
-            ui.painter().text(
-                r.center(),
-                egui::Align2::CENTER_CENTER,
-                format!("{:02}:00", hour),
-                theme::medium(11.5),
-                cp.dim,
-            );
-
-            for (day_idx, date) in week_days.iter().enumerate() {
-                let cell_rect = egui::Rect::from_min_size(ui.cursor().min, vec2(col_w, row_h));
-                let cell_events: Vec<&AgendaEventItem> = week_events[day_idx]
-                    .iter()
-                    .filter(|e| e.hour == hour)
-                    .collect();
-
-                let cell_id = ui.id().with(("week_cell", date.to_string(), hour));
-                let cell_resp = ui.interact(cell_rect, cell_id, egui::Sense::click());
-
-                let is_hovered = cell_resp.hovered();
-                let bg_color = if is_hovered && cell_events.is_empty() {
-                    cp.surface_hover
-                } else {
-                    cp.surface
-                };
-
-                Frame::new()
-                    .fill(bg_color)
-                    .stroke(Stroke::new(0.5, cp.outline.gamma_multiply(0.5)))
-                    .corner_radius(CornerRadius::same(4))
-                    .inner_margin(Margin::symmetric(3, 3))
-                    .show(ui, |ui| {
-                        ui.set_width(col_w - 6.0);
-                        ui.set_height(row_h - 6.0);
-
-                        if cell_events.is_empty() {
-                            if is_hovered {
-                                ui.vertical_centered(|ui| {
-                                    ui.add_space(12.0);
-                                    ui.label(RichText::new("+ Agendar").size(10.5).color(cp.accent));
-                                });
-                            }
-                        } else {
-                            for ev in cell_events.iter().take(2) {
-                                let ev_chip = egui::Button::new(
+                ui.allocate_exact_size(vec2(time_col_w, 36.0), egui::Sense::hover());
+                for (i, d) in week_days.iter().enumerate() {
+                    let is_today = *d == today;
+                    let header_bg = if is_today {
+                        cp.accent.gamma_multiply(0.18)
+                    } else {
+                        cp.surface
+                    };
+                    let border_stroke = if is_today {
+                        Stroke::new(1.5, cp.accent)
+                    } else {
+                        Stroke::new(1.0, cp.outline)
+                    };
+                    Frame::new()
+                        .fill(header_bg)
+                        .stroke(border_stroke)
+                        .corner_radius(CornerRadius::same(6))
+                        .inner_margin(Margin::symmetric(4, 4))
+                        .show(ui, |ui| {
+                            ui.set_width(col_w - 8.0);
+                            ui.vertical_centered(|ui| {
+                                ui.label(
                                     RichText::new(format!(
-                                        "{} {:02}:{:02} {}",
-                                        if ev.kind == "call" {
-                                            "📞"
-                                        } else if ev.kind == "task" {
-                                            "✓"
-                                        } else {
-                                            "🔔"
-                                        },
-                                        ev.hour,
-                                        ev.minute,
-                                        ev.title
+                                        "{} {:02}",
+                                        pt_weekday_short(i),
+                                        d.day()
                                     ))
-                                    .size(10.5)
+                                    .size(12.5)
                                     .strong()
-                                    .color(ev.color_fg),
-                                )
-                                .fill(ev.color_bg.gamma_multiply(0.35))
-                                .stroke(Stroke::new(1.0, ev.color_bg))
-                                .corner_radius(CornerRadius::same(4));
+                                    .color(if is_today {
+                                        cp.accent
+                                    } else {
+                                        cp.text
+                                    }),
+                                );
+                            });
+                        });
+                }
+            });
 
-                                if ui
-                                    .add_sized([col_w - 8.0, 20.0], ev_chip)
-                                    .on_hover_text(format!(
-                                        "{}\n{}: {}",
-                                        ev.title, ev.kind, ev.subtitle
-                                    ))
-                                    .clicked()
-                                {
-                                    if let Some(ref t) = ev.raw_task {
-                                        *draft = TaskDraft {
-                                            id: Some(t.id.clone()),
-                                            title: t.title.clone(),
-                                            description: t.description.clone(),
-                                            priority: t.priority.clone(),
-                                            status: if matches!(
-                                                t.status.as_str(),
-                                                "todo" | "doing" | "review"
-                                            ) && matches!(
-                                                t.kind.as_str(),
-                                                "call" | "conversation"
-                                            ) {
-                                                "scheduled".into()
-                                            } else {
-                                                t.status.clone()
-                                            },
-                                            assignee: t.assignee.clone(),
-                                            kind: t.kind.clone(),
-                                            duration_minutes: t.duration_minutes.unwrap_or(30),
-                                            call_result: t.call_result.clone(),
-                                            next_step: t.next_step.clone(),
-                                            revenue_reais: format_revenue_input(t.revenue_cents),
-                                            project_id: t.project_id.clone(),
-                                            has_due: t.due_at.is_some(),
-                                            due_date: *date,
-                                            due_hour: ev.hour,
-                                            due_minute: ev.minute,
-                                            chat_id: t.chat_id.clone(),
-                                            link_chat: t.chat_id.is_some(),
-                                        };
-                                        *show_modal = true;
+            ui.add_space(4.0);
+
+            for hour in 8..=20 {
+                ui.horizontal(|ui| {
+                    let (r, _) =
+                        ui.allocate_exact_size(vec2(time_col_w, row_h), egui::Sense::hover());
+                    ui.painter().text(
+                        r.center(),
+                        egui::Align2::CENTER_CENTER,
+                        format!("{:02}:00", hour),
+                        theme::medium(11.5),
+                        cp.dim,
+                    );
+
+                    for (day_idx, date) in week_days.iter().enumerate() {
+                        let cell_rect =
+                            egui::Rect::from_min_size(ui.cursor().min, vec2(col_w, row_h));
+                        let cell_events: Vec<&AgendaEventItem> = week_events[day_idx]
+                            .iter()
+                            .filter(|e| e.hour == hour)
+                            .collect();
+
+                        let cell_id = ui.id().with(("week_cell", date.to_string(), hour));
+                        let cell_resp = ui.interact(cell_rect, cell_id, egui::Sense::click());
+
+                        let is_hovered = cell_resp.hovered();
+                        let bg_color = if is_hovered && cell_events.is_empty() {
+                            cp.surface_hover
+                        } else {
+                            cp.surface
+                        };
+
+                        Frame::new()
+                            .fill(bg_color)
+                            .stroke(Stroke::new(0.5, cp.outline.gamma_multiply(0.5)))
+                            .corner_radius(CornerRadius::same(4))
+                            .inner_margin(Margin::symmetric(3, 3))
+                            .show(ui, |ui| {
+                                ui.set_width(col_w - 6.0);
+                                ui.set_height(row_h - 6.0);
+
+                                if cell_events.is_empty() {
+                                    if is_hovered {
+                                        ui.vertical_centered(|ui| {
+                                            ui.add_space(12.0);
+                                            ui.label(
+                                                RichText::new("+ Agendar")
+                                                    .size(10.5)
+                                                    .color(cp.accent),
+                                            );
+                                        });
+                                    }
+                                } else {
+                                    for ev in cell_events.iter().take(2) {
+                                        let ev_chip = egui::Button::new(
+                                            RichText::new(format!(
+                                                "{} {:02}:{:02} {}",
+                                                if ev.kind == "call" {
+                                                    "📞"
+                                                } else if ev.kind == "task" {
+                                                    "✓"
+                                                } else {
+                                                    "🔔"
+                                                },
+                                                ev.hour,
+                                                ev.minute,
+                                                ev.title
+                                            ))
+                                            .size(10.5)
+                                            .strong()
+                                            .color(ev.color_fg),
+                                        )
+                                        .fill(ev.color_bg.gamma_multiply(0.35))
+                                        .stroke(Stroke::new(1.0, ev.color_bg))
+                                        .corner_radius(CornerRadius::same(4));
+
+                                        if ui
+                                            .add_sized([col_w - 8.0, 20.0], ev_chip)
+                                            .on_hover_text(format!(
+                                                "{}\n{}: {}",
+                                                ev.title, ev.kind, ev.subtitle
+                                            ))
+                                            .clicked()
+                                        {
+                                            if let Some(ref t) = ev.raw_task {
+                                                *draft = TaskDraft {
+                                                    id: Some(t.id.clone()),
+                                                    title: t.title.clone(),
+                                                    description: t.description.clone(),
+                                                    priority: t.priority.clone(),
+                                                    status: if matches!(
+                                                        t.status.as_str(),
+                                                        "todo" | "doing" | "review"
+                                                    ) && matches!(
+                                                        t.kind.as_str(),
+                                                        "call" | "conversation"
+                                                    ) {
+                                                        "scheduled".into()
+                                                    } else {
+                                                        t.status.clone()
+                                                    },
+                                                    assignee: t.assignee.clone(),
+                                                    kind: t.kind.clone(),
+                                                    duration_minutes: t
+                                                        .duration_minutes
+                                                        .unwrap_or(30),
+                                                    call_result: t.call_result.clone(),
+                                                    next_step: t.next_step.clone(),
+                                                    revenue_reais: format_revenue_input(
+                                                        t.revenue_cents,
+                                                    ),
+                                                    project_id: t.project_id.clone(),
+                                                    has_due: t.due_at.is_some(),
+                                                    due_date: *date,
+                                                    due_hour: ev.hour,
+                                                    due_minute: ev.minute,
+                                                    chat_id: t.chat_id.clone(),
+                                                    link_chat: t.chat_id.is_some(),
+                                                };
+                                                *show_modal = true;
+                                            }
+                                        }
+                                    }
+                                    if cell_events.len() > 2 {
+                                        ui.label(
+                                            RichText::new(format!(
+                                                "+{} mais",
+                                                cell_events.len() - 2
+                                            ))
+                                            .size(9.5)
+                                            .color(cp.dim),
+                                        );
                                     }
                                 }
-                            }
-                            if cell_events.len() > 2 {
-                                ui.label(
-                                    RichText::new(format!("+{} mais", cell_events.len() - 2))
-                                        .size(9.5)
-                                        .color(cp.dim),
-                                );
-                            }
-                        }
-                    });
+                            });
 
-                if cell_resp.clicked() && cell_events.is_empty() {
-                    *draft = TaskDraft {
-                        due_date: *date,
-                        due_hour: hour,
-                        due_minute: 0,
-                        has_due: true,
-                        kind: "call".into(),
-                        status: "scheduled".into(),
-                        duration_minutes: 30,
-                        ..TaskDraft::default()
-                    };
-                    *show_modal = true;
-                }
+                        if cell_resp.clicked() && cell_events.is_empty() {
+                            *draft = TaskDraft {
+                                due_date: *date,
+                                due_hour: hour,
+                                due_minute: 0,
+                                has_due: true,
+                                kind: "call".into(),
+                                status: "scheduled".into(),
+                                duration_minutes: 30,
+                                ..TaskDraft::default()
+                            };
+                            *show_modal = true;
+                        }
+                    }
+                });
             }
-        });
-    }
         });
 }
 
@@ -781,9 +810,9 @@ fn render_agenda_month_view(
                                     } else {
                                         ui.label(
                                             RichText::new(day.to_string())
-                                                        .size(12.0)
-                                                        .strong()
-                                                        .color(cp.text),
+                                                .size(12.0)
+                                                .strong()
+                                                .color(cp.text),
                                         );
                                     }
                                 });
@@ -908,15 +937,13 @@ pub fn show_agenda_workspace(app: &mut App, ui: &mut egui::Ui) {
     if bar_avail < 620.0 {
         ui.vertical(|ui| {
             ui.horizontal(|ui| {
-                let today_btn = egui::Button::new(
-                    RichText::new("Hoje").size(12.5).strong().color(
-                        if anchor_date == today {
-                            cp.on_accent
-                        } else {
-                            cp.text
-                        },
-                    ),
-                )
+                let today_btn = egui::Button::new(RichText::new("Hoje").size(12.5).strong().color(
+                    if anchor_date == today {
+                        cp.on_accent
+                    } else {
+                        cp.text
+                    },
+                ))
                 .fill(if anchor_date == today {
                     cp.accent
                 } else {
@@ -985,7 +1012,10 @@ pub fn show_agenda_workspace(app: &mut App, ui: &mut egui::Ui) {
                         }),
                     )
                     .fill(if is_sel { cp.accent } else { cp.surface })
-                    .stroke(Stroke::new(1.0, if is_sel { cp.accent } else { cp.outline }))
+                    .stroke(Stroke::new(
+                        1.0,
+                        if is_sel { cp.accent } else { cp.outline },
+                    ))
                     .corner_radius(CornerRadius::same(6))
                     .min_size(vec2(52.0, 30.0));
                     if ui.add(btn).clicked() {
@@ -996,19 +1026,22 @@ pub fn show_agenda_workspace(app: &mut App, ui: &mut egui::Ui) {
             });
 
             let range_title = format_range_title(view_mode, anchor_date);
-            ui.label(RichText::new(range_title).size(15.0).strong().color(cp.text));
+            ui.label(
+                RichText::new(range_title)
+                    .size(15.0)
+                    .strong()
+                    .color(cp.text),
+            );
         });
     } else {
         ui.horizontal(|ui| {
-            let today_btn = egui::Button::new(
-                RichText::new("Hoje").size(13.0).strong().color(
-                    if anchor_date == today {
-                        cp.on_accent
-                    } else {
-                        cp.text
-                    },
-                ),
-            )
+            let today_btn = egui::Button::new(RichText::new("Hoje").size(13.0).strong().color(
+                if anchor_date == today {
+                    cp.on_accent
+                } else {
+                    cp.text
+                },
+            ))
             .fill(if anchor_date == today {
                 cp.accent
             } else {
@@ -1066,7 +1099,12 @@ pub fn show_agenda_workspace(app: &mut App, ui: &mut egui::Ui) {
             ui.add_space(8.0);
 
             let range_title = format_range_title(view_mode, anchor_date);
-            ui.label(RichText::new(range_title).size(16.0).strong().color(cp.text));
+            ui.label(
+                RichText::new(range_title)
+                    .size(16.0)
+                    .strong()
+                    .color(cp.text),
+            );
 
             ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
                 ui.add_space(6.0);
@@ -1110,7 +1148,10 @@ pub fn show_agenda_workspace(app: &mut App, ui: &mut egui::Ui) {
                         }),
                     )
                     .fill(if is_sel { cp.accent } else { cp.surface })
-                    .stroke(Stroke::new(1.0, if is_sel { cp.accent } else { cp.outline }))
+                    .stroke(Stroke::new(
+                        1.0,
+                        if is_sel { cp.accent } else { cp.outline },
+                    ))
                     .corner_radius(CornerRadius::same(6))
                     .min_size(vec2(64.0, 32.0));
                     if ui.add(btn).clicked() {
@@ -1638,16 +1679,28 @@ pub fn show_calls_workspace(app: &mut App, ui: &mut egui::Ui) {
                 format!("Últimos {period} dias")
             })
             .show_ui(ui, |ui| {
-                if ui.selectable_value(&mut period, 30, "Últimos 30 dias").clicked() {
+                if ui
+                    .selectable_value(&mut period, 30, "Últimos 30 dias")
+                    .clicked()
+                {
                     ui.ctx().request_repaint();
                 }
-                if ui.selectable_value(&mut period, 90, "Últimos 90 dias").clicked() {
+                if ui
+                    .selectable_value(&mut period, 90, "Últimos 90 dias")
+                    .clicked()
+                {
                     ui.ctx().request_repaint();
                 }
-                if ui.selectable_value(&mut period, 365, "Último ano").clicked() {
+                if ui
+                    .selectable_value(&mut period, 365, "Último ano")
+                    .clicked()
+                {
                     ui.ctx().request_repaint();
                 }
-                if ui.selectable_value(&mut period, 0, "Todo o período").clicked() {
+                if ui
+                    .selectable_value(&mut period, 0, "Todo o período")
+                    .clicked()
+                {
                     ui.ctx().request_repaint();
                 }
             });
@@ -1657,25 +1710,46 @@ pub fn show_calls_workspace(app: &mut App, ui: &mut egui::Ui) {
         egui::ComboBox::from_id_salt(("calls-status-filter", &account_id))
             .selected_text(status_text)
             .show_ui(ui, |ui| {
-                if ui.selectable_value(&mut status_filter, "all".into(), "Todos os status").clicked() {
+                if ui
+                    .selectable_value(&mut status_filter, "all".into(), "Todos os status")
+                    .clicked()
+                {
                     ui.ctx().request_repaint();
                 }
-                if ui.selectable_value(&mut status_filter, "scheduled".into(), "Agendadas").clicked() {
+                if ui
+                    .selectable_value(&mut status_filter, "scheduled".into(), "Agendadas")
+                    .clicked()
+                {
                     ui.ctx().request_repaint();
                 }
-                if ui.selectable_value(&mut status_filter, "held".into(), "Realizadas").clicked() {
+                if ui
+                    .selectable_value(&mut status_filter, "held".into(), "Realizadas")
+                    .clicked()
+                {
                     ui.ctx().request_repaint();
                 }
-                if ui.selectable_value(&mut status_filter, "closed".into(), "Fechamentos").clicked() {
+                if ui
+                    .selectable_value(&mut status_filter, "closed".into(), "Fechamentos")
+                    .clicked()
+                {
                     ui.ctx().request_repaint();
                 }
-                if ui.selectable_value(&mut status_filter, "lost".into(), "Perdidas").clicked() {
+                if ui
+                    .selectable_value(&mut status_filter, "lost".into(), "Perdidas")
+                    .clicked()
+                {
                     ui.ctx().request_repaint();
                 }
-                if ui.selectable_value(&mut status_filter, "no_show".into(), "No-show").clicked() {
+                if ui
+                    .selectable_value(&mut status_filter, "no_show".into(), "No-show")
+                    .clicked()
+                {
                     ui.ctx().request_repaint();
                 }
-                if ui.selectable_value(&mut status_filter, "cancelled".into(), "Canceladas").clicked() {
+                if ui
+                    .selectable_value(&mut status_filter, "cancelled".into(), "Canceladas")
+                    .clicked()
+                {
                     ui.ctx().request_repaint();
                 }
             });
@@ -1750,16 +1824,12 @@ pub fn show_calls_workspace(app: &mut App, ui: &mut egui::Ui) {
                 new_call_clicked = true;
             }
 
-            let btn_export = egui::Button::new(
-                RichText::new("📥 CSV")
-                    .size(12.5)
-                    .strong()
-                    .color(cp.text),
-            )
-            .fill(cp.surface)
-            .stroke(Stroke::new(1.0, cp.outline))
-            .corner_radius(CornerRadius::same(8))
-            .min_size(vec2(75.0, 32.0));
+            let btn_export =
+                egui::Button::new(RichText::new("📥 CSV").size(12.5).strong().color(cp.text))
+                    .fill(cp.surface)
+                    .stroke(Stroke::new(1.0, cp.outline))
+                    .corner_radius(CornerRadius::same(8))
+                    .min_size(vec2(75.0, 32.0));
             if ui.add(btn_export).clicked() {
                 export_csv_clicked = true;
             }
@@ -1791,16 +1861,12 @@ pub fn show_calls_workspace(app: &mut App, ui: &mut egui::Ui) {
                 new_call_clicked = true;
             }
 
-            let btn_export = egui::Button::new(
-                RichText::new("📥 CSV")
-                    .size(12.5)
-                    .strong()
-                    .color(cp.text),
-            )
-            .fill(cp.surface)
-            .stroke(Stroke::new(1.0, cp.outline))
-            .corner_radius(CornerRadius::same(8))
-            .min_size(vec2((bar_avail * 0.4).max(70.0), 32.0));
+            let btn_export =
+                egui::Button::new(RichText::new("📥 CSV").size(12.5).strong().color(cp.text))
+                    .fill(cp.surface)
+                    .stroke(Stroke::new(1.0, cp.outline))
+                    .corner_radius(CornerRadius::same(8))
+                    .min_size(vec2((bar_avail * 0.4).max(70.0), 32.0));
             if ui.add(btn_export).clicked() {
                 export_csv_clicked = true;
             }
@@ -2068,7 +2134,10 @@ fn render_call_card(
                                     title: call.title.clone(),
                                     description: call.description.clone(),
                                     priority: call.priority.clone(),
-                                    status: if matches!(call.status.as_str(), "todo" | "doing" | "review") {
+                                    status: if matches!(
+                                        call.status.as_str(),
+                                        "todo" | "doing" | "review"
+                                    ) {
                                         "scheduled".into()
                                     } else {
                                         call.status.clone()
@@ -2110,7 +2179,9 @@ fn render_call_card(
                                 if ui
                                     .add(
                                         egui::Button::new(
-                                            RichText::new("Cancelar").size(12.0).color(cp.secondary),
+                                            RichText::new("Cancelar")
+                                                .size(12.0)
+                                                .color(cp.secondary),
                                         )
                                         .fill(cp.surface_hover)
                                         .corner_radius(CornerRadius::same(5)),
@@ -2218,7 +2289,10 @@ fn render_call_card(
                                     title: call.title.clone(),
                                     description: call.description.clone(),
                                     priority: call.priority.clone(),
-                                    status: if matches!(call.status.as_str(), "todo" | "doing" | "review") {
+                                    status: if matches!(
+                                        call.status.as_str(),
+                                        "todo" | "doing" | "review"
+                                    ) {
                                         "scheduled".into()
                                     } else {
                                         call.status.clone()
@@ -2260,7 +2334,9 @@ fn render_call_card(
                                 if ui
                                     .add(
                                         egui::Button::new(
-                                            RichText::new("Cancelar").size(12.0).color(cp.secondary),
+                                            RichText::new("Cancelar")
+                                                .size(12.0)
+                                                .color(cp.secondary),
                                         )
                                         .fill(cp.surface_hover)
                                         .corner_radius(CornerRadius::same(5)),
@@ -2396,15 +2472,34 @@ fn render_call_outcome_bar(app: &mut App, ui: &mut egui::Ui, cp: &CrmPalette, ca
         // 1. Realizada
         let is_held = call.status == "held";
         let held_btn = egui::Button::new(
-            RichText::new(if is_held { "✓ Realizada" } else { "Realizada" })
-                .size(11.5)
-                .strong()
-                .color(if is_held { cp.on_accent } else { cp.text }),
+            RichText::new(if is_held {
+                "✓ Realizada"
+            } else {
+                "Realizada"
+            })
+            .size(11.5)
+            .strong()
+            .color(if is_held { cp.on_accent } else { cp.text }),
         )
-        .fill(if is_held { Color32::from_rgb(0x06, 0x4e, 0x3b) } else { cp.surface_hover })
-        .stroke(Stroke::new(1.0, if is_held { Color32::from_rgb(0x34, 0xd3, 0x99) } else { cp.outline }))
+        .fill(if is_held {
+            Color32::from_rgb(0x06, 0x4e, 0x3b)
+        } else {
+            cp.surface_hover
+        })
+        .stroke(Stroke::new(
+            1.0,
+            if is_held {
+                Color32::from_rgb(0x34, 0xd3, 0x99)
+            } else {
+                cp.outline
+            },
+        ))
         .corner_radius(CornerRadius::same(5));
-        if ui.add(held_btn).on_hover_text("Marcar esta call como Realizada").clicked() {
+        if ui
+            .add(held_btn)
+            .on_hover_text("Marcar esta call como Realizada")
+            .clicked()
+        {
             let mut updated = call.clone();
             updated.status = "held".into();
             if updated.call_result.is_empty() {
@@ -2420,15 +2515,27 @@ fn render_call_outcome_bar(app: &mut App, ui: &mut egui::Ui, cp: &CrmPalette, ca
         // 2. Venda Fechada
         let is_closed = call.status == "closed";
         let won_btn = egui::Button::new(
-            RichText::new(if is_closed { "💰 Venda fechada ✓" } else { "💰 Venda fechada" })
-                .size(11.5)
-                .strong()
-                .color(if is_closed { cp.on_accent } else { cp.accent }),
+            RichText::new(if is_closed {
+                "💰 Venda fechada ✓"
+            } else {
+                "💰 Venda fechada"
+            })
+            .size(11.5)
+            .strong()
+            .color(if is_closed { cp.on_accent } else { cp.accent }),
         )
-        .fill(if is_closed { cp.accent } else { cp.accent.gamma_multiply(0.16) })
+        .fill(if is_closed {
+            cp.accent
+        } else {
+            cp.accent.gamma_multiply(0.16)
+        })
         .stroke(Stroke::new(1.0, cp.accent))
         .corner_radius(CornerRadius::same(5));
-        if ui.add(won_btn).on_hover_text("Registrar venda ganha, informar valor e atualizar funil/receita").clicked() {
+        if ui
+            .add(won_btn)
+            .on_hover_text("Registrar venda ganha, informar valor e atualizar funil/receita")
+            .clicked()
+        {
             show_win = !show_win;
             show_lost = false;
             ui.data_mut(|d| {
@@ -2441,15 +2548,27 @@ fn render_call_outcome_bar(app: &mut App, ui: &mut egui::Ui, cp: &CrmPalette, ca
         // 3. Perdida
         let is_lost = call.status == "lost";
         let lost_btn = egui::Button::new(
-            RichText::new(if is_lost { "✕ Perdida ✓" } else { "✕ Perdida" })
-                .size(11.5)
-                .strong()
-                .color(if is_lost { Color32::WHITE } else { cp.danger }),
+            RichText::new(if is_lost {
+                "✕ Perdida ✓"
+            } else {
+                "✕ Perdida"
+            })
+            .size(11.5)
+            .strong()
+            .color(if is_lost { Color32::WHITE } else { cp.danger }),
         )
-        .fill(if is_lost { cp.danger } else { cp.danger.gamma_multiply(0.14) })
+        .fill(if is_lost {
+            cp.danger
+        } else {
+            cp.danger.gamma_multiply(0.14)
+        })
         .stroke(Stroke::new(1.0, cp.danger))
         .corner_radius(CornerRadius::same(5));
-        if ui.add(lost_btn).on_hover_text("Registrar perda da oportunidade com motivo").clicked() {
+        if ui
+            .add(lost_btn)
+            .on_hover_text("Registrar perda da oportunidade com motivo")
+            .clicked()
+        {
             show_lost = !show_lost;
             show_win = false;
             ui.data_mut(|d| {
@@ -2465,7 +2584,10 @@ fn render_call_outcome_bar(app: &mut App, ui: &mut egui::Ui, cp: &CrmPalette, ca
         let default_val = if call.revenue_cents > 0 {
             format_revenue_input(call.revenue_cents)
         } else if let Some(chat_id) = &call.chat_id {
-            app.crm_deals.get(chat_id).map(|d| format_revenue_input(d.value_cents)).unwrap_or_default()
+            app.crm_deals
+                .get(chat_id)
+                .map(|d| format_revenue_input(d.value_cents))
+                .unwrap_or_default()
         } else {
             String::new()
         };
@@ -2479,12 +2601,26 @@ fn render_call_outcome_bar(app: &mut App, ui: &mut egui::Ui, cp: &CrmPalette, ca
             .inner_margin(Margin::symmetric(10, 8))
             .show(ui, |ui| {
                 ui.horizontal(|ui| {
-                    ui.label(RichText::new("Valor da Venda (R$):").size(12.0).strong().color(cp.text));
-                    ui.add(egui::TextEdit::singleline(&mut val_str).hint_text("0,00").desired_width(110.0));
+                    ui.label(
+                        RichText::new("Valor da Venda (R$):")
+                            .size(12.0)
+                            .strong()
+                            .color(cp.text),
+                    );
+                    ui.add(
+                        egui::TextEdit::singleline(&mut val_str)
+                            .hint_text("0,00")
+                            .desired_width(110.0),
+                    );
 
                     let confirm_btn = egui::Button::new(
-                        RichText::new("✓ Confirmar Fechamento").size(12.0).strong().color(cp.on_accent)
-                    ).fill(cp.accent).corner_radius(CornerRadius::same(5));
+                        RichText::new("✓ Confirmar Fechamento")
+                            .size(12.0)
+                            .strong()
+                            .color(cp.on_accent),
+                    )
+                    .fill(cp.accent)
+                    .corner_radius(CornerRadius::same(5));
 
                     if ui.add(confirm_btn).clicked() {
                         let cents = parse_revenue_cents(&val_str);
@@ -2498,25 +2634,38 @@ fn render_call_outcome_bar(app: &mut App, ui: &mut egui::Ui, cp: &CrmPalette, ca
                         app.actions.push(Action::SaveCrmTask(updated_call));
 
                         if let Some(chat_id) = &call.chat_id {
-                            let mut deal = app.crm_deals.get(chat_id).cloned().unwrap_or_else(|| CrmDeal {
-                                chat_id: chat_id.clone(),
-                                column_id: "close".into(),
-                                value_cents: cents,
-                                notes: String::new(),
-                                tags: Vec::new(),
-                                updated_at: now,
-                            });
+                            let mut deal =
+                                app.crm_deals
+                                    .get(chat_id)
+                                    .cloned()
+                                    .unwrap_or_else(|| CrmDeal {
+                                        chat_id: chat_id.clone(),
+                                        column_id: "close".into(),
+                                        value_cents: cents,
+                                        notes: String::new(),
+                                        tags: Vec::new(),
+                                        updated_at: now,
+                                    });
                             deal.value_cents = cents;
-                            if let Some(close_col) = app.crm_columns.iter().find(|c| c.id == "close" || c.title.to_lowercase().contains("fechamento") || c.title.to_lowercase().contains("ganho")) {
+                            if let Some(close_col) = app.crm_columns.iter().find(|c| {
+                                c.id == "close"
+                                    || c.title.to_lowercase().contains("fechamento")
+                                    || c.title.to_lowercase().contains("ganho")
+                            }) {
                                 deal.column_id = close_col.id.clone();
                             }
                             let formatted_val = format_revenue_input(cents);
-                            let entry = format!("💰 Venda fechada via Call '{}': R$ {}\n", call.title, formatted_val);
+                            let entry = format!(
+                                "💰 Venda fechada via Call '{}': R$ {}\n",
+                                call.title, formatted_val
+                            );
                             deal.notes = format!("{entry}{}", deal.notes);
                             deal.updated_at = now;
                             app.actions.push(Action::SaveCrmDeal(deal));
                         }
-                        app.toast("Venda fechada! Receita, funil e histórico do cliente atualizados.");
+                        app.toast(
+                            "Venda fechada! Receita, funil e histórico do cliente atualizados.",
+                        );
                         ui.data_mut(|d| d.insert_temp(win_id, false));
                         ui.ctx().request_repaint();
                     }
@@ -2543,16 +2692,34 @@ fn render_call_outcome_bar(app: &mut App, ui: &mut egui::Ui, cp: &CrmPalette, ca
             .show(ui, |ui| {
                 ui.vertical(|ui| {
                     ui.horizontal(|ui| {
-                        ui.label(RichText::new("Motivo da Perda:").size(12.0).strong().color(cp.text));
-                        ui.add(egui::TextEdit::singleline(&mut reason_str).hint_text("Ex: Preço alto, escolheu concorrente...").desired_width(240.0));
+                        ui.label(
+                            RichText::new("Motivo da Perda:")
+                                .size(12.0)
+                                .strong()
+                                .color(cp.text),
+                        );
+                        ui.add(
+                            egui::TextEdit::singleline(&mut reason_str)
+                                .hint_text("Ex: Preço alto, escolheu concorrente...")
+                                .desired_width(240.0),
+                        );
 
                         let confirm_btn = egui::Button::new(
-                            RichText::new("✓ Registrar Perda").size(12.0).strong().color(Color32::WHITE)
-                        ).fill(cp.danger).corner_radius(CornerRadius::same(5));
+                            RichText::new("✓ Registrar Perda")
+                                .size(12.0)
+                                .strong()
+                                .color(Color32::WHITE),
+                        )
+                        .fill(cp.danger)
+                        .corner_radius(CornerRadius::same(5));
 
                         if ui.add(confirm_btn).clicked() {
                             let now = crate::util::now();
-                            let reason = if reason_str.trim().is_empty() { "Não informado".to_string() } else { reason_str.trim().to_string() };
+                            let reason = if reason_str.trim().is_empty() {
+                                "Não informado".to_string()
+                            } else {
+                                reason_str.trim().to_string()
+                            };
                             let mut updated_call = call.clone();
                             updated_call.status = "lost".into();
                             updated_call.call_result = format!("Perdida: {reason}");
@@ -2563,7 +2730,10 @@ fn render_call_outcome_bar(app: &mut App, ui: &mut egui::Ui, cp: &CrmPalette, ca
 
                             if let Some(chat_id) = &call.chat_id {
                                 if let Some(mut deal) = app.crm_deals.get(chat_id).cloned() {
-                                    deal.notes = format!("✕ Call perdida '{}' - Motivo: {reason}\n{}", call.title, deal.notes);
+                                    deal.notes = format!(
+                                        "✕ Call perdida '{}' - Motivo: {reason}\n{}",
+                                        call.title, deal.notes
+                                    );
                                     deal.updated_at = now;
                                     app.actions.push(Action::SaveCrmDeal(deal));
                                 }
@@ -2581,7 +2751,12 @@ fn render_call_outcome_bar(app: &mut App, ui: &mut egui::Ui, cp: &CrmPalette, ca
 
                     ui.horizontal(|ui| {
                         ui.label(RichText::new("Sugestões:").size(11.0).color(cp.dim));
-                        for chip in ["Preço / Sem orçamento", "Optou por concorrente", "Sem interesse no momento", "Não respondeu"] {
+                        for chip in [
+                            "Preço / Sem orçamento",
+                            "Optou por concorrente",
+                            "Sem interesse no momento",
+                            "Não respondeu",
+                        ] {
                             if ui.small_button(chip).clicked() {
                                 reason_str = chip.to_string();
                             }
@@ -2605,217 +2780,366 @@ fn render_call_modal(
     let show_err = ui.data_mut(|d| d.get_temp::<bool>(err_id).unwrap_or(false));
 
     ui.vertical(|ui| {
-    egui::ScrollArea::vertical()
-        .max_height(480.0)
-        .auto_shrink([false, false])
-        .show(ui, |ui| {
-            ui.label(
-                RichText::new("Título da call *")
-                    .size(12.0)
-                    .strong()
-                    .color(cp.secondary),
-            );
-            ui.add_space(2.0);
-            let title_stroke = if show_err && draft.title.trim().is_empty() {
-                Stroke::new(1.0, cp.danger)
-            } else {
-                Stroke::new(1.0, cp.outline)
-            };
-            Frame::new()
-                .fill(cp.surface)
-                .stroke(title_stroke)
-                .corner_radius(CornerRadius::same(6))
-                .inner_margin(Margin::symmetric(8, 6))
-                .show(ui, |ui| {
-                    ui.add(
-                        egui::TextEdit::singleline(&mut draft.title)
-                            .hint_text("Ex.: Reunião de Alinhamento Comercial")
-                            .desired_width(ui.available_width())
-                            .frame(Frame::NONE),
-                    );
-                });
-            if show_err && draft.title.trim().is_empty() {
+        egui::ScrollArea::vertical()
+            .max_height(480.0)
+            .auto_shrink([false, false])
+            .show(ui, |ui| {
                 ui.label(
-                    RichText::new("O título é obrigatório")
-                        .size(11.0)
-                        .color(cp.danger),
+                    RichText::new("Título da call *")
+                        .size(12.0)
+                        .strong()
+                        .color(cp.secondary),
                 );
-            }
-
-            ui.add_space(10.0);
-
-            ui.columns(2, |uis| {
-                uis[0].vertical(|ui| {
-                    ui.label(
-                        RichText::new("Status da call")
-                            .size(12.0)
-                            .strong()
-                            .color(cp.secondary),
-                    );
-                    ui.add_space(2.0);
-                    egui::ComboBox::from_id_salt("modal-call-status")
-                        .selected_text(match draft.status.as_str() {
-                            "scheduled" | "todo" | "doing" | "review" => "Agendada",
-                            "held" | "done" => "Realizada",
-                            "closed" => "Fechamento / Vendida",
-                            "lost" => "Perdida",
-                            "no_show" => "No-show",
-                            "cancelled" => "Cancelada",
-                            _ => "Agendada",
-                        })
-                        .width(ui.available_width() - 8.0)
-                        .show_ui(ui, |ui| {
-                            for (value, label) in [
-                                ("scheduled", "Agendada"),
-                                ("held", "Realizada"),
-                                ("closed", "Fechamento / Vendida"),
-                                ("lost", "Perdida"),
-                                ("no_show", "No-show"),
-                                ("cancelled", "Cancelada"),
-                            ] {
-                                ui.selectable_value(&mut draft.status, value.into(), label);
-                            }
-                        });
-                });
-
-                uis[1].vertical(|ui| {
-                    ui.label(
-                        RichText::new("Duração")
-                            .size(12.0)
-                            .strong()
-                            .color(cp.secondary),
-                    );
-                    ui.add_space(2.0);
-                    egui::ComboBox::from_id_salt("modal-call-duration")
-                        .selected_text(format!("{} min", draft.duration_minutes))
-                        .width(ui.available_width() - 8.0)
-                        .show_ui(ui, |ui| {
-                            for minutes in [15, 30, 45, 60, 90, 120] {
-                                ui.selectable_value(
-                                    &mut draft.duration_minutes,
-                                    minutes,
-                                    format!("{minutes} min"),
-                                );
-                            }
-                        });
-                });
-            });
-
-            if draft.status == "lost" {
-                ui.add_space(8.0);
+                ui.add_space(2.0);
+                let title_stroke = if show_err && draft.title.trim().is_empty() {
+                    Stroke::new(1.0, cp.danger)
+                } else {
+                    Stroke::new(1.0, cp.outline)
+                };
                 Frame::new()
-                    .fill(cp.surface_hover)
-                    .stroke(Stroke::new(1.0, cp.danger.gamma_multiply(0.7)))
+                    .fill(cp.surface)
+                    .stroke(title_stroke)
                     .corner_radius(CornerRadius::same(6))
-                    .inner_margin(Margin::same(8))
+                    .inner_margin(Margin::symmetric(8, 6))
                     .show(ui, |ui| {
-                        ui.label(RichText::new("Motivo da Perda / Descarte *").size(12.0).strong().color(cp.danger));
-                        ui.add_space(3.0);
                         ui.add(
-                            egui::TextEdit::singleline(&mut draft.next_step)
-                                .hint_text("Descreva o motivo principal do descarte...")
+                            egui::TextEdit::singleline(&mut draft.title)
+                                .hint_text("Ex.: Reunião de Alinhamento Comercial")
                                 .desired_width(ui.available_width())
+                                .frame(Frame::NONE),
                         );
-                        ui.add_space(4.0);
-                        ui.horizontal_wrapped(|ui| {
-                            ui.label(RichText::new("Sugestões:").size(11.0).color(cp.dim));
-                            for chip in ["Preço / Sem orçamento", "Optou por concorrente", "Sem interesse no momento", "Não respondeu"] {
-                                if ui.small_button(chip).clicked() {
-                                    draft.next_step = chip.to_string();
-                                    if draft.call_result.is_empty() {
-                                        draft.call_result = format!("Perdida: {chip}");
+                    });
+                if show_err && draft.title.trim().is_empty() {
+                    ui.label(
+                        RichText::new("O título é obrigatório")
+                            .size(11.0)
+                            .color(cp.danger),
+                    );
+                }
+
+                ui.add_space(10.0);
+
+                ui.columns(2, |uis| {
+                    uis[0].vertical(|ui| {
+                        ui.label(
+                            RichText::new("Status da call")
+                                .size(12.0)
+                                .strong()
+                                .color(cp.secondary),
+                        );
+                        ui.add_space(2.0);
+                        egui::ComboBox::from_id_salt("modal-call-status")
+                            .selected_text(match draft.status.as_str() {
+                                "scheduled" | "todo" | "doing" | "review" => "Agendada",
+                                "held" | "done" => "Realizada",
+                                "closed" => "Fechamento / Vendida",
+                                "lost" => "Perdida",
+                                "no_show" => "No-show",
+                                "cancelled" => "Cancelada",
+                                _ => "Agendada",
+                            })
+                            .width(ui.available_width() - 8.0)
+                            .show_ui(ui, |ui| {
+                                for (value, label) in [
+                                    ("scheduled", "Agendada"),
+                                    ("held", "Realizada"),
+                                    ("closed", "Fechamento / Vendida"),
+                                    ("lost", "Perdida"),
+                                    ("no_show", "No-show"),
+                                    ("cancelled", "Cancelada"),
+                                ] {
+                                    ui.selectable_value(&mut draft.status, value.into(), label);
+                                }
+                            });
+                    });
+
+                    uis[1].vertical(|ui| {
+                        ui.label(
+                            RichText::new("Duração")
+                                .size(12.0)
+                                .strong()
+                                .color(cp.secondary),
+                        );
+                        ui.add_space(2.0);
+                        egui::ComboBox::from_id_salt("modal-call-duration")
+                            .selected_text(format!("{} min", draft.duration_minutes))
+                            .width(ui.available_width() - 8.0)
+                            .show_ui(ui, |ui| {
+                                for minutes in [15, 30, 45, 60, 90, 120] {
+                                    ui.selectable_value(
+                                        &mut draft.duration_minutes,
+                                        minutes,
+                                        format!("{minutes} min"),
+                                    );
+                                }
+                            });
+                    });
+                });
+
+                if draft.status == "lost" {
+                    ui.add_space(8.0);
+                    Frame::new()
+                        .fill(cp.surface_hover)
+                        .stroke(Stroke::new(1.0, cp.danger.gamma_multiply(0.7)))
+                        .corner_radius(CornerRadius::same(6))
+                        .inner_margin(Margin::same(8))
+                        .show(ui, |ui| {
+                            ui.label(
+                                RichText::new("Motivo da Perda / Descarte *")
+                                    .size(12.0)
+                                    .strong()
+                                    .color(cp.danger),
+                            );
+                            ui.add_space(3.0);
+                            ui.add(
+                                egui::TextEdit::singleline(&mut draft.next_step)
+                                    .hint_text("Descreva o motivo principal do descarte...")
+                                    .desired_width(ui.available_width()),
+                            );
+                            ui.add_space(4.0);
+                            ui.horizontal_wrapped(|ui| {
+                                ui.label(RichText::new("Sugestões:").size(11.0).color(cp.dim));
+                                for chip in [
+                                    "Preço / Sem orçamento",
+                                    "Optou por concorrente",
+                                    "Sem interesse no momento",
+                                    "Não respondeu",
+                                ] {
+                                    if ui.small_button(chip).clicked() {
+                                        draft.next_step = chip.to_string();
+                                        if draft.call_result.is_empty() {
+                                            draft.call_result = format!("Perdida: {chip}");
+                                        }
                                     }
                                 }
-                            }
+                            });
                         });
-                    });
-            }
+                }
 
-            if draft.status == "closed" {
-                ui.add_space(8.0);
-                Frame::new()
-                    .fill(cp.surface_hover)
-                    .stroke(Stroke::new(1.0, cp.accent.gamma_multiply(0.7)))
-                    .corner_radius(CornerRadius::same(6))
-                    .inner_margin(Margin::same(8))
-                    .show(ui, |ui| {
-                        ui.label(RichText::new("💰 Valor Fechado da Venda (R$)").size(12.0).strong().color(cp.accent));
-                        ui.add_space(3.0);
-                        ui.add(
-                            egui::TextEdit::singleline(&mut draft.revenue_reais)
-                                .hint_text("0,00")
-                                .desired_width(ui.available_width())
+                if draft.status == "closed" {
+                    ui.add_space(8.0);
+                    Frame::new()
+                        .fill(cp.surface_hover)
+                        .stroke(Stroke::new(1.0, cp.accent.gamma_multiply(0.7)))
+                        .corner_radius(CornerRadius::same(6))
+                        .inner_margin(Margin::same(8))
+                        .show(ui, |ui| {
+                            ui.label(
+                                RichText::new("💰 Valor Fechado da Venda (R$)")
+                                    .size(12.0)
+                                    .strong()
+                                    .color(cp.accent),
+                            );
+                            ui.add_space(3.0);
+                            ui.add(
+                                egui::TextEdit::singleline(&mut draft.revenue_reais)
+                                    .hint_text("0,00")
+                                    .desired_width(ui.available_width()),
+                            );
+                        });
+                }
+
+                ui.add_space(10.0);
+
+                ui.columns(2, |uis| {
+                    uis[0].vertical(|ui| {
+                        ui.label(
+                            RichText::new("Cliente / Contato")
+                                .size(12.0)
+                                .strong()
+                                .color(cp.secondary),
                         );
+                        ui.add_space(2.0);
+                        let current_client = draft
+                            .chat_id
+                            .as_ref()
+                            .and_then(|id| app.chat(id))
+                            .map(|c| app.chat_title(c))
+                            .unwrap_or_else(|| {
+                                if draft.chat_id.is_some() {
+                                    "Cliente selecionado".into()
+                                } else {
+                                    "Nenhum cliente (Geral)".into()
+                                }
+                            });
+
+                        egui::ComboBox::from_id_salt("modal-call-client")
+                            .selected_text(current_client)
+                            .width(ui.available_width() - 8.0)
+                            .show_ui(ui, |ui| {
+                                ui.selectable_value(
+                                    &mut draft.chat_id,
+                                    None,
+                                    "Nenhum cliente (Geral)",
+                                );
+                                for chat in &app.chats {
+                                    let title = app.chat_title(chat);
+                                    ui.selectable_value(
+                                        &mut draft.chat_id,
+                                        Some(chat.id.clone()),
+                                        title,
+                                    );
+                                }
+                            });
                     });
-            }
 
-            ui.add_space(10.0);
+                    uis[1].vertical(|ui| {
+                        ui.label(
+                            RichText::new("Projeto vinculado")
+                                .size(12.0)
+                                .strong()
+                                .color(cp.secondary),
+                        );
+                        ui.add_space(2.0);
+                        let current_proj_name = draft
+                            .project_id
+                            .as_ref()
+                            .and_then(|id| app.crm_projects.iter().find(|p| &p.id == id))
+                            .map_or("Sem projeto", |p| p.name.as_str());
 
-            ui.columns(2, |uis| {
-                uis[0].vertical(|ui| {
+                        egui::ComboBox::from_id_salt("modal-call-project")
+                            .selected_text(current_proj_name)
+                            .width(ui.available_width() - 8.0)
+                            .show_ui(ui, |ui| {
+                                ui.selectable_value(&mut draft.project_id, None, "Sem projeto");
+                                for p in &app.crm_projects {
+                                    ui.selectable_value(
+                                        &mut draft.project_id,
+                                        Some(p.id.clone()),
+                                        &p.name,
+                                    );
+                                }
+                            });
+                    });
+                });
+
+                ui.add_space(10.0);
+
+                ui.vertical(|ui| {
                     ui.label(
-                        RichText::new("Cliente / Contato")
+                        RichText::new("Responsável")
                             .size(12.0)
                             .strong()
                             .color(cp.secondary),
                     );
                     ui.add_space(2.0);
-                    let current_client = draft
-                        .chat_id
-                        .as_ref()
-                        .and_then(|id| app.chat(id))
-                        .map(|c| app.chat_title(c))
-                        .unwrap_or_else(|| {
-                            if draft.chat_id.is_some() {
-                                "Cliente selecionado".into()
-                            } else {
-                                "Nenhum cliente (Geral)".into()
-                            }
-                        });
-
-                    egui::ComboBox::from_id_salt("modal-call-client")
-                        .selected_text(current_client)
-                        .width(ui.available_width() - 8.0)
-                        .show_ui(ui, |ui| {
-                            ui.selectable_value(&mut draft.chat_id, None, "Nenhum cliente (Geral)");
-                            for chat in &app.chats {
-                                let title = app.chat_title(chat);
-                                ui.selectable_value(&mut draft.chat_id, Some(chat.id.clone()), title);
-                            }
+                    Frame::new()
+                        .fill(cp.surface)
+                        .stroke(Stroke::new(1.0, cp.outline))
+                        .corner_radius(CornerRadius::same(6))
+                        .inner_margin(Margin::symmetric(8, 6))
+                        .show(ui, |ui| {
+                            ui.add(
+                                egui::TextEdit::singleline(&mut draft.assignee)
+                                    .hint_text("Nome do consultor")
+                                    .desired_width(ui.available_width())
+                                    .frame(Frame::NONE),
+                            );
                         });
                 });
 
-                uis[1].vertical(|ui| {
-                    ui.label(
-                        RichText::new("Projeto vinculado")
-                            .size(12.0)
-                            .strong()
-                            .color(cp.secondary),
-                    );
-                    ui.add_space(2.0);
-                    let current_proj_name = draft
-                        .project_id
-                        .as_ref()
-                        .and_then(|id| app.crm_projects.iter().find(|p| &p.id == id))
-                        .map_or("Sem projeto", |p| p.name.as_str());
+                ui.add_space(10.0);
 
-                    egui::ComboBox::from_id_salt("modal-call-project")
-                        .selected_text(current_proj_name)
-                        .width(ui.available_width() - 8.0)
-                        .show_ui(ui, |ui| {
-                            ui.selectable_value(&mut draft.project_id, None, "Sem projeto");
-                            for p in &app.crm_projects {
-                                ui.selectable_value(&mut draft.project_id, Some(p.id.clone()), &p.name);
-                            }
-                        });
-                });
-            });
-
-            ui.add_space(10.0);
-
-            ui.vertical(|ui| {
                 ui.label(
-                    RichText::new("Responsável")
+                    RichText::new("Data e horário da call")
+                        .size(12.0)
+                        .strong()
+                        .color(cp.secondary),
+                );
+                ui.add_space(2.0);
+                let cal_open_id = ui.id().with("modal-call-cal-open");
+                let mut cal_open =
+                    ui.data_mut(|d| d.get_temp::<bool>(cal_open_id).unwrap_or(false));
+                let date_str = format!(
+                    "📅 {:02}/{:02}/{} às {:02}:{:02}",
+                    draft.due_date.day(),
+                    draft.due_date.month(),
+                    draft.due_date.year(),
+                    draft.due_hour,
+                    draft.due_minute
+                );
+                if ui
+                    .button(RichText::new(date_str).color(cp.accent))
+                    .clicked()
+                {
+                    cal_open = !cal_open;
+                }
+
+                if cal_open {
+                    ui.add_space(4.0);
+                    Frame::new()
+                        .fill(cp.surface)
+                        .stroke(Stroke::new(1.0, cp.outline))
+                        .corner_radius(CornerRadius::same(8))
+                        .inner_margin(Margin::same(8))
+                        .show(ui, |ui| {
+                            super::dialogs::date_time_picker(
+                                ui,
+                                app.locale,
+                                &app.palette,
+                                "crm-sales-call-date",
+                                &mut draft.due_date,
+                                &mut draft.due_hour,
+                                &mut draft.due_minute,
+                            );
+                        });
+                }
+                ui.data_mut(|d| d.insert_temp(cal_open_id, cal_open));
+
+                ui.add_space(10.0);
+
+                ui.columns(2, |uis| {
+                    uis[0].vertical(|ui| {
+                        ui.label(
+                            RichText::new("Resultado da call")
+                                .size(12.0)
+                                .strong()
+                                .color(cp.secondary),
+                        );
+                        ui.add_space(2.0);
+                        Frame::new()
+                            .fill(cp.surface)
+                            .stroke(Stroke::new(1.0, cp.outline))
+                            .corner_radius(CornerRadius::same(6))
+                            .inner_margin(Margin::symmetric(8, 6))
+                            .show(ui, |ui| {
+                                ui.add(
+                                    egui::TextEdit::singleline(&mut draft.call_result)
+                                        .hint_text("Ex.: Apresentada proposta")
+                                        .desired_width(ui.available_width())
+                                        .frame(Frame::NONE),
+                                );
+                            });
+                    });
+
+                    uis[1].vertical(|ui| {
+                        ui.label(
+                            RichText::new("Receita fechada (R$)")
+                                .size(12.0)
+                                .strong()
+                                .color(cp.secondary),
+                        );
+                        ui.add_space(2.0);
+                        Frame::new()
+                            .fill(cp.surface)
+                            .stroke(Stroke::new(1.0, cp.outline))
+                            .corner_radius(CornerRadius::same(6))
+                            .inner_margin(Margin::symmetric(8, 6))
+                            .show(ui, |ui| {
+                                ui.add(
+                                    egui::TextEdit::singleline(&mut draft.revenue_reais)
+                                        .hint_text("Ex.: 2500,00")
+                                        .desired_width(ui.available_width())
+                                        .frame(Frame::NONE),
+                                );
+                            });
+                    });
+                });
+
+                ui.add_space(10.0);
+
+                ui.label(
+                    RichText::new("Próximo passo comercial")
                         .size(12.0)
                         .strong()
                         .color(cp.secondary),
@@ -2828,158 +3152,37 @@ fn render_call_modal(
                     .inner_margin(Margin::symmetric(8, 6))
                     .show(ui, |ui| {
                         ui.add(
-                            egui::TextEdit::singleline(&mut draft.assignee)
-                                .hint_text("Nome do consultor")
+                            egui::TextEdit::singleline(&mut draft.next_step)
+                                .hint_text("Ex.: Follow-up na sexta-feira às 14h")
                                 .desired_width(ui.available_width())
                                 .frame(Frame::NONE),
                         );
                     });
-            });
 
-            ui.add_space(10.0);
+                ui.add_space(10.0);
 
-            ui.label(
-                RichText::new("Data e horário da call")
-                    .size(12.0)
-                    .strong()
-                    .color(cp.secondary),
-            );
-            ui.add_space(2.0);
-            let cal_open_id = ui.id().with("modal-call-cal-open");
-            let mut cal_open = ui.data_mut(|d| d.get_temp::<bool>(cal_open_id).unwrap_or(false));
-            let date_str = format!(
-                "📅 {:02}/{:02}/{} às {:02}:{:02}",
-                draft.due_date.day(),
-                draft.due_date.month(),
-                draft.due_date.year(),
-                draft.due_hour,
-                draft.due_minute
-            );
-            if ui
-                .button(RichText::new(date_str).color(cp.accent))
-                .clicked()
-            {
-                cal_open = !cal_open;
-            }
-
-            if cal_open {
-                ui.add_space(4.0);
+                ui.label(
+                    RichText::new("Anotações da reunião")
+                        .size(12.0)
+                        .strong()
+                        .color(cp.secondary),
+                );
+                ui.add_space(2.0);
                 Frame::new()
                     .fill(cp.surface)
                     .stroke(Stroke::new(1.0, cp.outline))
-                    .corner_radius(CornerRadius::same(8))
-                    .inner_margin(Margin::same(8))
+                    .corner_radius(CornerRadius::same(6))
+                    .inner_margin(Margin::symmetric(8, 6))
                     .show(ui, |ui| {
-                        super::dialogs::date_time_picker(
-                            ui,
-                            app.locale,
-                            &app.palette,
-                            "crm-sales-call-date",
-                            &mut draft.due_date,
-                            &mut draft.due_hour,
-                            &mut draft.due_minute,
+                        ui.add(
+                            egui::TextEdit::multiline(&mut draft.description)
+                                .hint_text("Pontos discutidos, dores do cliente, objeções...")
+                                .desired_width(ui.available_width())
+                                .desired_rows(2)
+                                .frame(Frame::NONE),
                         );
                     });
-            }
-            ui.data_mut(|d| d.insert_temp(cal_open_id, cal_open));
-
-            ui.add_space(10.0);
-
-            ui.columns(2, |uis| {
-                uis[0].vertical(|ui| {
-                    ui.label(
-                        RichText::new("Resultado da call")
-                            .size(12.0)
-                            .strong()
-                            .color(cp.secondary),
-                    );
-                    ui.add_space(2.0);
-                    Frame::new()
-                        .fill(cp.surface)
-                        .stroke(Stroke::new(1.0, cp.outline))
-                        .corner_radius(CornerRadius::same(6))
-                        .inner_margin(Margin::symmetric(8, 6))
-                        .show(ui, |ui| {
-                            ui.add(
-                                egui::TextEdit::singleline(&mut draft.call_result)
-                                    .hint_text("Ex.: Apresentada proposta")
-                                    .desired_width(ui.available_width())
-                                    .frame(Frame::NONE),
-                            );
-                        });
-                });
-
-                uis[1].vertical(|ui| {
-                    ui.label(
-                        RichText::new("Receita fechada (R$)")
-                            .size(12.0)
-                            .strong()
-                            .color(cp.secondary),
-                    );
-                    ui.add_space(2.0);
-                    Frame::new()
-                        .fill(cp.surface)
-                        .stroke(Stroke::new(1.0, cp.outline))
-                        .corner_radius(CornerRadius::same(6))
-                        .inner_margin(Margin::symmetric(8, 6))
-                        .show(ui, |ui| {
-                            ui.add(
-                                egui::TextEdit::singleline(&mut draft.revenue_reais)
-                                    .hint_text("Ex.: 2500,00")
-                                    .desired_width(ui.available_width())
-                                    .frame(Frame::NONE),
-                            );
-                        });
-                });
             });
-
-            ui.add_space(10.0);
-
-            ui.label(
-                RichText::new("Próximo passo comercial")
-                    .size(12.0)
-                    .strong()
-                    .color(cp.secondary),
-            );
-            ui.add_space(2.0);
-            Frame::new()
-                .fill(cp.surface)
-                .stroke(Stroke::new(1.0, cp.outline))
-                .corner_radius(CornerRadius::same(6))
-                .inner_margin(Margin::symmetric(8, 6))
-                .show(ui, |ui| {
-                    ui.add(
-                        egui::TextEdit::singleline(&mut draft.next_step)
-                            .hint_text("Ex.: Follow-up na sexta-feira às 14h")
-                            .desired_width(ui.available_width())
-                            .frame(Frame::NONE),
-                    );
-                });
-
-            ui.add_space(10.0);
-
-            ui.label(
-                RichText::new("Anotações da reunião")
-                    .size(12.0)
-                    .strong()
-                    .color(cp.secondary),
-            );
-            ui.add_space(2.0);
-            Frame::new()
-                .fill(cp.surface)
-                .stroke(Stroke::new(1.0, cp.outline))
-                .corner_radius(CornerRadius::same(6))
-                .inner_margin(Margin::symmetric(8, 6))
-                .show(ui, |ui| {
-                    ui.add(
-                        egui::TextEdit::multiline(&mut draft.description)
-                            .hint_text("Pontos discutidos, dores do cliente, objeções...")
-                            .desired_width(ui.available_width())
-                            .desired_rows(2)
-                            .frame(Frame::NONE),
-                    );
-                });
-        });
 
         ui.add_space(12.0);
 
@@ -3004,7 +3207,8 @@ fn render_call_modal(
 
             if let Some(call_id) = draft.id.clone() {
                 let confirm_delete_id = ui.id().with(("confirm-del-modal-call", &call_id));
-                let confirming = ui.data_mut(|d| d.get_temp::<bool>(confirm_delete_id).unwrap_or(false));
+                let confirming =
+                    ui.data_mut(|d| d.get_temp::<bool>(confirm_delete_id).unwrap_or(false));
                 if confirming {
                     if ui
                         .add(
@@ -3038,9 +3242,7 @@ fn render_call_modal(
                 } else if ui
                     .add(
                         egui::Button::new(
-                            RichText::new("Excluir Call")
-                                .size(12.5)
-                                .color(cp.danger),
+                            RichText::new("Excluir Call").size(12.5).color(cp.danger),
                         )
                         .fill(cp.surface)
                         .stroke(Stroke::new(1.0, cp.danger.gamma_multiply(0.6)))
@@ -3114,28 +3316,42 @@ fn render_call_modal(
 
                     if let Some(ref chat_id) = target_chat {
                         if final_status == "closed" || rev_cents > 0 {
-                            let mut deal = app.crm_deals.get(chat_id).cloned().unwrap_or_else(|| CrmDeal {
-                                chat_id: chat_id.clone(),
-                                column_id: "close".into(),
-                                value_cents: rev_cents,
-                                notes: String::new(),
-                                tags: Vec::new(),
-                                updated_at: now,
-                            });
+                            let mut deal =
+                                app.crm_deals
+                                    .get(chat_id)
+                                    .cloned()
+                                    .unwrap_or_else(|| CrmDeal {
+                                        chat_id: chat_id.clone(),
+                                        column_id: "close".into(),
+                                        value_cents: rev_cents,
+                                        notes: String::new(),
+                                        tags: Vec::new(),
+                                        updated_at: now,
+                                    });
                             if rev_cents > 0 {
                                 deal.value_cents = rev_cents;
                             }
-                            if let Some(close_col) = app.crm_columns.iter().find(|c| c.id == "close" || c.title.to_lowercase().contains("fechamento") || c.title.to_lowercase().contains("ganho")) {
+                            if let Some(close_col) = app.crm_columns.iter().find(|c| {
+                                c.id == "close"
+                                    || c.title.to_lowercase().contains("fechamento")
+                                    || c.title.to_lowercase().contains("ganho")
+                            }) {
                                 deal.column_id = close_col.id.clone();
                             }
                             let formatted_val = format_revenue_input(rev_cents);
-                            let entry = format!("💰 Venda fechada via Call '{}': R$ {}\n", draft.title, formatted_val);
+                            let entry = format!(
+                                "💰 Venda fechada via Call '{}': R$ {}\n",
+                                draft.title, formatted_val
+                            );
                             deal.notes = format!("{entry}{}", deal.notes);
                             deal.updated_at = now;
                             app.actions.push(Action::SaveCrmDeal(deal));
                         } else if final_status == "lost" {
                             if let Some(mut deal) = app.crm_deals.get(chat_id).cloned() {
-                                let entry = format!("✕ Call perdida '{}' (Resultado: {}): {}\n", draft.title, draft.call_result, draft.next_step);
+                                let entry = format!(
+                                    "✕ Call perdida '{}' (Resultado: {}): {}\n",
+                                    draft.title, draft.call_result, draft.next_step
+                                );
                                 deal.notes = format!("{entry}{}", deal.notes);
                                 deal.updated_at = now;
                                 app.actions.push(Action::SaveCrmDeal(deal));
@@ -3286,14 +3502,18 @@ pub fn show_task_board(app: &mut App, ui: &mut egui::Ui, cp: &CrmPalette) {
 
     let render_switcher = |ui: &mut egui::Ui, view_mode: &mut String| {
         let is_kanban = view_mode.as_str() == "kanban";
-        let kanban_btn = egui::Button::new(
-            RichText::new("⊞ Kanban")
-                .size(12.0)
-                .strong()
-                .color(if is_kanban { cp.on_accent } else { cp.secondary }),
-        )
+        let kanban_btn = egui::Button::new(RichText::new("⊞ Kanban").size(12.0).strong().color(
+            if is_kanban {
+                cp.on_accent
+            } else {
+                cp.secondary
+            },
+        ))
         .fill(if is_kanban { cp.accent } else { cp.surface })
-        .stroke(Stroke::new(1.0, if is_kanban { cp.accent } else { cp.outline }))
+        .stroke(Stroke::new(
+            1.0,
+            if is_kanban { cp.accent } else { cp.outline },
+        ))
         .corner_radius(CornerRadius::same(6))
         .min_size(vec2(76.0, 32.0));
         if ui.add(kanban_btn).clicked() {
@@ -3309,7 +3529,10 @@ pub fn show_task_board(app: &mut App, ui: &mut egui::Ui, cp: &CrmPalette) {
                 .color(if is_list { cp.on_accent } else { cp.secondary }),
         )
         .fill(if is_list { cp.accent } else { cp.surface })
-        .stroke(Stroke::new(1.0, if is_list { cp.accent } else { cp.outline }))
+        .stroke(Stroke::new(
+            1.0,
+            if is_list { cp.accent } else { cp.outline },
+        ))
         .corner_radius(CornerRadius::same(6))
         .min_size(vec2(70.0, 32.0));
         if ui.add(list_btn).clicked() {
@@ -3335,7 +3558,10 @@ pub fn show_task_board(app: &mut App, ui: &mut egui::Ui, cp: &CrmPalette) {
         }
     };
 
-    let render_combos = |ui: &mut egui::Ui, project_filter: &mut Option<String>, priority_filter: &mut String, app: &App| {
+    let render_combos = |ui: &mut egui::Ui,
+                         project_filter: &mut Option<String>,
+                         priority_filter: &mut String,
+                         app: &App| {
         let selected_proj_title = project_filter
             .as_ref()
             .and_then(|id| app.crm_projects.iter().find(|p| &p.id == id))
@@ -3345,11 +3571,17 @@ pub fn show_task_board(app: &mut App, ui: &mut egui::Ui, cp: &CrmPalette) {
         egui::ComboBox::from_id_salt(("task-board-proj-filter", &account_id))
             .selected_text(selected_proj_title)
             .show_ui(ui, |ui| {
-                if ui.selectable_value(project_filter, None, "Todos os projetos").clicked() {
+                if ui
+                    .selectable_value(project_filter, None, "Todos os projetos")
+                    .clicked()
+                {
                     ui.ctx().request_repaint();
                 }
                 for p in &app.crm_projects {
-                    if ui.selectable_value(project_filter, Some(p.id.clone()), &p.name).clicked() {
+                    if ui
+                        .selectable_value(project_filter, Some(p.id.clone()), &p.name)
+                        .clicked()
+                    {
                         ui.ctx().request_repaint();
                     }
                 }
@@ -3365,19 +3597,34 @@ pub fn show_task_board(app: &mut App, ui: &mut egui::Ui, cp: &CrmPalette) {
         egui::ComboBox::from_id_salt(("task-board-prio-filter", &account_id))
             .selected_text(prio_title)
             .show_ui(ui, |ui| {
-                if ui.selectable_value(priority_filter, "all".into(), "Todas as prioridades").clicked() {
+                if ui
+                    .selectable_value(priority_filter, "all".into(), "Todas as prioridades")
+                    .clicked()
+                {
                     ui.ctx().request_repaint();
                 }
-                if ui.selectable_value(priority_filter, "urgent".into(), "Urgente").clicked() {
+                if ui
+                    .selectable_value(priority_filter, "urgent".into(), "Urgente")
+                    .clicked()
+                {
                     ui.ctx().request_repaint();
                 }
-                if ui.selectable_value(priority_filter, "high".into(), "Alta").clicked() {
+                if ui
+                    .selectable_value(priority_filter, "high".into(), "Alta")
+                    .clicked()
+                {
                     ui.ctx().request_repaint();
                 }
-                if ui.selectable_value(priority_filter, "normal".into(), "Normal").clicked() {
+                if ui
+                    .selectable_value(priority_filter, "normal".into(), "Normal")
+                    .clicked()
+                {
                     ui.ctx().request_repaint();
                 }
-                if ui.selectable_value(priority_filter, "low".into(), "Baixa").clicked() {
+                if ui
+                    .selectable_value(priority_filter, "low".into(), "Baixa")
+                    .clicked()
+                {
                     ui.ctx().request_repaint();
                 }
             });
@@ -3798,173 +4045,248 @@ fn show_task_list(
                     .corner_radius(CornerRadius::same(8))
                     .inner_margin(Margin::symmetric(14, 10))
                     .show(ui, |ui| {
-                    let card_avail = ui.available_width();
-                    let (s_bg, s_fg, s_label) = match task.status.as_str() {
-                        "todo" => (
-                            Color32::from_rgb(0x3b, 0x82, 0xf6).gamma_multiply(0.15),
-                            Color32::from_rgb(0x3b, 0x82, 0xf6),
-                            "A fazer",
-                        ),
-                        "doing" => (
-                            Color32::from_rgb(0xea, 0xb3, 0x08).gamma_multiply(0.15),
-                            Color32::from_rgb(0xea, 0xb3, 0x08),
-                            "Em andamento",
-                        ),
-                        "review" => (
-                            Color32::from_rgb(0xa8, 0x55, 0xf7).gamma_multiply(0.15),
-                            Color32::from_rgb(0xa8, 0x55, 0xf7),
-                            "Em revisão",
-                        ),
-                        "done" => (
-                            Color32::from_rgb(0x10, 0xb9, 0x81).gamma_multiply(0.15),
-                            Color32::from_rgb(0x10, 0xb9, 0x81),
-                            "Concluída",
-                        ),
-                        _ => (cp.surface_hover, cp.dim, task.status.as_str()),
-                    };
+                        let card_avail = ui.available_width();
+                        let (s_bg, s_fg, s_label) = match task.status.as_str() {
+                            "todo" => (
+                                Color32::from_rgb(0x3b, 0x82, 0xf6).gamma_multiply(0.15),
+                                Color32::from_rgb(0x3b, 0x82, 0xf6),
+                                "A fazer",
+                            ),
+                            "doing" => (
+                                Color32::from_rgb(0xea, 0xb3, 0x08).gamma_multiply(0.15),
+                                Color32::from_rgb(0xea, 0xb3, 0x08),
+                                "Em andamento",
+                            ),
+                            "review" => (
+                                Color32::from_rgb(0xa8, 0x55, 0xf7).gamma_multiply(0.15),
+                                Color32::from_rgb(0xa8, 0x55, 0xf7),
+                                "Em revisão",
+                            ),
+                            "done" => (
+                                Color32::from_rgb(0x10, 0xb9, 0x81).gamma_multiply(0.15),
+                                Color32::from_rgb(0x10, 0xb9, 0x81),
+                                "Concluída",
+                            ),
+                            _ => (cp.surface_hover, cp.dim, task.status.as_str()),
+                        };
 
-                    let mut render_actions = |ui: &mut egui::Ui| {
-                        let delete_id = egui::Id::new(("task-list-delete-confirm", &task.id));
-                        let mut is_confirming =
-                            ui.data_mut(|d| d.get_temp::<bool>(delete_id).unwrap_or(false));
-                        if is_confirming {
+                        let mut render_actions = |ui: &mut egui::Ui| {
+                            let delete_id = egui::Id::new(("task-list-delete-confirm", &task.id));
+                            let mut is_confirming =
+                                ui.data_mut(|d| d.get_temp::<bool>(delete_id).unwrap_or(false));
+                            if is_confirming {
+                                if ui
+                                    .add(
+                                        egui::Button::new(
+                                            RichText::new("Cancelar")
+                                                .size(12.0)
+                                                .color(cp.secondary),
+                                        )
+                                        .fill(cp.surface_hover)
+                                        .corner_radius(CornerRadius::same(5)),
+                                    )
+                                    .clicked()
+                                {
+                                    is_confirming = false;
+                                    ui.ctx().request_repaint();
+                                }
+                                if ui
+                                    .add(
+                                        egui::Button::new(
+                                            RichText::new("Excluir")
+                                                .size(12.0)
+                                                .strong()
+                                                .color(Color32::WHITE),
+                                        )
+                                        .fill(cp.danger)
+                                        .corner_radius(CornerRadius::same(5)),
+                                    )
+                                    .clicked()
+                                {
+                                    app.actions.push(Action::DeleteCrmTask(task.id.clone()));
+                                    is_confirming = false;
+                                    ui.ctx().request_repaint();
+                                }
+                            } else if ui
+                                .add(
+                                    egui::Button::new(
+                                        RichText::new("Excluir").size(12.0).color(cp.danger),
+                                    )
+                                    .fill(cp.surface_hover)
+                                    .stroke(Stroke::new(1.0, cp.outline))
+                                    .corner_radius(CornerRadius::same(5)),
+                                )
+                                .clicked()
+                            {
+                                is_confirming = true;
+                                ui.ctx().request_repaint();
+                            }
+                            ui.data_mut(|d| d.insert_temp(delete_id, is_confirming));
+
                             if ui
                                 .add(
                                     egui::Button::new(
-                                        RichText::new("Cancelar").size(12.0).color(cp.secondary),
+                                        RichText::new("Editar").size(12.0).color(cp.secondary),
                                     )
                                     .fill(cp.surface_hover)
                                     .corner_radius(CornerRadius::same(5)),
                                 )
                                 .clicked()
                             {
-                                is_confirming = false;
+                                *draft = TaskDraft {
+                                    id: Some(task.id.clone()),
+                                    title: task.title.clone(),
+                                    description: task.description.clone(),
+                                    priority: task.priority.clone(),
+                                    status: task.status.clone(),
+                                    assignee: task.assignee.clone(),
+                                    kind: task.kind.clone(),
+                                    duration_minutes: task.duration_minutes.unwrap_or(30),
+                                    call_result: task.call_result.clone(),
+                                    next_step: task.next_step.clone(),
+                                    revenue_reais: format_revenue_input(task.revenue_cents),
+                                    project_id: task.project_id.clone(),
+                                    has_due: task.due_at.is_some(),
+                                    due_date: task
+                                        .due_at
+                                        .and_then(crate::util::local_datetime)
+                                        .map(|x| x.0)
+                                        .unwrap_or_else(crate::util::today),
+                                    due_hour: task
+                                        .due_at
+                                        .and_then(crate::util::local_datetime)
+                                        .map(|x| x.1)
+                                        .unwrap_or(9),
+                                    due_minute: task
+                                        .due_at
+                                        .and_then(crate::util::local_datetime)
+                                        .map(|x| x.2)
+                                        .unwrap_or(0),
+                                    chat_id: task.chat_id.clone(),
+                                    link_chat: task.chat_id.is_some(),
+                                };
+                                *show_form = true;
                                 ui.ctx().request_repaint();
                             }
-                            if ui
-                                .add(
-                                    egui::Button::new(
-                                        RichText::new("Excluir")
-                                            .size(12.0)
-                                            .strong()
-                                            .color(Color32::WHITE),
-                                    )
-                                    .fill(cp.danger)
-                                    .corner_radius(CornerRadius::same(5)),
-                                )
-                                .clicked()
-                            {
-                                app.actions.push(Action::DeleteCrmTask(task.id.clone()));
-                                is_confirming = false;
-                                ui.ctx().request_repaint();
+                        };
+
+                        let render_info = |ui: &mut egui::Ui| {
+                            if let Some(due) = task.due_at {
+                                if let Some((date, _, _)) = crate::util::local_datetime(due) {
+                                    let text_color = if is_late { cp.danger } else { cp.dim };
+                                    ui.label(
+                                        RichText::new(format!(
+                                            "📅 {:02}/{:02}",
+                                            date.day(),
+                                            date.month()
+                                        ))
+                                        .size(11.5)
+                                        .color(text_color),
+                                    );
+                                }
                             }
-                        } else if ui
-                            .add(
-                                egui::Button::new(
-                                    RichText::new("Excluir").size(12.0).color(cp.danger),
-                                )
-                                .fill(cp.surface_hover)
-                                .stroke(Stroke::new(1.0, cp.outline))
-                                .corner_radius(CornerRadius::same(5)),
-                            )
-                            .clicked()
-                        {
-                            is_confirming = true;
-                            ui.ctx().request_repaint();
-                        }
-                        ui.data_mut(|d| d.insert_temp(delete_id, is_confirming));
 
-                        if ui
-                            .add(
-                                egui::Button::new(
-                                    RichText::new("Editar").size(12.0).color(cp.secondary),
-                                )
-                                .fill(cp.surface_hover)
-                                .corner_radius(CornerRadius::same(5)),
-                            )
-                            .clicked()
-                        {
-                            *draft = TaskDraft {
-                                id: Some(task.id.clone()),
-                                title: task.title.clone(),
-                                description: task.description.clone(),
-                                priority: task.priority.clone(),
-                                status: task.status.clone(),
-                                assignee: task.assignee.clone(),
-                                kind: task.kind.clone(),
-                                duration_minutes: task.duration_minutes.unwrap_or(30),
-                                call_result: task.call_result.clone(),
-                                next_step: task.next_step.clone(),
-                                revenue_reais: format_revenue_input(task.revenue_cents),
-                                project_id: task.project_id.clone(),
-                                has_due: task.due_at.is_some(),
-                                due_date: task
-                                    .due_at
-                                    .and_then(crate::util::local_datetime)
-                                    .map(|x| x.0)
-                                    .unwrap_or_else(crate::util::today),
-                                due_hour: task
-                                    .due_at
-                                    .and_then(crate::util::local_datetime)
-                                    .map(|x| x.1)
-                                    .unwrap_or(9),
-                                due_minute: task
-                                    .due_at
-                                    .and_then(crate::util::local_datetime)
-                                    .map(|x| x.2)
-                                    .unwrap_or(0),
-                                chat_id: task.chat_id.clone(),
-                                link_chat: task.chat_id.is_some(),
-                            };
-                            *show_form = true;
-                            ui.ctx().request_repaint();
-                        }
-                    };
-
-                    let render_info = |ui: &mut egui::Ui| {
-                        if let Some(due) = task.due_at {
-                            if let Some((date, _, _)) = crate::util::local_datetime(due) {
-                                let text_color = if is_late { cp.danger } else { cp.dim };
+                            if !task.assignee.is_empty() {
                                 ui.label(
-                                    RichText::new(format!(
-                                        "📅 {:02}/{:02}",
-                                        date.day(),
-                                        date.month()
-                                    ))
-                                    .size(11.5)
-                                    .color(text_color),
+                                    RichText::new(format!("👤 {}", task.assignee))
+                                        .size(11.5)
+                                        .color(cp.dim),
                                 );
                             }
-                        }
 
-                        if !task.assignee.is_empty() {
-                            ui.label(
-                                RichText::new(format!("👤 {}", task.assignee))
-                                    .size(11.5)
-                                    .color(cp.dim),
-                            );
-                        }
+                            if let Some(c_name) = &contact_name {
+                                ui.label(
+                                    RichText::new(format!("💬 {}", c_name))
+                                        .size(11.5)
+                                        .color(cp.secondary),
+                                );
+                            }
 
-                        if let Some(c_name) = &contact_name {
-                            ui.label(
-                                RichText::new(format!("💬 {}", c_name))
-                                    .size(11.5)
-                                    .color(cp.secondary),
-                            );
-                        }
+                            if let Some(p_name) = &project_name {
+                                ui.label(
+                                    RichText::new(format!("📁 {}", p_name))
+                                        .size(11.5)
+                                        .color(cp.accent),
+                                );
+                            }
+                        };
 
-                        if let Some(p_name) = &project_name {
-                            ui.label(
-                                RichText::new(format!("📁 {}", p_name))
-                                    .size(11.5)
-                                    .color(cp.accent),
-                            );
-                        }
-                    };
+                        if card_avail < 780.0 {
+                            ui.vertical(|ui| {
+                                // Row 1: Checkbox, Status badge, Priority badge, Title
+                                ui.horizontal(|ui| {
+                                    let check_btn = egui::Button::new(
+                                        RichText::new(if done { "✓" } else { "□" })
+                                            .size(15.0)
+                                            .color(if done {
+                                                cp.accent
+                                            } else if is_late {
+                                                cp.danger
+                                            } else {
+                                                cp.dim
+                                            }),
+                                    )
+                                    .fill(cp.surface_hover)
+                                    .corner_radius(CornerRadius::same(5))
+                                    .min_size(vec2(28.0, 28.0));
+                                    if ui.add(check_btn).clicked() {
+                                        let mut updated = task.clone();
+                                        updated.status = if done { "todo" } else { "done" }.into();
+                                        updated.completed_at = if done { None } else { Some(now) };
+                                        updated.updated_at = now;
+                                        to_complete = Some(updated);
+                                    }
 
-                    if card_avail < 780.0 {
-                        ui.vertical(|ui| {
-                            // Row 1: Checkbox, Status badge, Priority badge, Title
+                                    ui.add_space(4.0);
+                                    Frame::new()
+                                        .fill(s_bg)
+                                        .corner_radius(CornerRadius::same(4))
+                                        .inner_margin(Margin::symmetric(6, 2))
+                                        .show(ui, |ui| {
+                                            ui.label(
+                                                RichText::new(s_label)
+                                                    .size(11.0)
+                                                    .strong()
+                                                    .color(s_fg),
+                                            );
+                                        });
+
+                                    ui.add_space(4.0);
+                                    priority_badge(ui, &task.priority, cp);
+                                    ui.add_space(6.0);
+
+                                    let title_w = (ui.available_width() - 8.0).max(60.0);
+                                    ui.allocate_ui_with_layout(
+                                        vec2(title_w, 24.0),
+                                        Layout::left_to_right(Align::Center),
+                                        |ui| {
+                                            ui.add(
+                                                egui::Label::new(
+                                                    RichText::new(&task.title)
+                                                        .size(13.5)
+                                                        .strong()
+                                                        .color(if done { cp.dim } else { cp.text }),
+                                                )
+                                                .truncate(),
+                                            );
+                                        },
+                                    );
+                                });
+
+                                ui.add_space(4.0);
+
+                                // Row 2: Secondary info on left, action buttons on right
+                                ui.horizontal(|ui| {
+                                    render_info(ui);
+
+                                    ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
+                                        ui.add_space(8.0);
+                                        render_actions(ui);
+                                    });
+                                });
+                            });
+                        } else {
+                            // Wide single-row layout
                             ui.horizontal(|ui| {
                                 let check_btn = egui::Button::new(
                                     RichText::new(if done { "✓" } else { "□" })
@@ -4003,10 +4325,11 @@ fn show_task_list(
                                 priority_badge(ui, &task.priority, cp);
                                 ui.add_space(6.0);
 
-                                let title_w = (ui.available_width() - 8.0).max(60.0);
+                                let row_avail = ui.available_width();
+                                let title_max_w = (row_avail - 420.0).max(100.0);
                                 ui.allocate_ui_with_layout(
-                                    vec2(title_w, 24.0),
-                                    Layout::left_to_right(Align::Center),
+                                    vec2(title_max_w, 36.0),
+                                    Layout::top_down(Align::Min),
                                     |ui| {
                                         ui.add(
                                             egui::Label::new(
@@ -4017,97 +4340,26 @@ fn show_task_list(
                                             )
                                             .truncate(),
                                         );
+                                        if !task.description.is_empty() {
+                                            ui.add(
+                                                egui::Label::new(
+                                                    RichText::new(&task.description)
+                                                        .size(11.5)
+                                                        .color(cp.secondary),
+                                                )
+                                                .truncate(),
+                                            );
+                                        }
                                     },
                                 );
-                            });
-
-                            ui.add_space(4.0);
-
-                            // Row 2: Secondary info on left, action buttons on right
-                            ui.horizontal(|ui| {
-                                render_info(ui);
 
                                 ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
                                     ui.add_space(8.0);
                                     render_actions(ui);
+                                    render_info(ui);
                                 });
                             });
-                        });
-                    } else {
-                        // Wide single-row layout
-                        ui.horizontal(|ui| {
-                            let check_btn = egui::Button::new(
-                                RichText::new(if done { "✓" } else { "□" })
-                                    .size(15.0)
-                                    .color(if done {
-                                        cp.accent
-                                    } else if is_late {
-                                        cp.danger
-                                    } else {
-                                        cp.dim
-                                    }),
-                            )
-                            .fill(cp.surface_hover)
-                            .corner_radius(CornerRadius::same(5))
-                            .min_size(vec2(28.0, 28.0));
-                            if ui.add(check_btn).clicked() {
-                                let mut updated = task.clone();
-                                updated.status = if done { "todo" } else { "done" }.into();
-                                updated.completed_at = if done { None } else { Some(now) };
-                                updated.updated_at = now;
-                                to_complete = Some(updated);
-                            }
-
-                            ui.add_space(4.0);
-                            Frame::new()
-                                .fill(s_bg)
-                                .corner_radius(CornerRadius::same(4))
-                                .inner_margin(Margin::symmetric(6, 2))
-                                .show(ui, |ui| {
-                                    ui.label(
-                                        RichText::new(s_label).size(11.0).strong().color(s_fg),
-                                    );
-                                });
-
-                            ui.add_space(4.0);
-                            priority_badge(ui, &task.priority, cp);
-                            ui.add_space(6.0);
-
-                            let row_avail = ui.available_width();
-                            let title_max_w = (row_avail - 420.0).max(100.0);
-                            ui.allocate_ui_with_layout(
-                                vec2(title_max_w, 36.0),
-                                Layout::top_down(Align::Min),
-                                |ui| {
-                                    ui.add(
-                                        egui::Label::new(
-                                            RichText::new(&task.title)
-                                                .size(13.5)
-                                                .strong()
-                                                .color(if done { cp.dim } else { cp.text }),
-                                        )
-                                        .truncate(),
-                                    );
-                                    if !task.description.is_empty() {
-                                        ui.add(
-                                            egui::Label::new(
-                                                RichText::new(&task.description)
-                                                    .size(11.5)
-                                                    .color(cp.secondary),
-                                            )
-                                            .truncate(),
-                                        );
-                                    }
-                                },
-                            );
-
-                            ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-                                ui.add_space(8.0);
-                                render_actions(ui);
-                                render_info(ui);
-                            });
-                        });
-                    }
+                        }
                     });
             }
             if let Some(t) = to_complete {

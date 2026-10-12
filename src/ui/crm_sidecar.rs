@@ -111,7 +111,11 @@ pub fn show(app: &mut App, ui: &mut egui::Ui, chat: &Chat) {
     splitter_resp.on_hover_text("Arraste para ajustar largura (duplo clique para restaurar 340px)");
 
     // Visual Splitter Hairline & Handle
-    let line_color = if is_active { palette.accent } else { palette.outline };
+    let line_color = if is_active {
+        palette.accent
+    } else {
+        palette.outline
+    };
     ui.painter().rect_filled(
         Rect::from_min_max(
             pos2(rect.left() - 0.5, rect.top()),
@@ -125,20 +129,14 @@ pub fn show(app: &mut App, ui: &mut egui::Ui, chat: &Chat) {
     let pill_h = 42.0;
     let pill_w = if is_active { 5.0 } else { 3.5 };
     let pill_center_y = rect.center().y;
-    let pill_rect = Rect::from_center_size(
-        pos2(rect.left(), pill_center_y),
-        vec2(pill_w, pill_h),
-    );
+    let pill_rect = Rect::from_center_size(pos2(rect.left(), pill_center_y), vec2(pill_w, pill_h));
     let pill_color = if is_active {
         palette.accent
     } else {
         palette.dim.gamma_multiply(0.8)
     };
-    ui.painter().rect_filled(
-        pill_rect,
-        CornerRadius::same(2),
-        pill_color,
-    );
+    ui.painter()
+        .rect_filled(pill_rect, CornerRadius::same(2), pill_color);
 }
 
 /// Shows the CRM sidecar as a floating overlay panel on small windows,
@@ -146,7 +144,9 @@ pub fn show(app: &mut App, ui: &mut egui::Ui, chat: &Chat) {
 pub fn show_overlay(app: &mut App, ctx: &egui::Context, chat: &Chat) {
     let palette = crm_palette(&app.palette);
     let screen = ctx.content_rect();
-    let panel_w = (screen.width() * 0.82).clamp(280.0, 380.0).min(screen.width() - 20.0);
+    let panel_w = (screen.width() * 0.82)
+        .clamp(280.0, 380.0)
+        .min(screen.width() - 20.0);
     let height = screen.height();
     let id = egui::Id::new("crm_sidecar_overlay");
 
@@ -158,7 +158,8 @@ pub fn show_overlay(app: &mut App, ctx: &egui::Context, chat: &Chat) {
         .interactable(true)
         .show(ctx, |ui| {
             let (rect, resp) = ui.allocate_exact_size(screen.size(), egui::Sense::click());
-            ui.painter().rect_filled(rect, 0.0, Color32::from_black_alpha(90));
+            ui.painter()
+                .rect_filled(rect, 0.0, Color32::from_black_alpha(90));
             resp
         });
     if response.inner.clicked() {
@@ -557,41 +558,30 @@ fn render_header(app: &mut App, ui: &mut egui::Ui, palette: &Palette, chat: &Cha
         // Contact avatar and titles on the left
         let (rect, _) = ui.allocate_exact_size(Vec2::splat(32.0), egui::Sense::hover());
         let picture = app.avatar(&chat.id);
-        super::widgets::paint_avatar(
-            ui,
-            palette,
-            rect,
-            &title,
-            &chat.id,
-            picture.as_deref(),
-        );
+        super::widgets::paint_avatar(ui, palette, rect, &title, &chat.id, picture.as_deref());
 
         ui.add_space(4.0);
 
         let right_buttons_w = 88.0;
         let text_w = (ui.available_width() - right_buttons_w).max(40.0);
-        ui.allocate_ui_with_layout(
-            vec2(text_w, 34.0),
-            Layout::top_down(Align::Min),
-            |ui| {
-                ui.add(
-                    egui::Label::new(
-                        egui::RichText::new(&title)
-                            .font(theme::semibold(13.0))
-                            .color(palette.text),
-                    )
-                    .truncate(),
-                );
-                ui.add(
-                    egui::Label::new(
-                        egui::RichText::new(&subtitle)
-                            .font(theme::regular(11.0))
-                            .color(palette.dim),
-                    )
-                    .truncate(),
-                );
-            },
-        );
+        ui.allocate_ui_with_layout(vec2(text_w, 34.0), Layout::top_down(Align::Min), |ui| {
+            ui.add(
+                egui::Label::new(
+                    egui::RichText::new(&title)
+                        .font(theme::semibold(13.0))
+                        .color(palette.text),
+                )
+                .truncate(),
+            );
+            ui.add(
+                egui::Label::new(
+                    egui::RichText::new(&subtitle)
+                        .font(theme::regular(11.0))
+                        .color(palette.dim),
+                )
+                .truncate(),
+            );
+        });
 
         // Right action buttons anchored at the right border without hit-test conflicts
         ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
