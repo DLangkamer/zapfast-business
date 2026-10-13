@@ -37,6 +37,7 @@ struct QuickWorkDraft {
     hour: u8,
     minute: u8,
     duration_minutes: u16,
+    link_chat: bool,
 }
 
 impl Default for QuickWorkDraft {
@@ -54,6 +55,7 @@ impl Default for QuickWorkDraft {
             hour: 9,
             minute: 0,
             duration_minutes: 30,
+            link_chat: false,
         }
     }
 }
@@ -425,6 +427,7 @@ fn render_operations(
                             }
                         });
                 }
+                ui.checkbox(&mut draft.link_chat, "Vincular a esta conversa");
                 ui.horizontal(|ui| {
                     if ui
                         .add_enabled(!draft.title.trim().is_empty(), egui::Button::new("Salvar"))
@@ -452,12 +455,20 @@ fn render_operations(
                                 client_name: String::new(),
                                 client_phone: String::new(),
                                 client_email: String::new(),
-                                chat_ids: vec![chat_id.to_owned()],
+                                chat_ids: if draft.link_chat {
+                                    vec![chat_id.to_owned()]
+                                } else {
+                                    Vec::new()
+                                },
                             }));
                         } else {
                             app.actions.push(Action::SaveCrmTask(CrmTask {
                                 id: format!("{}-{nonce}", draft.kind),
-                                chat_id: Some(chat_id.to_owned()),
+                                chat_id: if draft.link_chat {
+                                    Some(chat_id.to_owned())
+                                } else {
+                                    None
+                                },
                                 project_id: draft.project_id.clone(),
                                 title: draft.title.trim().into(),
                                 description: String::new(),

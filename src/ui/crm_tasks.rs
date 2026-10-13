@@ -60,7 +60,7 @@ impl Default for TaskDraft {
                 .unwrap_or_else(|_| crate::util::today()),
             due_hour: 9,
             due_minute: 0,
-            link_chat: true,
+            link_chat: false,
         }
     }
 }
@@ -495,12 +495,13 @@ fn render_agenda_week_view(
     draft: &mut TaskDraft,
     show_modal: &mut bool,
 ) {
-    let avail_w = ui.available_width();
+    let avail_w = (ui.available_width() - 16.0).max(560.0);
     let time_col_w = 48.0;
-    let days_w = (avail_w - time_col_w - 14.0).max(560.0);
+    let gap = 4.0;
+    let days_w = (avail_w - time_col_w - 7.0 * gap - 16.0).max(540.0);
     let col_w = (days_w / 7.0).max(75.0);
     let row_h = 54.0;
-    let total_week_w = time_col_w + col_w * 7.0 + 16.0;
+    let total_week_w = time_col_w + gap + (col_w + gap) * 7.0 + 16.0;
 
     let mon_offset = anchor_date.weekday().to_monday_zero_offset() as i32;
     let monday = day_step(anchor_date, -mon_offset);
@@ -509,12 +510,17 @@ fn render_agenda_week_view(
     let week_events: Vec<Vec<AgendaEventItem>> =
         week_days.iter().map(|d| get_day_events(app, *d)).collect();
 
+    let drag_id = ui.id().with("crm-agenda-event-drag");
+    let mut dragged_id = ui.ctx().data(|d| d.get_temp::<String>(drag_id));
+    let mouse_released = ui.input(|i| i.pointer.any_released());
+
     ScrollArea::horizontal()
         .auto_shrink([false, false])
         .show(ui, |ui| {
             ui.set_min_width(total_week_w);
 
             ui.horizontal(|ui| {
+                ui.spacing_mut().item_spacing.x = gap;
                 ui.allocate_exact_size(vec2(time_col_w, 36.0), egui::Sense::hover());
                 for (i, d) in week_days.iter().enumerate() {
                     let is_today = *d == today;
@@ -553,12 +559,14 @@ fn render_agenda_week_view(
                             });
                         });
                 }
+                ui.add_space(8.0);
             });
 
             ui.add_space(4.0);
 
             for hour in 8..=20 {
                 ui.horizontal(|ui| {
+                    ui.spacing_mut().item_spacing.x = gap;
                     let (r, _) =
                         ui.allocate_exact_size(vec2(time_col_w, row_h), egui::Sense::hover());
                     ui.painter().text(
@@ -581,15 +589,67 @@ fn render_agenda_week_view(
                         let cell_resp = ui.interact(cell_rect, cell_id, egui::Sense::click());
 
                         let is_hovered = cell_resp.hovered();
-                        let bg_color = if is_hovered && cell_events.is_empty() {
+                        let is_drag_target = dragged_id.is_some() && is_hovered;
+
+                        if is_drag_target && mouse_released {
+                            if let Some(ref ev_id) = dragged_id {
+                                if let Some(mut task) =
+                                    app.crm_tasks.iter().find(|t| &t.id == ev_id).cloned()
+                                {
+                                    let orig_min = task
+                                        .due_at
+                                        .and_then(crate::util::local_datetime)
+                                        .map(|(_, _, m)| m)
+                                        .unwrap_or(0);
+                                    let new_due =
+                                        crate::util::to_unix_seconds(*date, hour, orig_min);
+                                    task.due_at = new_due;
+                                    task.updated_at = crate::util::now();
+                                    app.actions.push(Action::SaveCrmTask(task));
+                                    app.toast(format!(
+                                        "Evento reagendado para {} às {:02}:{:02}.",
+                                        date, hour, orig_min
+                                    ));
+                                    ui.ctx().request_repaint();
+                                } else if let Some(mut followup) =
+                                    app.crm_followups.iter().find(|f| &f.id == ev_id).cloned()
+                                {
+                                    let orig_min = crate::util::local_datetime(followup.remind_at)
+                                        .map(|(_, _, m)| m)
+                                        .unwrap_or(0);
+                                    let new_remind =
+                                        crate::util::to_unix_seconds(*date, hour, orig_min)
+                                            .unwrap_or(followup.remind_at);
+                                    followup.remind_at = new_remind;
+                                    app.actions.push(Action::SaveCrmFollowup(followup));
+                                    app.toast(format!(
+                                        "Follow-up reagendado para {} às {:02}:{:02}.",
+                                        date, hour, orig_min
+                                    ));
+                                    ui.ctx().request_repaint();
+                                }
+                                ui.ctx().data_mut(|d| d.remove::<String>(drag_id));
+                                dragged_id = None;
+                            }
+                        }
+
+                        let bg_color = if is_drag_target {
+                            cp.accent.gamma_multiply(0.25)
+                        } else if is_hovered && cell_events.is_empty() {
                             cp.surface_hover
                         } else {
                             cp.surface
                         };
 
+                        let border_stroke = if is_drag_target {
+                            Stroke::new(1.5, cp.accent)
+                        } else {
+                            Stroke::new(0.5, cp.outline.gamma_multiply(0.5))
+                        };
+
                         Frame::new()
                             .fill(bg_color)
-                            .stroke(Stroke::new(0.5, cp.outline.gamma_multiply(0.5)))
+                            .stroke(border_stroke)
                             .corner_radius(CornerRadius::same(4))
                             .inner_margin(Margin::symmetric(3, 3))
                             .show(ui, |ui| {
@@ -597,7 +657,7 @@ fn render_agenda_week_view(
                                 ui.set_height(row_h - 6.0);
 
                                 if cell_events.is_empty() {
-                                    if is_hovered {
+                                    if is_hovered && dragged_id.is_none() {
                                         ui.vertical_centered(|ui| {
                                             ui.add_space(12.0);
                                             ui.label(
@@ -606,9 +666,20 @@ fn render_agenda_week_view(
                                                     .color(cp.accent),
                                             );
                                         });
+                                    } else if is_drag_target {
+                                        ui.vertical_centered(|ui| {
+                                            ui.add_space(12.0);
+                                            ui.label(
+                                                RichText::new("Soltar aqui")
+                                                    .size(10.5)
+                                                    .strong()
+                                                    .color(cp.accent),
+                                            );
+                                        });
                                     }
                                 } else {
                                     for ev in cell_events.iter().take(2) {
+                                        let is_this_dragged = dragged_id.as_deref() == Some(&ev.id);
                                         let ev_chip = egui::Button::new(
                                             RichText::new(format!(
                                                 "{} {:02}:{:02} {}",
@@ -627,18 +698,37 @@ fn render_agenda_week_view(
                                             .strong()
                                             .color(ev.color_fg),
                                         )
-                                        .fill(ev.color_bg.gamma_multiply(0.35))
-                                        .stroke(Stroke::new(1.0, ev.color_bg))
-                                        .corner_radius(CornerRadius::same(4));
+                                        .fill(if is_this_dragged {
+                                            cp.accent.gamma_multiply(0.2)
+                                        } else {
+                                            ev.color_bg.gamma_multiply(0.35)
+                                        })
+                                        .stroke(Stroke::new(
+                                            1.0,
+                                            if is_this_dragged {
+                                                cp.accent
+                                            } else {
+                                                ev.color_bg
+                                            },
+                                        ))
+                                        .corner_radius(CornerRadius::same(4))
+                                        .sense(egui::Sense::click_and_drag());
 
-                                        if ui
+                                        let ev_resp = ui
                                             .add_sized([col_w - 8.0, 20.0], ev_chip)
                                             .on_hover_text(format!(
-                                                "{}\n{}: {}",
+                                                "{}\n{}: {}\n(Arraste para reagendar o horário)",
                                                 ev.title, ev.kind, ev.subtitle
-                                            ))
-                                            .clicked()
-                                        {
+                                            ));
+
+                                        if ev_resp.drag_started() {
+                                            ui.ctx().data_mut(|d| {
+                                                d.insert_temp(drag_id, ev.id.clone())
+                                            });
+                                            dragged_id = Some(ev.id.clone());
+                                        }
+
+                                        if ev_resp.clicked() && !ev_resp.dragged() {
                                             if let Some(ref t) = ev.raw_task {
                                                 *draft = TaskDraft {
                                                     id: Some(t.id.clone()),
@@ -691,7 +781,7 @@ fn render_agenda_week_view(
                                 }
                             });
 
-                        if cell_resp.clicked() && cell_events.is_empty() {
+                        if cell_resp.clicked() && cell_events.is_empty() && dragged_id.is_none() {
                             *draft = TaskDraft {
                                 due_date: *date,
                                 due_hour: hour,
@@ -705,9 +795,43 @@ fn render_agenda_week_view(
                             *show_modal = true;
                         }
                     }
+                    ui.add_space(8.0);
                 });
             }
         });
+
+    if let Some(ref ev_id) = dragged_id {
+        if let Some(ptr) = ui.input(|i| i.pointer.hover_pos()) {
+            let title = app
+                .crm_tasks
+                .iter()
+                .find(|t| &t.id == ev_id)
+                .map(|t| t.title.as_str())
+                .or_else(|| {
+                    app.crm_followups
+                        .iter()
+                        .find(|f| &f.id == ev_id)
+                        .map(|f| f.title.as_str())
+                })
+                .unwrap_or("Evento");
+            let ghost_rect = egui::Rect::from_min_size(ptr + vec2(10.0, 10.0), vec2(150.0, 24.0));
+            ui.painter().rect_filled(
+                ghost_rect,
+                CornerRadius::same(5),
+                cp.accent.gamma_multiply(0.95),
+            );
+            ui.painter().text(
+                ghost_rect.center(),
+                egui::Align2::CENTER_CENTER,
+                format!("📅 {title}"),
+                theme::bold(11.0),
+                cp.on_accent,
+            );
+        }
+    }
+    if mouse_released && dragged_id.is_some() {
+        ui.ctx().data_mut(|d| d.remove::<String>(drag_id));
+    }
 }
 
 fn render_agenda_month_view(
@@ -1386,21 +1510,21 @@ pub fn show_calls_workspace(app: &mut App, ui: &mut egui::Ui) {
         closings as f32 * 100.0 / evaluated as f32
     };
 
-    // 1. KPI Indicator Cards with Icons and Tailored Colors
-    let avail_w = ui.available_width();
-    let cols = if avail_w > 1200.0 {
+    // 1. KPI Indicator Cards with Icons and Tailored Colors (fully responsive, no right-edge clipping)
+    let avail_w = (ui.available_width() - 12.0).max(200.0);
+    let cols = if avail_w > 1320.0 {
         9
-    } else if avail_w > 900.0 {
+    } else if avail_w > 1050.0 {
         5
-    } else if avail_w > 650.0 {
+    } else if avail_w > 800.0 {
         4
-    } else if avail_w > 450.0 {
+    } else if avail_w > 540.0 {
         3
     } else {
         2
     };
     let spacing = 8.0;
-    let metric_w = ((avail_w - (cols as f32 - 1.0) * spacing) / cols as f32).max(110.0);
+    let metric_w = ((avail_w - (cols as f32 - 1.0) * spacing) / cols as f32).max(115.0);
 
     ui.horizontal_wrapped(|ui| {
         ui.spacing_mut().item_spacing = vec2(8.0, 8.0);
@@ -1998,16 +2122,29 @@ fn call_metric(
         .fill(cp.surface)
         .stroke(Stroke::new(1.0, cp.outline))
         .corner_radius(CornerRadius::same(10))
-        .inner_margin(Margin::symmetric(14, 12))
+        .inner_margin(Margin::symmetric(10, 10))
         .show(ui, |ui| {
-            ui.set_width(width - 28.0);
+            let inner_w = (width - 20.0).max(60.0);
+            ui.set_width(inner_w);
             ui.horizontal(|ui| {
-                theme::icon(ui, icon, 16.0, val_color);
+                theme::icon(ui, icon, 15.0, val_color);
                 ui.add_space(2.0);
-                ui.label(RichText::new(title).size(12.0).color(cp.secondary));
+                ui.label(RichText::new(title).size(11.5).color(cp.secondary));
             });
-            ui.add_space(6.0);
-            ui.label(RichText::new(&value).size(22.0).strong().color(val_color));
+            ui.add_space(4.0);
+            let val_size = if value.len() > 12 {
+                15.5
+            } else if value.len() > 7 {
+                18.0
+            } else {
+                21.0
+            };
+            ui.label(
+                RichText::new(&value)
+                    .size(val_size)
+                    .strong()
+                    .color(val_color),
+            );
         });
 }
 
@@ -2749,7 +2886,7 @@ fn render_call_outcome_bar(app: &mut App, ui: &mut egui::Ui, cp: &CrmPalette, ca
                         }
                     });
 
-                    ui.horizontal(|ui| {
+                    ui.horizontal_wrapped(|ui| {
                         ui.label(RichText::new("Sugestões:").size(11.0).color(cp.dim));
                         for chip in [
                             "Preço / Sem orçamento",
@@ -2759,6 +2896,8 @@ fn render_call_outcome_bar(app: &mut App, ui: &mut egui::Ui, cp: &CrmPalette, ca
                         ] {
                             if ui.small_button(chip).clicked() {
                                 reason_str = chip.to_string();
+                                ui.data_mut(|d| d.insert_temp(reason_id, reason_str.clone()));
+                                ui.ctx().request_repaint();
                             }
                         }
                     });
@@ -2907,9 +3046,8 @@ fn render_call_modal(
                                 ] {
                                     if ui.small_button(chip).clicked() {
                                         draft.next_step = chip.to_string();
-                                        if draft.call_result.is_empty() {
-                                            draft.call_result = format!("Perdida: {chip}");
-                                        }
+                                        draft.call_result = format!("Perdida: {chip}");
+                                        ui.ctx().request_repaint();
                                     }
                                 }
                             });
@@ -2981,6 +3119,13 @@ fn render_call_modal(
                                     );
                                 }
                             });
+                        if app.open_chat.is_some() && draft.chat_id.is_none() {
+                            ui.add_space(2.0);
+                            ui.checkbox(
+                                &mut draft.link_chat,
+                                "Vincular à conversa aberta no ZapFast",
+                            );
+                        }
                     });
 
                     uis[1].vertical(|ui| {
@@ -3279,7 +3424,13 @@ fn render_call_modal(
                         .as_ref()
                         .and_then(|id| app.crm_tasks.iter().find(|task| &task.id == id));
 
-                    let target_chat = draft.chat_id.clone().or_else(|| app.open_chat.clone());
+                    let target_chat = if let Some(ref chat_id) = draft.chat_id {
+                        Some(chat_id.clone())
+                    } else if draft.link_chat {
+                        app.open_chat.clone()
+                    } else {
+                        old.as_ref().and_then(|task| task.chat_id.clone())
+                    };
                     let rev_cents = parse_revenue_cents(&draft.revenue_reais);
                     let mut final_status = draft.status.clone();
                     if matches!(final_status.as_str(), "todo" | "doing" | "review") {

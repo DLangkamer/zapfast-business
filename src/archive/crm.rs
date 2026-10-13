@@ -447,7 +447,7 @@ impl Archive {
 
     pub fn crm_projects(&self) -> Result<Vec<CrmProject>> {
         let mut statement = self.connection.prepare(
-            "SELECT id, name, COALESCE(description, ''), COALESCE(kind, 'client'),
+            "SELECT COALESCE(id, ''), COALESCE(name, 'Sem nome'), COALESCE(description, ''), COALESCE(kind, 'client'),
                     COALESCE(status, 'active'), COALESCE(color, '#00a884'), COALESCE(icon, 'briefcase'),
                     start_at, due_at, COALESCE(created_at, 0), COALESCE(updated_at, 0),
                     COALESCE(assignee, ''), COALESCE(client_name, ''), COALESCE(client_phone, ''), COALESCE(client_email, '')
@@ -482,14 +482,28 @@ impl Archive {
                 chat_ids: Vec::new(),
             })
         })?;
-        let mut projects = rows.collect::<std::result::Result<Vec<_>, _>>()?;
-        let mut chats = self.connection.prepare(
-            "SELECT chat_id FROM crm_project_chats WHERE project_id = ?1 ORDER BY rowid",
-        )?;
-        for project in &mut projects {
-            project.chat_ids = chats
-                .query_map(params![project.id], |row| row.get(0))?
-                .collect::<std::result::Result<Vec<_>, _>>()?;
+        let mut projects = Vec::new();
+        for row_res in rows {
+            match row_res {
+                Ok(proj) => {
+                    if !proj.id.is_empty() {
+                        projects.push(proj);
+                    }
+                }
+                Err(err) => {
+                    log::warn!("Skipping invalid crm_project row: {err:?}");
+                }
+            }
+        }
+        if let Ok(mut chats) = self
+            .connection
+            .prepare("SELECT chat_id FROM crm_project_chats WHERE project_id = ?1 ORDER BY rowid")
+        {
+            for project in &mut projects {
+                if let Ok(c_rows) = chats.query_map(params![project.id], |row| row.get(0)) {
+                    project.chat_ids = c_rows.flatten().collect();
+                }
+            }
         }
         Ok(projects)
     }

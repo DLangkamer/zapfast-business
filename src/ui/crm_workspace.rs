@@ -77,7 +77,7 @@ impl Default for ProjectDraft {
             name: String::new(),
             description: String::new(),
             kind: "client".into(),
-            link_current_chat: true,
+            link_current_chat: false,
             assignee: String::new(),
             client_name: String::new(),
             client_phone: String::new(),
@@ -1881,12 +1881,20 @@ fn render_funnel_column(
 ) {
     let col_color = parse_hex_color(&col.color).unwrap_or(cp.accent);
 
-    // Filter deals in this stage
+    // Filter deals in this stage (ensuring orphaned/legacy stage deals are never lost)
+    let is_first_col = col_idx == 0;
     let mut stage_deals: Vec<_> = app
         .crm_deals
         .values()
         .filter(|d| {
-            d.column_id == col.id && {
+            let col_match = if d.column_id == col.id {
+                true
+            } else if is_first_col {
+                !sorted_cols.iter().any(|c| c.id == d.column_id)
+            } else {
+                false
+            };
+            col_match && {
                 if search_lower.is_empty() {
                     true
                 } else {
@@ -1907,7 +1915,7 @@ fn render_funnel_column(
     stage_deals.sort_by_key(|d| -d.updated_at);
 
     let stage_value: i64 = stage_deals.iter().map(|d| d.value_cents).sum();
-    let col_w = 265.0;
+    let col_w = 280.0;
 
     Frame::new()
         .fill(cp.surface)
@@ -1917,8 +1925,49 @@ fn render_funnel_column(
         .show(ui, |ui| {
             ui.set_width(col_w - 24.0);
             ui.vertical(|ui| {
-                // Column Header
+                // Stage Title Row: display title in full without truncate or arrows overlapping
                 ui.horizontal(|ui| {
+                    let (r, _) = ui.allocate_exact_size(Vec2::splat(12.0), egui::Sense::hover());
+                    ui.painter().circle_filled(r.center(), 5.0, col_color);
+                    ui.add(
+                        egui::Label::new(
+                            RichText::new(&col.title).size(13.5).strong().color(cp.text),
+                        )
+                        .wrap(),
+                    );
+                });
+
+                ui.add_space(6.0);
+
+                // Stage metrics pills & controls: reorder arrows and delete are cleanly separated
+                ui.horizontal(|ui| {
+                    Frame::new()
+                        .fill(cp.surface_hover)
+                        .corner_radius(CornerRadius::same(4))
+                        .inner_margin(Margin::symmetric(6, 2))
+                        .show(ui, |ui| {
+                            ui.label(
+                                RichText::new(format!("{} negócios", stage_deals.len()))
+                                    .size(11.0)
+                                    .color(cp.secondary),
+                            );
+                        });
+
+                    if stage_value > 0 {
+                        Frame::new()
+                            .fill(cp.accent.gamma_multiply(0.12))
+                            .corner_radius(CornerRadius::same(4))
+                            .inner_margin(Margin::symmetric(6, 2))
+                            .show(ui, |ui| {
+                                ui.label(
+                                    RichText::new(format_currency(stage_value))
+                                        .size(11.0)
+                                        .strong()
+                                        .color(cp.accent),
+                                );
+                            });
+                    }
+
                     ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
                         // Delete stage button
                         if app.crm_columns.len() > 1 {
@@ -1991,56 +2040,10 @@ fn render_funnel_column(
                                 }
                             }
                         }
-
-                        // Title and indicator on the left
-                        ui.with_layout(Layout::left_to_right(Align::Center), |ui| {
-                            let (r, _) =
-                                ui.allocate_exact_size(Vec2::splat(12.0), egui::Sense::hover());
-                            ui.painter().circle_filled(r.center(), 5.0, col_color);
-                            ui.add(
-                                egui::Label::new(
-                                    RichText::new(&col.title).size(13.0).strong().color(cp.text),
-                                )
-                                .truncate(),
-                            )
-                            .on_hover_text(&col.title);
-                        });
                     });
                 });
 
-                ui.add_space(4.0);
-
-                // Stage metrics pills
-                ui.horizontal(|ui| {
-                    Frame::new()
-                        .fill(cp.surface_hover)
-                        .corner_radius(CornerRadius::same(4))
-                        .inner_margin(Margin::symmetric(6, 2))
-                        .show(ui, |ui| {
-                            ui.label(
-                                RichText::new(format!("{} negócios", stage_deals.len()))
-                                    .size(11.0)
-                                    .color(cp.secondary),
-                            );
-                        });
-
-                    if stage_value > 0 {
-                        Frame::new()
-                            .fill(cp.accent.gamma_multiply(0.12))
-                            .corner_radius(CornerRadius::same(4))
-                            .inner_margin(Margin::symmetric(6, 2))
-                            .show(ui, |ui| {
-                                ui.label(
-                                    RichText::new(format_currency(stage_value))
-                                        .size(11.0)
-                                        .strong()
-                                        .color(cp.accent),
-                                );
-                            });
-                    }
-                });
-
-                ui.add_space(10.0);
+                ui.add_space(8.0);
 
                 // Deals list
                 if stage_deals.is_empty() {
