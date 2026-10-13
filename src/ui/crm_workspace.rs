@@ -971,12 +971,39 @@ fn timeline(app: &mut App, ui: &mut egui::Ui, cp: &CrmPalette) {
                 let badge = match task.status.as_str() {
                     "scheduled" => Some(("Agendada".into(), Color32::from_rgb(56, 189, 248))),
                     "held" => Some(("Realizada".into(), Color32::from_rgb(16, 185, 129))),
-                    "closed" => Some(("Fechada".into(), cp.accent)),
+                    "closed" => {
+                        if task.revenue_cents > 0 {
+                            Some((
+                                format!("Venda: {}", format_currency(task.revenue_cents)),
+                                cp.accent,
+                            ))
+                        } else {
+                            Some(("Fechada".into(), cp.accent))
+                        }
+                    }
+                    "lost" => Some(("Perdida".into(), cp.danger)),
                     "no_show" => Some(("No-show".into(), Color32::from_rgb(245, 158, 11))),
                     "cancelled" => Some(("Cancelada".into(), cp.danger)),
                     _ => None,
                 };
-                let summary = if !task.call_result.trim().is_empty() {
+                let summary = if task.revenue_cents > 0 || task.status == "closed" {
+                    let desc = if !task.description.trim().is_empty() {
+                        format!(" • {}", task.description)
+                    } else if !task.call_result.trim().is_empty() {
+                        format!(" • {}", task.call_result)
+                    } else {
+                        String::new()
+                    };
+                    if task.revenue_cents > 0 {
+                        format!(
+                            "💰 Venda fechada: {}{}",
+                            format_currency(task.revenue_cents),
+                            desc
+                        )
+                    } else {
+                        format!("💰 Venda fechada{}", desc)
+                    }
+                } else if !task.call_result.trim().is_empty() {
                     format!("Resultado: {} • {}", task.call_result, task.description)
                 } else if !task.description.trim().is_empty() {
                     task.description.clone()
@@ -1174,7 +1201,7 @@ fn timeline(app: &mut App, ui: &mut egui::Ui, cp: &CrmPalette) {
         for event in day_events {
             let kind_color = event.kind.color(cp);
 
-            ui.horizontal(|ui| {
+            ui.with_layout(Layout::left_to_right(Align::Min), |ui| {
                 // Left Icon Node
                 let (rect, _) = ui.allocate_exact_size(vec2(32.0, 32.0), egui::Sense::hover());
                 ui.painter().rect(
@@ -1186,101 +1213,106 @@ fn timeline(app: &mut App, ui: &mut egui::Ui, cp: &CrmPalette) {
                 );
                 theme::paint_icon(ui, event.kind.icon(), rect, 16.0, kind_color);
 
-                ui.add_space(4.0);
+                ui.add_space(6.0);
 
-                // Right Card Content
+                // Right Card Content - vertically bounded to content
+                let card_w = (ui.available_width() - 8.0).max(180.0);
                 Frame::new()
                     .fill(cp.surface)
                     .stroke(Stroke::new(1.0, cp.outline))
                     .corner_radius(CornerRadius::same(10))
                     .inner_margin(Margin::symmetric(14, 10))
                     .show(ui, |ui| {
-                        let card_w = ui.available_width().max(180.0);
                         ui.set_width(card_w);
-
-                        // Card Header
-                        ui.horizontal(|ui| {
-                            // Kind pill
-                            Frame::new()
-                                .fill(kind_color.gamma_multiply(0.14))
-                                .corner_radius(CornerRadius::same(5))
-                                .inner_margin(Margin::symmetric(7, 2))
-                                .show(ui, |ui| {
-                                    ui.label(
-                                        RichText::new(event.kind.label())
-                                            .size(11.0)
-                                            .strong()
-                                            .color(kind_color),
-                                    );
-                                });
-
-                            // Entity pill with truncation so right time is never pushed off
-                            if !event.entity.is_empty() {
-                                let entity_max_w = (ui.available_width() - 90.0).max(50.0);
-                                ui.allocate_ui_with_layout(
-                                    vec2(entity_max_w, 20.0),
-                                    Layout::left_to_right(Align::Center),
-                                    |ui| {
-                                        ui.add(
-                                            egui::Label::new(
-                                                RichText::new(&event.entity)
-                                                    .size(12.5)
-                                                    .strong()
-                                                    .color(cp.text),
-                                            )
-                                            .truncate(),
-                                        );
-                                    },
-                                );
-                            }
-
-                            // Status badge
-                            if let Some((badge_text, badge_color)) = &event.status_badge {
+                        ui.vertical(|ui| {
+                            // Card Header
+                            ui.horizontal(|ui| {
+                                // Kind pill
                                 Frame::new()
-                                    .fill(badge_color.gamma_multiply(0.14))
+                                    .fill(kind_color.gamma_multiply(0.14))
                                     .corner_radius(CornerRadius::same(5))
                                     .inner_margin(Margin::symmetric(7, 2))
                                     .show(ui, |ui| {
                                         ui.label(
-                                            RichText::new(badge_text)
+                                            RichText::new(event.kind.label())
                                                 .size(11.0)
                                                 .strong()
-                                                .color(*badge_color),
+                                                .color(kind_color),
                                         );
                                     });
+
+                                // Entity pill with truncation so right time is never pushed off
+                                if !event.entity.is_empty() {
+                                    let entity_max_w = (ui.available_width() - 90.0).max(50.0);
+                                    ui.allocate_ui_with_layout(
+                                        vec2(entity_max_w, 20.0),
+                                        Layout::left_to_right(Align::Center),
+                                        |ui| {
+                                            ui.add(
+                                                egui::Label::new(
+                                                    RichText::new(&event.entity)
+                                                        .size(12.5)
+                                                        .strong()
+                                                        .color(cp.text),
+                                                )
+                                                .truncate(),
+                                            );
+                                        },
+                                    );
+                                }
+
+                                // Status badge
+                                if let Some((badge_text, badge_color)) = &event.status_badge {
+                                    Frame::new()
+                                        .fill(badge_color.gamma_multiply(0.14))
+                                        .corner_radius(CornerRadius::same(5))
+                                        .inner_margin(Margin::symmetric(7, 2))
+                                        .show(ui, |ui| {
+                                            ui.label(
+                                                RichText::new(badge_text)
+                                                    .size(11.0)
+                                                    .strong()
+                                                    .color(*badge_color),
+                                            );
+                                        });
+                                }
+
+                                // Right-aligned time
+                                ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
+                                    ui.add_space(4.0);
+                                    ui.label(
+                                        RichText::new(&event.time_str).size(12.0).color(cp.dim),
+                                    );
+                                });
+                            });
+
+                            // Title if different from entity
+                            if !event.title.is_empty() && event.title != event.entity {
+                                ui.add_space(3.0);
+                                ui.add(
+                                    egui::Label::new(
+                                        RichText::new(&event.title)
+                                            .size(13.5)
+                                            .strong()
+                                            .color(cp.text),
+                                    )
+                                    .wrap(),
+                                );
                             }
 
-                            // Right-aligned time
-                            ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-                                ui.add_space(4.0);
-                                ui.label(RichText::new(&event.time_str).size(12.0).color(cp.dim));
-                            });
+                            // Summary
+                            if !event.summary.is_empty() {
+                                ui.add_space(2.0);
+                                ui.add(
+                                    egui::Label::new(
+                                        RichText::new(&event.summary)
+                                            .size(12.5)
+                                            .color(cp.secondary),
+                                    )
+                                    .wrap(),
+                                );
+                            }
                         });
-
-                        // Title if different from entity
-                        if !event.title.is_empty() && event.title != event.entity {
-                            ui.add_space(2.0);
-                            ui.add(
-                                egui::Label::new(
-                                    RichText::new(&event.title)
-                                        .size(13.5)
-                                        .strong()
-                                        .color(cp.text),
-                                )
-                                .wrap(),
-                            );
-                        }
-
-                        // Summary
-                        if !event.summary.is_empty() {
-                            ui.add_space(2.0);
-                            ui.add(
-                                egui::Label::new(
-                                    RichText::new(&event.summary).size(12.5).color(cp.secondary),
-                                )
-                                .wrap(),
-                            );
-                        }
                     });
             });
 
@@ -2231,6 +2263,111 @@ fn render_deal_card(
         .data_mut(|d| d.insert_temp(confirm_deal_delete_id, confirm_del));
 }
 
+fn render_late_actions(
+    app: &mut App,
+    ui: &mut egui::Ui,
+    task: &CrmTask,
+    cp: &CrmPalette,
+    now: i64,
+    today: jiff::civil::Date,
+    is_call: bool,
+) {
+    // 1. Menu Reagendar
+    ui.menu_button(
+        RichText::new("📅 Reagendar ▾")
+            .size(11.5)
+            .strong()
+            .color(cp.accent),
+        |ui| {
+            if ui.button("Hoje (+1 hora)").clicked() {
+                let mut updated = task.clone();
+                updated.due_at = Some(now + 3600);
+                updated.updated_at = now;
+                app.actions.push(Action::SaveCrmTask(updated));
+                app.toast("Compromisso reagendado para hoje (+1h)!");
+                ui.close();
+            }
+            if ui.button("Hoje às 18:00").clicked() {
+                let mut updated = task.clone();
+                let target = crate::util::to_unix_seconds(today, 18, 0).unwrap_or(now + 3600);
+                updated.due_at = Some(target);
+                updated.updated_at = now;
+                app.actions.push(Action::SaveCrmTask(updated));
+                app.toast("Compromisso reagendado para hoje às 18:00!");
+                ui.close();
+            }
+            if ui.button("Amanhã às 09:00").clicked() {
+                let mut updated = task.clone();
+                let tomorrow = today.tomorrow().unwrap_or(today);
+                let target = crate::util::to_unix_seconds(tomorrow, 9, 0).unwrap_or(now + 86400);
+                updated.due_at = Some(target);
+                updated.updated_at = now;
+                app.actions.push(Action::SaveCrmTask(updated));
+                app.toast("Compromisso reagendado para amanhã às 09:00!");
+                ui.close();
+            }
+            if ui.button("Próxima semana (+7 dias)").clicked() {
+                let mut updated = task.clone();
+                updated.due_at = Some(now + 7 * 86400);
+                updated.updated_at = now;
+                app.actions.push(Action::SaveCrmTask(updated));
+                app.toast("Compromisso reagendado para a próxima semana!");
+                ui.close();
+            }
+        },
+    );
+
+    ui.add_space(4.0);
+
+    // 2. Botão Cancelada
+    let cancel_btn = egui::Button::new(RichText::new("✕ Cancelada").size(11.5).color(cp.danger))
+        .fill(cp.surface_hover)
+        .stroke(Stroke::new(1.0, cp.danger.gamma_multiply(0.4)))
+        .corner_radius(CornerRadius::same(5));
+    if ui
+        .add(cancel_btn)
+        .on_hover_text("Marcar como cancelada")
+        .clicked()
+    {
+        let mut updated = task.clone();
+        updated.status = "cancelled".into();
+        updated.completed_at = Some(now);
+        updated.updated_at = now;
+        app.actions.push(Action::SaveCrmTask(updated));
+        app.toast("Compromisso marcado como cancelado.");
+        ui.ctx().request_repaint();
+    }
+
+    ui.add_space(4.0);
+
+    // 3. Botão Realizada
+    let done_btn = egui::Button::new(
+        RichText::new("✓ Realizada")
+            .size(11.5)
+            .strong()
+            .color(Color32::WHITE),
+    )
+    .fill(Color32::from_rgb(0x10, 0xb9, 0x81))
+    .corner_radius(CornerRadius::same(5));
+    if ui
+        .add(done_btn)
+        .on_hover_text("Marcar como realizada")
+        .clicked()
+    {
+        let mut updated = task.clone();
+        updated.status = if is_call {
+            "held".into()
+        } else {
+            "done".into()
+        };
+        updated.completed_at = Some(now);
+        updated.updated_at = now;
+        app.actions.push(Action::SaveCrmTask(updated));
+        app.toast("Compromisso marcado como realizado!");
+        ui.ctx().request_repaint();
+    }
+}
+
 fn overview(
     app: &mut App,
     ui: &mut egui::Ui,
@@ -2251,7 +2388,12 @@ fn overview(
     let late_tasks: Vec<_> = app
         .crm_tasks
         .iter()
-        .filter(|t| t.status != "done" && t.due_at.is_some_and(|x| x < now))
+        .filter(|t| {
+            !matches!(
+                t.status.as_str(),
+                "done" | "held" | "closed" | "cancelled" | "lost"
+            ) && t.due_at.is_some_and(|x| x < now)
+        })
         .cloned()
         .collect();
     let late_count = late_tasks.len();
@@ -2415,67 +2557,146 @@ fn overview(
 
                 ui.add_space(8.0);
 
-                for task in late_tasks.iter().take(5) {
+                for task in late_tasks.iter().take(8) {
+                    let is_call = matches!(task.kind.as_str(), "call" | "conversation");
                     let project_name = task
                         .project_id
                         .as_ref()
                         .and_then(|id| app.crm_projects.iter().find(|p| &p.id == id))
                         .map(|p| p.name.clone());
+                    let client_name = task
+                        .chat_id
+                        .as_ref()
+                        .and_then(|id| app.chat(id))
+                        .map(|c| app.chat_title(c));
 
-                    ui.horizontal(|ui| {
-                        let check_btn =
-                            egui::Button::new(RichText::new("✓").size(12.0).color(Color32::WHITE))
-                                .fill(cp.danger)
-                                .corner_radius(CornerRadius::same(4))
-                                .min_size(vec2(22.0, 22.0));
-                        if ui
-                            .add(check_btn)
-                            .on_hover_text("Concluir tarefa agora")
-                            .clicked()
-                        {
-                            let mut updated = task.clone();
-                            updated.status = "done".into();
-                            updated.completed_at = Some(now);
-                            updated.updated_at = now;
-                            to_complete = Some(updated);
-                            ui.ctx().request_repaint();
-                        }
-
-                        ui.add_space(4.0);
-                        ui.label(
-                            RichText::new(&task.title)
-                                .size(13.5)
-                                .strong()
-                                .color(cp.text),
-                        );
-
-                        if let Some(p_name) = &project_name {
-                            ui.label(
-                                RichText::new(format!("• 📁 {}", p_name))
-                                    .size(12.0)
-                                    .color(cp.secondary),
-                            );
-                        }
-
-                        ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-                            ui.add_space(16.0);
-                            if let Some(due) = task.due_at {
-                                if let Some((date, _, _)) = crate::util::local_datetime(due) {
-                                    ui.label(
-                                        RichText::new(format!(
-                                            "Venceu em {:02}/{:02}",
-                                            date.day(),
-                                            date.month()
-                                        ))
-                                        .size(12.0)
-                                        .strong()
-                                        .color(cp.danger),
+                    Frame::new()
+                        .fill(cp.surface)
+                        .stroke(Stroke::new(1.0, cp.outline))
+                        .corner_radius(CornerRadius::same(8))
+                        .inner_margin(Margin::symmetric(12, 8))
+                        .show(ui, |ui| {
+                            let item_w = ui.available_width();
+                            let is_narrow = item_w < 650.0;
+                            if is_narrow {
+                                ui.vertical(|ui| {
+                                    ui.horizontal(|ui| {
+                                        theme::icon(
+                                            ui,
+                                            if is_call {
+                                                Icon::Phone
+                                            } else {
+                                                Icon::ListChecks
+                                            },
+                                            15.0,
+                                            cp.danger,
+                                        );
+                                        ui.add_space(2.0);
+                                        ui.label(
+                                            RichText::new(&task.title)
+                                                .size(13.5)
+                                                .strong()
+                                                .color(cp.text),
+                                        );
+                                    });
+                                    ui.horizontal_wrapped(|ui| {
+                                        if let Some(c_name) = &client_name {
+                                            ui.label(
+                                                RichText::new(format!("👤 {}", c_name))
+                                                    .size(11.5)
+                                                    .color(cp.secondary),
+                                            );
+                                        } else if let Some(p_name) = &project_name {
+                                            ui.label(
+                                                RichText::new(format!("📁 {}", p_name))
+                                                    .size(11.5)
+                                                    .color(cp.secondary),
+                                            );
+                                        }
+                                        if let Some(due) = task.due_at {
+                                            if let Some((date, h, m)) =
+                                                crate::util::local_datetime(due)
+                                            {
+                                                ui.label(
+                                                    RichText::new(format!(
+                                                        "Venceu em {:02}/{:02} às {:02}:{:02}",
+                                                        date.day(),
+                                                        date.month(),
+                                                        h,
+                                                        m
+                                                    ))
+                                                    .size(11.0)
+                                                    .strong()
+                                                    .color(cp.danger),
+                                                );
+                                            }
+                                        }
+                                    });
+                                    ui.add_space(4.0);
+                                    ui.horizontal_wrapped(|ui| {
+                                        render_late_actions(app, ui, task, cp, now, today, is_call);
+                                    });
+                                });
+                            } else {
+                                ui.horizontal(|ui| {
+                                    theme::icon(
+                                        ui,
+                                        if is_call {
+                                            Icon::Phone
+                                        } else {
+                                            Icon::ListChecks
+                                        },
+                                        15.0,
+                                        cp.danger,
                                     );
-                                }
+                                    ui.add_space(4.0);
+                                    ui.label(
+                                        RichText::new(&task.title)
+                                            .size(13.5)
+                                            .strong()
+                                            .color(cp.text),
+                                    );
+
+                                    if let Some(c_name) = &client_name {
+                                        ui.label(
+                                            RichText::new(format!("• 👤 {}", c_name))
+                                                .size(12.0)
+                                                .color(cp.secondary),
+                                        );
+                                    } else if let Some(p_name) = &project_name {
+                                        ui.label(
+                                            RichText::new(format!("• 📁 {}", p_name))
+                                                .size(12.0)
+                                                .color(cp.secondary),
+                                        );
+                                    }
+
+                                    if let Some(due) = task.due_at {
+                                        if let Some((date, h, m)) = crate::util::local_datetime(due)
+                                        {
+                                            ui.label(
+                                                RichText::new(format!(
+                                                    "• Venceu em {:02}/{:02} às {:02}:{:02}",
+                                                    date.day(),
+                                                    date.month(),
+                                                    h,
+                                                    m
+                                                ))
+                                                .size(11.5)
+                                                .strong()
+                                                .color(cp.danger),
+                                            );
+                                        }
+                                    }
+
+                                    ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
+                                        ui.add_space(4.0);
+                                        render_late_actions(app, ui, task, cp, now, today, is_call);
+                                    });
+                                });
                             }
                         });
-                    });
-                    ui.add_space(4.0);
+                    ui.add_space(6.0);
                 }
             });
         ui.add_space(18.0);

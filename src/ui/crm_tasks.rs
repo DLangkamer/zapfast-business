@@ -1512,7 +1512,7 @@ pub fn show_calls_workspace(app: &mut App, ui: &mut egui::Ui) {
 
     // 1. KPI Indicator Cards with Icons and Tailored Colors (fully responsive, no right-edge clipping)
     let avail_w = (ui.available_width() - 12.0).max(200.0);
-    let cols = if avail_w > 1320.0 {
+    let cols = if avail_w > 1380.0 {
         9
     } else if avail_w > 1050.0 {
         5
@@ -1524,7 +1524,7 @@ pub fn show_calls_workspace(app: &mut App, ui: &mut egui::Ui) {
         2
     };
     let spacing = 8.0;
-    let metric_w = ((avail_w - (cols as f32 - 1.0) * spacing) / cols as f32).max(115.0);
+    let metric_w = ((avail_w - (cols as f32 - 1.0) * spacing) / cols as f32).max(120.0);
 
     ui.horizontal_wrapped(|ui| {
         ui.spacing_mut().item_spacing = vec2(8.0, 8.0);
@@ -2132,18 +2132,24 @@ fn call_metric(
                 ui.label(RichText::new(title).size(11.5).color(cp.secondary));
             });
             ui.add_space(4.0);
-            let val_size = if value.len() > 12 {
-                15.5
+            let val_size = if value.len() > 14 {
+                13.0
+            } else if value.len() > 10 {
+                14.5
             } else if value.len() > 7 {
-                18.0
+                17.0
             } else {
-                21.0
+                20.5
             };
-            ui.label(
-                RichText::new(&value)
-                    .size(val_size)
-                    .strong()
-                    .color(val_color),
+            let no_wrap_val = value.replace(' ', "\u{00A0}");
+            ui.add(
+                egui::Label::new(
+                    RichText::new(&no_wrap_val)
+                        .size(val_size)
+                        .strong()
+                        .color(val_color),
+                )
+                .truncate(),
             );
         });
 }
@@ -2771,6 +2777,11 @@ fn render_call_outcome_bar(app: &mut App, ui: &mut egui::Ui, cp: &CrmPalette, ca
                         app.actions.push(Action::SaveCrmTask(updated_call));
 
                         if let Some(chat_id) = &call.chat_id {
+                            if app.crm_columns.is_empty() {
+                                for col in crate::ui::kanban::default_columns() {
+                                    app.actions.push(Action::SaveCrmColumn(col));
+                                }
+                            }
                             let mut deal =
                                 app.crm_deals
                                     .get(chat_id)
@@ -2784,13 +2795,18 @@ fn render_call_outcome_bar(app: &mut App, ui: &mut egui::Ui, cp: &CrmPalette, ca
                                         updated_at: now,
                                     });
                             deal.value_cents = cents;
-                            if let Some(close_col) = app.crm_columns.iter().find(|c| {
-                                c.id == "close"
-                                    || c.title.to_lowercase().contains("fechamento")
-                                    || c.title.to_lowercase().contains("ganho")
-                            }) {
-                                deal.column_id = close_col.id.clone();
-                            }
+                            let close_col_id = app
+                                .crm_columns
+                                .iter()
+                                .find(|c| {
+                                    c.id == "close"
+                                        || c.title.to_lowercase().contains("fechamento")
+                                        || c.title.to_lowercase().contains("ganho")
+                                        || c.title.to_lowercase().contains("fechado")
+                                })
+                                .map(|c| c.id.clone())
+                                .unwrap_or_else(|| "close".into());
+                            deal.column_id = close_col_id;
                             let formatted_val = format_revenue_input(cents);
                             let entry = format!(
                                 "💰 Venda fechada via Call '{}': R$ {}\n",
@@ -3466,7 +3482,17 @@ fn render_call_modal(
                     }));
 
                     if let Some(ref chat_id) = target_chat {
-                        if final_status == "closed" || rev_cents > 0 {
+                        let is_won_sale = final_status == "closed"
+                            || draft.call_result.to_lowercase().contains("venda")
+                            || (rev_cents > 0
+                                && final_status != "lost"
+                                && final_status != "cancelled");
+                        if is_won_sale {
+                            if app.crm_columns.is_empty() {
+                                for col in crate::ui::kanban::default_columns() {
+                                    app.actions.push(Action::SaveCrmColumn(col));
+                                }
+                            }
                             let mut deal =
                                 app.crm_deals
                                     .get(chat_id)
@@ -3482,14 +3508,23 @@ fn render_call_modal(
                             if rev_cents > 0 {
                                 deal.value_cents = rev_cents;
                             }
-                            if let Some(close_col) = app.crm_columns.iter().find(|c| {
-                                c.id == "close"
-                                    || c.title.to_lowercase().contains("fechamento")
-                                    || c.title.to_lowercase().contains("ganho")
-                            }) {
-                                deal.column_id = close_col.id.clone();
-                            }
-                            let formatted_val = format_revenue_input(rev_cents);
+                            let close_col_id = app
+                                .crm_columns
+                                .iter()
+                                .find(|c| {
+                                    c.id == "close"
+                                        || c.title.to_lowercase().contains("fechamento")
+                                        || c.title.to_lowercase().contains("ganho")
+                                        || c.title.to_lowercase().contains("fechado")
+                                })
+                                .map(|c| c.id.clone())
+                                .unwrap_or_else(|| "close".into());
+                            deal.column_id = close_col_id;
+                            let formatted_val = format_revenue_input(if rev_cents > 0 {
+                                rev_cents
+                            } else {
+                                deal.value_cents
+                            });
                             let entry = format!(
                                 "💰 Venda fechada via Call '{}': R$ {}\n",
                                 draft.title, formatted_val
@@ -3525,7 +3560,7 @@ fn render_call_modal(
 
 fn format_brl(cents: i64) -> String {
     let value = cents as f64 / 100.0;
-    format!("R$ {:.2}", value).replace('.', ",")
+    format!("R$\u{00A0}{:.2}", value).replace('.', ",")
 }
 
 fn show_inner(app: &mut App, ui: &mut egui::Ui, modal: bool, forced: Option<TaskView>) {

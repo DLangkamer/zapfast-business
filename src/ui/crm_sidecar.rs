@@ -517,16 +517,26 @@ fn render_operations(
                     }
                 }
                 for task in &tasks {
-                    events.push((
-                        task.updated_at,
-                        if matches!(task.kind.as_str(), "call" | "conversation") {
-                            "Call / reunião"
-                        } else {
-                            "Tarefa"
-                        }
-                        .into(),
-                        task.title.clone(),
-                    ));
+                    let is_closed_call = (task.status == "closed" || task.revenue_cents > 0)
+                        && matches!(task.kind.as_str(), "call" | "conversation");
+                    let kind_str = if is_closed_call {
+                        "💰 Venda fechada".into()
+                    } else if matches!(task.kind.as_str(), "call" | "conversation") {
+                        "Call / reunião".into()
+                    } else {
+                        "Tarefa".into()
+                    };
+                    let detail_str = if task.revenue_cents > 0 {
+                        format!(
+                            "{} • R$ {:.2}",
+                            task.title,
+                            task.revenue_cents as f64 / 100.0
+                        )
+                        .replace('.', ",")
+                    } else {
+                        task.title.clone()
+                    };
+                    events.push((task.updated_at, kind_str, detail_str));
                 }
                 if let Some(deal) = deal.filter(|deal| !deal.notes.trim().is_empty()) {
                     events.push((
