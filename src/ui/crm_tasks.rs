@@ -1511,7 +1511,7 @@ pub fn show_calls_workspace(app: &mut App, ui: &mut egui::Ui) {
     };
 
     // 1. KPI Indicator Cards with Icons and Tailored Colors (fully responsive, no right-edge clipping)
-    let avail_w = (ui.available_width() - 12.0).max(200.0);
+    let avail_w = (ui.available_width() - 18.0).max(200.0);
     let cols = if avail_w > 1380.0 {
         9
     } else if avail_w > 1050.0 {
@@ -2214,8 +2214,9 @@ fn render_call_card(
         .corner_radius(CornerRadius::same(8))
         .inner_margin(Margin::same(12))
         .show(ui, |ui| {
+            let card_avail = (ui.available_width() - 16.0).max(180.0);
+            ui.set_width(card_avail);
             ui.vertical(|ui| {
-                let card_avail = ui.available_width();
                 if card_avail < 720.0 {
                     ui.horizontal(|ui| {
                         call_status_pill(ui, &call.status, cp);
@@ -3130,6 +3131,36 @@ fn render_call_modal(
                                 .color(cp.secondary),
                         );
                         ui.add_space(2.0);
+
+                        let search_id = ui.id().with("modal-call-client-search");
+                        let mut client_search = ui.data_mut(|d| d.get_temp::<String>(search_id).unwrap_or_default());
+
+                        ui.horizontal(|ui| {
+                            let w = ui.available_width() - if client_search.is_empty() { 0.0 } else { 24.0 };
+                            ui.add(
+                                egui::TextEdit::singleline(&mut client_search)
+                                    .hint_text("🔍 Buscar cliente...")
+                                    .desired_width(w.max(60.0)),
+                            );
+                            if !client_search.is_empty() && ui.small_button("✕").clicked() {
+                                client_search.clear();
+                            }
+                        });
+                        ui.add_space(2.0);
+
+                        let q = client_search.trim().to_lowercase();
+                        let filtered_chats: Vec<_> = app
+                            .chats
+                            .iter()
+                            .filter(|chat| {
+                                if q.is_empty() {
+                                    return true;
+                                }
+                                let title = app.chat_title(chat).to_lowercase();
+                                title.contains(&q) || chat.id.to_lowercase().contains(&q)
+                            })
+                            .collect();
+
                         let current_client = draft
                             .chat_id
                             .as_ref()
@@ -3138,6 +3169,8 @@ fn render_call_modal(
                             .unwrap_or_else(|| {
                                 if draft.chat_id.is_some() {
                                     "Cliente selecionado".into()
+                                } else if !q.is_empty() {
+                                    format!("Geral ({} encontrados)", filtered_chats.len())
                                 } else {
                                     "Nenhum cliente (Geral)".into()
                                 }
@@ -3152,15 +3185,21 @@ fn render_call_modal(
                                     None,
                                     "Nenhum cliente (Geral)",
                                 );
-                                for chat in &app.chats {
-                                    let title = app.chat_title(chat);
-                                    ui.selectable_value(
-                                        &mut draft.chat_id,
-                                        Some(chat.id.clone()),
-                                        title,
-                                    );
+                                if filtered_chats.is_empty() {
+                                    ui.label(RichText::new("Nenhum contato encontrado").color(cp.dim).italics());
+                                } else {
+                                    for chat in filtered_chats {
+                                        let title = app.chat_title(chat);
+                                        ui.selectable_value(
+                                            &mut draft.chat_id,
+                                            Some(chat.id.clone()),
+                                            title,
+                                        );
+                                    }
                                 }
                             });
+                        ui.data_mut(|d| d.insert_temp(search_id, client_search));
+
                         if app.open_chat.is_some() && draft.chat_id.is_none() {
                             ui.add_space(2.0);
                             ui.checkbox(
@@ -3988,7 +4027,7 @@ pub fn show_task_board(app: &mut App, ui: &mut egui::Ui, cp: &CrmPalette) {
             ("done", "Concluída", Color32::from_rgb(0x10, 0xb9, 0x81)),
         ];
 
-        let avail_w = ui.available_width();
+        let avail_w = (ui.available_width() - 16.0).max(200.0);
         let col_gap = 12.0;
         let total_min_w = 4.0 * 230.0 + 3.0 * col_gap + 18.0;
         let col_w = if avail_w > total_min_w {
@@ -4277,7 +4316,8 @@ fn show_task_list(
                     .corner_radius(CornerRadius::same(8))
                     .inner_margin(Margin::symmetric(14, 10))
                     .show(ui, |ui| {
-                        let card_avail = ui.available_width();
+                        let card_avail = (ui.available_width() - 16.0).max(180.0);
+                        ui.set_width(card_avail);
                         let (s_bg, s_fg, s_label) = match task.status.as_str() {
                             "todo" => (
                                 Color32::from_rgb(0x3b, 0x82, 0xf6).gamma_multiply(0.15),
@@ -4512,7 +4552,7 @@ fn show_task_list(
                                     render_info(ui);
 
                                     ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-                                        ui.add_space(8.0);
+                                        ui.add_space(14.0);
                                         render_actions(ui);
                                     });
                                 });
@@ -4586,7 +4626,7 @@ fn show_task_list(
                                 );
 
                                 ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-                                    ui.add_space(8.0);
+                                    ui.add_space(14.0);
                                     render_actions(ui);
                                     render_info(ui);
                                 });
@@ -4987,6 +5027,36 @@ fn render_task_form_modal(
                         .color(cp.secondary),
                 );
                 ui.add_space(2.0);
+
+                let search_id = ui.id().with("modal-task-client-search");
+                let mut client_search = ui.data_mut(|d| d.get_temp::<String>(search_id).unwrap_or_default());
+
+                ui.horizontal(|ui| {
+                    let w = ui.available_width() - if client_search.is_empty() { 0.0 } else { 24.0 };
+                    ui.add(
+                        egui::TextEdit::singleline(&mut client_search)
+                            .hint_text("🔍 Buscar cliente...")
+                            .desired_width(w.max(60.0)),
+                    );
+                    if !client_search.is_empty() && ui.small_button("✕").clicked() {
+                        client_search.clear();
+                    }
+                });
+                ui.add_space(2.0);
+
+                let q = client_search.trim().to_lowercase();
+                let filtered_chats: Vec<_> = app
+                    .chats
+                    .iter()
+                    .filter(|chat| {
+                        if q.is_empty() {
+                            return true;
+                        }
+                        let title = app.chat_title(chat).to_lowercase();
+                        title.contains(&q) || chat.id.to_lowercase().contains(&q)
+                    })
+                    .collect();
+
                 let current_client = draft
                     .chat_id
                     .as_ref()
@@ -4995,6 +5065,8 @@ fn render_task_form_modal(
                     .unwrap_or_else(|| {
                         if draft.chat_id.is_some() {
                             "Cliente selecionado".into()
+                        } else if !q.is_empty() {
+                            format!("Geral ({} encontrados)", filtered_chats.len())
                         } else {
                             "Nenhum cliente (Geral)".into()
                         }
@@ -5005,11 +5077,16 @@ fn render_task_form_modal(
                     .width(ui.available_width() - 8.0)
                     .show_ui(ui, |ui| {
                         ui.selectable_value(&mut draft.chat_id, None, "Nenhum cliente (Geral)");
-                        for chat in &app.chats {
-                            let title = app.chat_title(chat);
-                            ui.selectable_value(&mut draft.chat_id, Some(chat.id.clone()), title);
+                        if filtered_chats.is_empty() {
+                            ui.label(RichText::new("Nenhum contato encontrado").color(cp.dim).italics());
+                        } else {
+                            for chat in filtered_chats {
+                                let title = app.chat_title(chat);
+                                ui.selectable_value(&mut draft.chat_id, Some(chat.id.clone()), title);
+                            }
                         }
                     });
+                ui.data_mut(|d| d.insert_temp(search_id, client_search));
             });
 
             uis[1].vertical(|ui| {

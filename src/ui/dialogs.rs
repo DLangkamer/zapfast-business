@@ -745,6 +745,7 @@ fn dialog_title(app: &mut App, ui: &mut egui::Ui, title: &str) {
     ui.horizontal(|ui| {
         super::widgets::rich_text(ui, title, theme::semibold(18.0), palette.text);
         ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
+            ui.add_space(14.0);
             if theme::icon_button(ui, Icon::X, 16.0, palette.secondary, palette.text, "Close")
                 .clicked()
             {
@@ -764,6 +765,7 @@ fn schedule_message(app: &mut App, ui: &mut egui::Ui, chat: &str) {
             palette.text,
         );
         ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
+            ui.add_space(14.0);
             if theme::icon_button(ui, Icon::X, 16.0, palette.secondary, palette.text, "Close")
                 .clicked()
             {
@@ -865,6 +867,7 @@ fn interactive_list(app: &mut App, ui: &mut egui::Ui, chat: &str, message: &str,
         let (rect, _) = ui.allocate_exact_size(heading.size(), Sense::hover());
         heading.paint(ui, rect.min, palette.text);
         ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
+            ui.add_space(14.0);
             if theme::icon_button(ui, Icon::X, 16.0, palette.secondary, palette.text, "Close")
                 .clicked()
             {
@@ -1314,6 +1317,7 @@ fn title(ui: &mut egui::Ui, app: &mut App, label: &str) {
     ui.horizontal(|ui| {
         theme::text(ui, label, theme::bold(18.0), palette.text);
         ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
+            ui.add_space(14.0);
             if theme::icon_button(ui, Icon::X, 16.0, palette.secondary, palette.text, "Close")
                 .clicked()
             {

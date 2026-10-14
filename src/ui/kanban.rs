@@ -148,6 +148,7 @@ fn render_top_bar(app: &mut App, ui: &mut egui::Ui, palette: &Palette) {
                 });
 
             ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
+                ui.add_space(14.0);
                 if theme::icon_button(ui, Icon::X, 18.0, palette.dim, palette.text, "Fechar")
                     .clicked()
                 {
@@ -259,6 +260,7 @@ fn render_top_bar(app: &mut App, ui: &mut egui::Ui, palette: &Palette) {
                 });
 
             ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
+                ui.add_space(14.0);
                 // Close dialog
                 if theme::icon_button(ui, Icon::X, 18.0, palette.dim, palette.text, "Fechar")
                     .clicked()

@@ -1712,14 +1712,50 @@ fn render_deal_modal(
         .data(|d| d.get_temp::<String>(tags_id))
         .unwrap_or_default();
 
+    let search_chat_id = egui::Id::new("modal_deal_search_chat");
+    let mut search_chat = ui
+        .ctx()
+        .data(|d| d.get_temp::<String>(search_chat_id))
+        .unwrap_or_default();
+
     ui.vertical(|ui| {
         ui.label(
             RichText::new("Cliente / Contato:")
                 .size(13.0)
                 .color(cp.secondary),
         );
+        ui.horizontal(|ui| {
+            let w = ui.available_width() - if search_chat.is_empty() { 0.0 } else { 24.0 };
+            ui.add(
+                egui::TextEdit::singleline(&mut search_chat)
+                    .hint_text("🔍 Buscar por nome ou número...")
+                    .desired_width(w.max(60.0)),
+            );
+            if !search_chat.is_empty() && ui.small_button("✕").clicked() {
+                search_chat.clear();
+            }
+        });
+        ui.add_space(2.0);
+
+        let query = search_chat.trim().to_lowercase();
+        let filtered_chats: Vec<_> = app
+            .chats
+            .iter()
+            .filter(|chat| {
+                if query.is_empty() {
+                    return true;
+                }
+                let title = app.chat_title(chat).to_lowercase();
+                title.contains(&query) || chat.id.to_lowercase().contains(&query)
+            })
+            .collect();
+
         let cur_title = if selected_chat.is_empty() {
-            "Selecionar contato...".to_owned()
+            if query.is_empty() {
+                "Selecionar contato...".to_owned()
+            } else {
+                format!("Selecionar contato ({} encontrados)...", filtered_chats.len())
+            }
         } else {
             app.chat(&selected_chat)
                 .map(|c| app.chat_title(c))
@@ -1730,9 +1766,13 @@ fn render_deal_modal(
             .selected_text(cur_title)
             .width(ui.available_width() - 8.0)
             .show_ui(ui, |ui| {
-                for chat in &app.chats {
-                    let title = app.chat_title(chat);
-                    ui.selectable_value(&mut selected_chat, chat.id.clone(), title);
+                if filtered_chats.is_empty() {
+                    ui.label(RichText::new("Nenhum contato encontrado").color(cp.dim).italics());
+                } else {
+                    for chat in filtered_chats {
+                        let title = app.chat_title(chat);
+                        ui.selectable_value(&mut selected_chat, chat.id.clone(), title);
+                    }
                 }
             });
 
@@ -1825,6 +1865,7 @@ fn render_deal_modal(
                 app.actions.push(Action::SaveCrmDeal(deal));
 
                 selected_chat.clear();
+                search_chat.clear();
                 val_str.clear();
                 tags_str.clear();
                 ui.ctx().data_mut(|d| d.insert_temp(*add_deal_id, false));
@@ -1834,6 +1875,7 @@ fn render_deal_modal(
 
     ui.ctx().data_mut(|d| {
         d.insert_temp(sel_chat_id, selected_chat);
+        d.insert_temp(search_chat_id, search_chat);
         d.insert_temp(sel_col_id, selected_col);
         d.insert_temp(val_id, val_str);
         d.insert_temp(tags_id, tags_str);
@@ -4046,6 +4088,64 @@ fn render_project_form_modal(
 
         ui.add_space(10.0);
 
+        let proj_contact_search_id = ui.id().with("modal-proj-contact-search");
+        let mut proj_contact_search = ui.data_mut(|d| d.get_temp::<String>(proj_contact_search_id).unwrap_or_default());
+
+        ui.horizontal(|ui| {
+            ui.label(RichText::new("Vincular cliente do ZapFast:").size(11.5).color(cp.secondary));
+            let w = (ui.available_width() - 30.0).clamp(120.0, 220.0);
+            ui.add(
+                egui::TextEdit::singleline(&mut proj_contact_search)
+                    .hint_text("🔍 Buscar contato...")
+                    .desired_width(w),
+            );
+            if !proj_contact_search.is_empty() && ui.small_button("✕").clicked() {
+                proj_contact_search.clear();
+            }
+        });
+        let q_proj = proj_contact_search.trim().to_lowercase();
+        let proj_chats: Vec<_> = app
+            .chats
+            .iter()
+            .filter(|chat| {
+                if q_proj.is_empty() {
+                    return true;
+                }
+                let title = app.chat_title(chat).to_lowercase();
+                title.contains(&q_proj) || chat.id.to_lowercase().contains(&q_proj)
+            })
+            .collect();
+
+        let mut pick_c: Option<String> = None;
+        let proj_cb_text = if draft.client_name.is_empty() {
+            if q_proj.is_empty() { "Preencher com contato do ZapFast...".to_owned() } else { format!("Contatos encontrados ({})", proj_chats.len()) }
+        } else {
+            format!("Cliente selecionado: {}", draft.client_name)
+        };
+
+        egui::ComboBox::from_id_salt("modal-proj-contact-cb")
+            .selected_text(proj_cb_text)
+            .width(ui.available_width() - 8.0)
+            .show_ui(ui, |ui| {
+                if proj_chats.is_empty() {
+                    ui.label(RichText::new("Nenhum contato encontrado").color(cp.dim).italics());
+                } else {
+                    for chat in proj_chats {
+                        let title = app.chat_title(chat);
+                        if ui.selectable_value(&mut pick_c, Some(chat.id.clone()), &title).clicked() {
+                            draft.client_name = title;
+                            let phone_part = chat.id.split('@').next().unwrap_or("").to_string();
+                            if !phone_part.is_empty() && phone_part.chars().all(|c| c.is_ascii_digit()) {
+                                draft.client_phone = format!("+{}", phone_part);
+                            }
+                        }
+                    }
+                }
+            });
+        ui.data_mut(|d| d.insert_temp(proj_contact_search_id, proj_contact_search));
+
+        ui.add_space(8.0);
+
         ui.columns(2, |uis| {
             uis[0].vertical(|ui| {
                 ui.label(
@@ -5780,13 +5880,48 @@ fn render_project_tab_overview(
                     }
 
                     let pick_chat_id = ui.id().with(("proj-pick-chat-add", &project.id));
+                    let search_chat_id = ui.id().with(("proj-pick-chat-search", &project.id));
                     let mut pick_chat = ui
                         .ctx()
                         .data(|d| d.get_temp::<String>(pick_chat_id))
                         .unwrap_or_default();
+                    let mut search_chat = ui
+                        .ctx()
+                        .data(|d| d.get_temp::<String>(search_chat_id))
+                        .unwrap_or_default();
+
+                    ui.horizontal(|ui| {
+                        let w: f32 = 150.0 - if search_chat.is_empty() { 0.0 } else { 22.0 };
+                        ui.add(
+                            egui::TextEdit::singleline(&mut search_chat)
+                                .hint_text("🔍 Buscar...")
+                                .desired_width(w.max(60.0)),
+                        );
+                        if !search_chat.is_empty() && ui.small_button("✕").clicked() {
+                            search_chat.clear();
+                        }
+                    });
+
+                    let q = search_chat.trim().to_lowercase();
+                    let available_chats: Vec<_> = app
+                        .chats
+                        .iter()
+                        .filter(|c| !project.chat_ids.contains(&c.id))
+                        .filter(|c| {
+                            if q.is_empty() {
+                                return true;
+                            }
+                            let title = app.chat_title(c).to_lowercase();
+                            title.contains(&q) || c.id.to_lowercase().contains(&q)
+                        })
+                        .collect();
 
                     let pick_title = if pick_chat.is_empty() {
-                        "Vincular outro contato...".to_owned()
+                        if q.is_empty() {
+                            "Vincular outro contato...".to_owned()
+                        } else {
+                            format!("Contatos ({})...", available_chats.len())
+                        }
                     } else {
                         app.chat(&pick_chat)
                             .map(|c| app.chat_title(c))
@@ -5795,10 +5930,12 @@ fn render_project_tab_overview(
 
                     egui::ComboBox::from_id_salt(("proj-link-chat-cb", &project.id))
                         .selected_text(pick_title)
-                        .width(220.0)
+                        .width(200.0)
                         .show_ui(ui, |ui| {
-                            for chat in &app.chats {
-                                if !project.chat_ids.contains(&chat.id) {
+                            if available_chats.is_empty() {
+                                ui.label(RichText::new("Nenhum contato encontrado").color(cp.dim).italics());
+                            } else {
+                                for chat in available_chats {
                                     let title = app.chat_title(chat);
                                     ui.selectable_value(&mut pick_chat, chat.id.clone(), title);
                                 }
@@ -5819,10 +5956,13 @@ fn render_project_tab_overview(
                             project.updated_at = crate::util::now();
                             app.actions.push(Action::SaveCrmProject(project.clone()));
                             pick_chat.clear();
+                            search_chat.clear();
                         }
                     }
-                    ui.ctx()
-                        .data_mut(|d| d.insert_temp(pick_chat_id, pick_chat));
+                    ui.ctx().data_mut(|d| {
+                        d.insert_temp(pick_chat_id, pick_chat);
+                        d.insert_temp(search_chat_id, search_chat);
+                    });
                 });
             });
         });
