@@ -588,7 +588,7 @@ fn crm_header<F>(
             });
 
             ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-                ui.add_space(16.0);
+                ui.add_space(18.0);
                 render_controls(ui);
             });
         });
@@ -813,9 +813,42 @@ fn timeline(app: &mut App, ui: &mut egui::Ui, cp: &CrmPalette) {
         }
     };
 
+    let is_masked = app.settings.crm_timeline_mask_messages;
+    let show_mask_toggle = |ui: &mut egui::Ui, app: &mut App| {
+        let masked = app.settings.crm_timeline_mask_messages;
+        let mask_btn = egui::Button::new(
+            RichText::new(if masked {
+                "👁 Ocultando texto"
+            } else {
+                "👁 Ocultar texto"
+            })
+            .size(11.5)
+            .strong()
+            .color(if masked { cp.accent } else { cp.secondary }),
+        )
+        .fill(if masked {
+            cp.accent.gamma_multiply(0.16)
+        } else {
+            cp.surface
+        })
+        .stroke(Stroke::new(1.0, if masked { cp.accent } else { cp.outline }))
+        .corner_radius(CornerRadius::same(6))
+        .min_size(vec2(105.0, 28.0));
+        if ui
+            .add(mask_btn)
+            .on_hover_text("Ocultar ou exibir o conteúdo das mensagens na Timeline por privacidade")
+            .clicked()
+        {
+            app.settings.crm_timeline_mask_messages = !masked;
+            app.save_settings();
+            ui.ctx().request_repaint();
+        }
+    };
+
     if avail < 720.0 {
         ui.horizontal_wrapped(|ui| {
             render_type_buttons(ui, &mut type_filter);
+            show_mask_toggle(ui, app);
         });
         ui.add_space(6.0);
         ui.horizontal(|ui| {
@@ -865,7 +898,10 @@ fn timeline(app: &mut App, ui: &mut egui::Ui, cp: &CrmPalette) {
         ui.horizontal(|ui| {
             render_type_buttons(ui, &mut type_filter);
 
-            ui.add_space(8.0);
+            ui.add_space(6.0);
+            show_mask_toggle(ui, app);
+
+            ui.add_space(6.0);
 
             egui::ComboBox::from_id_salt(("timeline-client-filter", &account_id))
                 .selected_text(if client_filter == "all" {
@@ -873,7 +909,7 @@ fn timeline(app: &mut App, ui: &mut egui::Ui, cp: &CrmPalette) {
                 } else {
                     client_filter.clone()
                 })
-                .width(160.0)
+                .width(150.0)
                 .show_ui(ui, |ui| {
                     if ui
                         .selectable_value(&mut client_filter, "all".into(), "Todos os clientes")
@@ -893,7 +929,7 @@ fn timeline(app: &mut App, ui: &mut egui::Ui, cp: &CrmPalette) {
 
             ui.add_space(4.0);
 
-            let search_w = (avail - 540.0).clamp(140.0, 260.0);
+            let search_w = (avail - 640.0).clamp(120.0, 240.0);
             ui.add(
                 egui::TextEdit::singleline(&mut search)
                     .hint_text("Buscar evento…")
@@ -926,6 +962,11 @@ fn timeline(app: &mut App, ui: &mut egui::Ui, cp: &CrmPalette) {
             .unwrap_or_else(|| "Conversa".into());
         for message in conversation.messages.iter().rev().take(30) {
             if let Some((date, hour, minute)) = crate::util::local_datetime(message.timestamp) {
+                let summary = if is_masked {
+                    "[Texto da mensagem protegido]".to_string()
+                } else {
+                    message.summary()
+                };
                 events.push(TimelineEvent {
                     timestamp: message.timestamp,
                     date,
@@ -937,7 +978,7 @@ fn timeline(app: &mut App, ui: &mut egui::Ui, cp: &CrmPalette) {
                     },
                     title: client.clone(),
                     entity: client.clone(),
-                    summary: message.summary(),
+                    summary,
                     status_badge: None,
                 });
             }
@@ -1215,15 +1256,16 @@ fn timeline(app: &mut App, ui: &mut egui::Ui, cp: &CrmPalette) {
 
                 ui.add_space(6.0);
 
-                // Right Card Content - vertically bounded to content
-                let card_w = (ui.available_width() - 8.0).max(180.0);
+                // Right Card Content - vertically bounded to content and responsive to window width
+                let card_inner_w = (ui.available_width() - 36.0).max(160.0);
                 Frame::new()
                     .fill(cp.surface)
                     .stroke(Stroke::new(1.0, cp.outline))
                     .corner_radius(CornerRadius::same(10))
                     .inner_margin(Margin::symmetric(14, 10))
                     .show(ui, |ui| {
-                        ui.set_width(card_w);
+                        ui.set_max_width(card_inner_w);
+                        ui.set_width(card_inner_w);
                         ui.vertical(|ui| {
                             // Card Header
                             ui.horizontal(|ui| {
@@ -1279,7 +1321,7 @@ fn timeline(app: &mut App, ui: &mut egui::Ui, cp: &CrmPalette) {
 
                                 // Right-aligned time
                                 ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-                                    ui.add_space(4.0);
+                                    ui.add_space(10.0);
                                     ui.label(
                                         RichText::new(&event.time_str).size(12.0).color(cp.dim),
                                     );
@@ -2272,99 +2314,160 @@ fn render_late_actions(
     today: jiff::civil::Date,
     is_call: bool,
 ) {
-    // 1. Menu Reagendar
-    ui.menu_button(
-        RichText::new("📅 Reagendar ▾")
-            .size(11.5)
-            .strong()
-            .color(cp.accent),
-        |ui| {
-            if ui.button("Hoje (+1 hora)").clicked() {
-                let mut updated = task.clone();
-                updated.due_at = Some(now + 3600);
-                updated.updated_at = now;
-                app.actions.push(Action::SaveCrmTask(updated));
-                app.toast("Compromisso reagendado para hoje (+1h)!");
-                ui.close();
-            }
-            if ui.button("Hoje às 18:00").clicked() {
-                let mut updated = task.clone();
-                let target = crate::util::to_unix_seconds(today, 18, 0).unwrap_or(now + 3600);
-                updated.due_at = Some(target);
-                updated.updated_at = now;
-                app.actions.push(Action::SaveCrmTask(updated));
-                app.toast("Compromisso reagendado para hoje às 18:00!");
-                ui.close();
-            }
-            if ui.button("Amanhã às 09:00").clicked() {
-                let mut updated = task.clone();
-                let tomorrow = today.tomorrow().unwrap_or(today);
-                let target = crate::util::to_unix_seconds(tomorrow, 9, 0).unwrap_or(now + 86400);
-                updated.due_at = Some(target);
-                updated.updated_at = now;
-                app.actions.push(Action::SaveCrmTask(updated));
-                app.toast("Compromisso reagendado para amanhã às 09:00!");
-                ui.close();
-            }
-            if ui.button("Próxima semana (+7 dias)").clicked() {
-                let mut updated = task.clone();
-                updated.due_at = Some(now + 7 * 86400);
-                updated.updated_at = now;
-                app.actions.push(Action::SaveCrmTask(updated));
-                app.toast("Compromisso reagendado para a próxima semana!");
-                ui.close();
-            }
-        },
-    );
-
-    ui.add_space(4.0);
-
-    // 2. Botão Cancelada
-    let cancel_btn = egui::Button::new(RichText::new("✕ Cancelada").size(11.5).color(cp.danger))
-        .fill(cp.surface_hover)
-        .stroke(Stroke::new(1.0, cp.danger.gamma_multiply(0.4)))
+    let render_done = |ui: &mut egui::Ui, app: &mut App| {
+        let done_btn = egui::Button::new(
+            RichText::new("✓ Realizada")
+                .size(11.5)
+                .strong()
+                .color(Color32::WHITE),
+        )
+        .fill(Color32::from_rgb(0x10, 0xb9, 0x81))
         .corner_radius(CornerRadius::same(5));
-    if ui
-        .add(cancel_btn)
-        .on_hover_text("Marcar como cancelada")
-        .clicked()
-    {
-        let mut updated = task.clone();
-        updated.status = "cancelled".into();
-        updated.completed_at = Some(now);
-        updated.updated_at = now;
-        app.actions.push(Action::SaveCrmTask(updated));
-        app.toast("Compromisso marcado como cancelado.");
-        ui.ctx().request_repaint();
-    }
+        if ui
+            .add(done_btn)
+            .on_hover_text("Marcar como realizada")
+            .clicked()
+        {
+            let mut updated = task.clone();
+            updated.status = if is_call {
+                "held".into()
+            } else {
+                "done".into()
+            };
+            if is_call && updated.call_result.is_empty() {
+                updated.call_result = "Realizada".into();
+            }
+            updated.completed_at = Some(now);
+            updated.updated_at = now;
+            if let Some(pos) = app.crm_tasks.iter().position(|t| t.id == updated.id) {
+                app.crm_tasks[pos] = updated.clone();
+            }
+            app.actions.push(Action::SaveCrmTask(updated));
+            app.toast("Compromisso marcado como realizado!");
+            ui.ctx().request_repaint();
+        }
+    };
 
-    ui.add_space(4.0);
+    let render_cancel = |ui: &mut egui::Ui, app: &mut App| {
+        let cancel_btn = egui::Button::new(RichText::new("✕ Cancelada").size(11.5).color(cp.danger))
+            .fill(cp.surface_hover)
+            .stroke(Stroke::new(1.0, cp.danger.gamma_multiply(0.4)))
+            .corner_radius(CornerRadius::same(5));
+        if ui
+            .add(cancel_btn)
+            .on_hover_text("Marcar como cancelada")
+            .clicked()
+        {
+            let mut updated = task.clone();
+            updated.status = "cancelled".into();
+            if is_call && updated.call_result.is_empty() {
+                updated.call_result = "Cancelada".into();
+            }
+            updated.completed_at = Some(now);
+            updated.updated_at = now;
+            if let Some(pos) = app.crm_tasks.iter().position(|t| t.id == updated.id) {
+                app.crm_tasks[pos] = updated.clone();
+            }
+            app.actions.push(Action::SaveCrmTask(updated));
+            app.toast("Compromisso marcado como cancelado.");
+            ui.ctx().request_repaint();
+        }
+    };
 
-    // 3. Botão Realizada
-    let done_btn = egui::Button::new(
-        RichText::new("✓ Realizada")
-            .size(11.5)
-            .strong()
-            .color(Color32::WHITE),
-    )
-    .fill(Color32::from_rgb(0x10, 0xb9, 0x81))
-    .corner_radius(CornerRadius::same(5));
-    if ui
-        .add(done_btn)
-        .on_hover_text("Marcar como realizada")
-        .clicked()
-    {
-        let mut updated = task.clone();
-        updated.status = if is_call {
-            "held".into()
-        } else {
-            "done".into()
-        };
-        updated.completed_at = Some(now);
-        updated.updated_at = now;
-        app.actions.push(Action::SaveCrmTask(updated));
-        app.toast("Compromisso marcado como realizado!");
-        ui.ctx().request_repaint();
+    let render_reschedule = |ui: &mut egui::Ui, app: &mut App| {
+        ui.menu_button(
+            RichText::new("📅 Reagendar ▾")
+                .size(11.5)
+                .strong()
+                .color(cp.accent),
+            |ui| {
+                if ui.button("Hoje (+1 hora)").clicked() {
+                    let mut updated = task.clone();
+                    updated.due_at = Some(now + 3600);
+                    if is_call {
+                        updated.status = "scheduled".into();
+                    } else if updated.status == "done" || updated.status == "cancelled" {
+                        updated.status = "todo".into();
+                    }
+                    updated.completed_at = None;
+                    updated.updated_at = now;
+                    if let Some(pos) = app.crm_tasks.iter().position(|t| t.id == updated.id) {
+                        app.crm_tasks[pos] = updated.clone();
+                    }
+                    app.actions.push(Action::SaveCrmTask(updated));
+                    app.toast("Compromisso reagendado para hoje (+1h)!");
+                    ui.close();
+                }
+                if ui.button("Hoje às 18:00").clicked() {
+                    let mut updated = task.clone();
+                    let target = crate::util::to_unix_seconds(today, 18, 0).unwrap_or(now + 3600);
+                    updated.due_at = Some(target);
+                    if is_call {
+                        updated.status = "scheduled".into();
+                    } else if updated.status == "done" || updated.status == "cancelled" {
+                        updated.status = "todo".into();
+                    }
+                    updated.completed_at = None;
+                    updated.updated_at = now;
+                    if let Some(pos) = app.crm_tasks.iter().position(|t| t.id == updated.id) {
+                        app.crm_tasks[pos] = updated.clone();
+                    }
+                    app.actions.push(Action::SaveCrmTask(updated));
+                    app.toast("Compromisso reagendado para hoje às 18:00!");
+                    ui.close();
+                }
+                if ui.button("Amanhã às 09:00").clicked() {
+                    let mut updated = task.clone();
+                    let tomorrow = today.tomorrow().unwrap_or(today);
+                    let target = crate::util::to_unix_seconds(tomorrow, 9, 0).unwrap_or(now + 86400);
+                    updated.due_at = Some(target);
+                    if is_call {
+                        updated.status = "scheduled".into();
+                    } else if updated.status == "done" || updated.status == "cancelled" {
+                        updated.status = "todo".into();
+                    }
+                    updated.completed_at = None;
+                    updated.updated_at = now;
+                    if let Some(pos) = app.crm_tasks.iter().position(|t| t.id == updated.id) {
+                        app.crm_tasks[pos] = updated.clone();
+                    }
+                    app.actions.push(Action::SaveCrmTask(updated));
+                    app.toast("Compromisso reagendado para amanhã às 09:00!");
+                    ui.close();
+                }
+                if ui.button("Próxima semana (+7 dias)").clicked() {
+                    let mut updated = task.clone();
+                    updated.due_at = Some(now + 7 * 86400);
+                    if is_call {
+                        updated.status = "scheduled".into();
+                    } else if updated.status == "done" || updated.status == "cancelled" {
+                        updated.status = "todo".into();
+                    }
+                    updated.completed_at = None;
+                    updated.updated_at = now;
+                    if let Some(pos) = app.crm_tasks.iter().position(|t| t.id == updated.id) {
+                        app.crm_tasks[pos] = updated.clone();
+                    }
+                    app.actions.push(Action::SaveCrmTask(updated));
+                    app.toast("Compromisso reagendado para a próxima semana!");
+                    ui.close();
+                }
+            },
+        );
+    };
+
+    if ui.layout().prefer_right_to_left() {
+        render_reschedule(ui, app);
+        ui.add_space(4.0);
+        render_cancel(ui, app);
+        ui.add_space(4.0);
+        render_done(ui, app);
+    } else {
+        render_done(ui, app);
+        ui.add_space(4.0);
+        render_cancel(ui, app);
+        ui.add_space(4.0);
+        render_reschedule(ui, app);
     }
 }
 
@@ -2690,7 +2793,7 @@ fn overview(
                                     }
 
                                     ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-                                        ui.add_space(4.0);
+                                        ui.add_space(14.0);
                                         render_late_actions(app, ui, task, cp, now, today, is_call);
                                     });
                                 });

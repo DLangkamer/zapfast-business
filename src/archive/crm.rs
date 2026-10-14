@@ -194,9 +194,6 @@ impl Archive {
     }
 
     pub fn crm_deals(&self) -> Result<Vec<CrmDeal>> {
-        let columns = self.crm_columns().unwrap_or_default();
-        let first_col_id = columns.first().map(|c| c.id.as_str()).unwrap_or("lead");
-
         let mut statement = self.connection.prepare(
             "SELECT chat_id,
                     COALESCE(column_id, 'lead'),
@@ -229,13 +226,6 @@ impl Archive {
             }
         }
 
-        // Reconcile and heal any deals with invalid or orphaned column_ids
-        for deal in &mut deals {
-            if !columns.is_empty() && !columns.iter().any(|c| c.id == deal.column_id) {
-                deal.column_id = first_col_id.to_owned();
-                let _ = self.upsert_crm_deal(deal);
-            }
-        }
         Ok(deals)
     }
 

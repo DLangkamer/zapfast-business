@@ -606,6 +606,7 @@ fn render_header(app: &mut App, ui: &mut egui::Ui, palette: &Palette, chat: &Cha
 
         // Right action buttons anchored at the right border without hit-test conflicts
         ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
+            ui.add_space(14.0);
             if theme::icon_button(
                 ui,
                 Icon::ChevronRight,

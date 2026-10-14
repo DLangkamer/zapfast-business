@@ -395,6 +395,9 @@ pub struct Settings {
     pub search_pane_width: f32,
     /// Width of the CRM sidecar pane beside the open chat.
     pub crm_sidecar_width: f32,
+    /// Whether message bodies are masked in CRM Timeline for privacy.
+    #[serde(default)]
+    pub crm_timeline_mask_messages: bool,
     /// Whether Enter sends. Off, Enter adds a line and Ctrl+Enter (Cmd+Enter
     /// on macOS) sends.
     pub enter_sends: bool,
@@ -493,6 +496,7 @@ impl Default for Settings {
             sidebar_width: 320.0,
             search_pane_width: 380.0,
             crm_sidecar_width: 340.0,
+            crm_timeline_mask_messages: false,
             enter_sends: true,
             send_read_receipts: true,
             mark_read_on_open: true,

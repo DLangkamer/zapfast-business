@@ -2216,11 +2216,11 @@ fn render_call_card(
         .show(ui, |ui| {
             ui.vertical(|ui| {
                 let card_avail = ui.available_width();
-                if card_avail < 780.0 {
+                if card_avail < 720.0 {
                     ui.horizontal(|ui| {
                         call_status_pill(ui, &call.status, cp);
                         ui.add_space(4.0);
-                        let title_w = (card_avail - 100.0).max(80.0);
+                        let title_w = (card_avail - 110.0).max(80.0);
                         ui.allocate_ui_with_layout(
                             vec2(title_w, 22.0),
                             Layout::left_to_right(Align::Center),
@@ -2378,7 +2378,7 @@ fn render_call_card(
                         call_status_pill(ui, &call.status, cp);
                         ui.add_space(6.0);
 
-                        let title_w = (card_avail - 380.0).max(120.0);
+                        let title_w = (card_avail - 420.0).max(100.0);
                         ui.allocate_ui_with_layout(
                             vec2(title_w, 24.0),
                             Layout::left_to_right(Align::Center),
@@ -2774,27 +2774,27 @@ fn render_call_outcome_bar(app: &mut App, ui: &mut egui::Ui, cp: &CrmPalette, ca
                         updated_call.revenue_cents = cents;
                         updated_call.completed_at = Some(now);
                         updated_call.updated_at = now;
-                        app.actions.push(Action::SaveCrmTask(updated_call));
+                        app.actions.push(Action::SaveCrmTask(updated_call.clone()));
 
-                        if let Some(chat_id) = &call.chat_id {
+                        let target_chat = call.chat_id.clone().or_else(|| {
+                            call.project_id.as_ref().and_then(|pid| {
+                                app.crm_projects.iter().find(|p| &p.id == pid).and_then(|p| p.chat_ids.first().cloned())
+                            })
+                        }).or_else(|| {
+                            app.chats.iter().find(|c| {
+                                let title = app.chat_title(c);
+                                !title.is_empty() && (call.title.contains(&title) || call.assignee.contains(&title))
+                            }).map(|c| c.id.clone())
+                        });
+
+                        if let Some(chat_id) = target_chat {
                             if app.crm_columns.is_empty() {
-                                for col in crate::ui::kanban::default_columns() {
-                                    app.actions.push(Action::SaveCrmColumn(col));
+                                let defs = crate::ui::kanban::default_columns();
+                                for col in &defs {
+                                    app.actions.push(Action::SaveCrmColumn(col.clone()));
                                 }
+                                app.crm_columns = defs;
                             }
-                            let mut deal =
-                                app.crm_deals
-                                    .get(chat_id)
-                                    .cloned()
-                                    .unwrap_or_else(|| CrmDeal {
-                                        chat_id: chat_id.clone(),
-                                        column_id: "close".into(),
-                                        value_cents: cents,
-                                        notes: String::new(),
-                                        tags: Vec::new(),
-                                        updated_at: now,
-                                    });
-                            deal.value_cents = cents;
                             let close_col_id = app
                                 .crm_columns
                                 .iter()
@@ -2803,18 +2803,44 @@ fn render_call_outcome_bar(app: &mut App, ui: &mut egui::Ui, cp: &CrmPalette, ca
                                         || c.title.to_lowercase().contains("fechamento")
                                         || c.title.to_lowercase().contains("ganho")
                                         || c.title.to_lowercase().contains("fechado")
+                                        || c.title.to_lowercase().contains("venda")
+                                        || c.order == 3
                                 })
                                 .map(|c| c.id.clone())
                                 .unwrap_or_else(|| "close".into());
+
+                            let mut deal = app
+                                .crm_deals
+                                .get(&chat_id)
+                                .cloned()
+                                .unwrap_or_else(|| CrmDeal {
+                                    chat_id: chat_id.clone(),
+                                    column_id: close_col_id.clone(),
+                                    value_cents: cents,
+                                    notes: String::new(),
+                                    tags: vec!["Venda Ganha".into()],
+                                    updated_at: now,
+                                });
+                            if cents > 0 {
+                                deal.value_cents = cents;
+                            }
                             deal.column_id = close_col_id;
-                            let formatted_val = format_revenue_input(cents);
+                            let formatted_val = format_revenue_input(if cents > 0 { cents } else { deal.value_cents });
                             let entry = format!(
                                 "💰 Venda fechada via Call '{}': R$ {}\n",
                                 call.title, formatted_val
                             );
-                            deal.notes = format!("{entry}{}", deal.notes);
+                            if !deal.notes.contains(&entry) {
+                                deal.notes = format!("{entry}{}", deal.notes);
+                            }
                             deal.updated_at = now;
+                            app.crm_deals.insert(chat_id.clone(), deal.clone());
                             app.actions.push(Action::SaveCrmDeal(deal));
+
+                            if call.chat_id.is_none() {
+                                updated_call.chat_id = Some(chat_id);
+                                app.actions.push(Action::SaveCrmTask(updated_call));
+                            }
                         }
                         app.toast(
                             "Venda fechada! Receita, funil e histórico do cliente atualizados.",
@@ -3446,7 +3472,16 @@ fn render_call_modal(
                         app.open_chat.clone()
                     } else {
                         old.as_ref().and_then(|task| task.chat_id.clone())
-                    };
+                    }.or_else(|| {
+                        draft.project_id.as_ref().and_then(|pid| {
+                            app.crm_projects.iter().find(|p| &p.id == pid).and_then(|p| p.chat_ids.first().cloned())
+                        })
+                    }).or_else(|| {
+                        app.chats.iter().find(|c| {
+                            let title = app.chat_title(c);
+                            !title.is_empty() && (draft.title.contains(&title) || draft.assignee.contains(&title))
+                        }).map(|c| c.id.clone())
+                    });
                     let rev_cents = parse_revenue_cents(&draft.revenue_reais);
                     let mut final_status = draft.status.clone();
                     if matches!(final_status.as_str(), "todo" | "doing" | "review") {
@@ -3489,24 +3524,11 @@ fn render_call_modal(
                                 && final_status != "cancelled");
                         if is_won_sale {
                             if app.crm_columns.is_empty() {
-                                for col in crate::ui::kanban::default_columns() {
-                                    app.actions.push(Action::SaveCrmColumn(col));
+                                let defs = crate::ui::kanban::default_columns();
+                                for col in &defs {
+                                    app.actions.push(Action::SaveCrmColumn(col.clone()));
                                 }
-                            }
-                            let mut deal =
-                                app.crm_deals
-                                    .get(chat_id)
-                                    .cloned()
-                                    .unwrap_or_else(|| CrmDeal {
-                                        chat_id: chat_id.clone(),
-                                        column_id: "close".into(),
-                                        value_cents: rev_cents,
-                                        notes: String::new(),
-                                        tags: Vec::new(),
-                                        updated_at: now,
-                                    });
-                            if rev_cents > 0 {
-                                deal.value_cents = rev_cents;
+                                app.crm_columns = defs;
                             }
                             let close_col_id = app
                                 .crm_columns
@@ -3516,9 +3538,27 @@ fn render_call_modal(
                                         || c.title.to_lowercase().contains("fechamento")
                                         || c.title.to_lowercase().contains("ganho")
                                         || c.title.to_lowercase().contains("fechado")
+                                        || c.title.to_lowercase().contains("venda")
+                                        || c.order == 3
                                 })
                                 .map(|c| c.id.clone())
                                 .unwrap_or_else(|| "close".into());
+
+                            let mut deal =
+                                app.crm_deals
+                                    .get(chat_id)
+                                    .cloned()
+                                    .unwrap_or_else(|| CrmDeal {
+                                        chat_id: chat_id.clone(),
+                                        column_id: close_col_id.clone(),
+                                        value_cents: rev_cents,
+                                        notes: String::new(),
+                                        tags: vec!["Venda Ganha".into()],
+                                        updated_at: now,
+                                    });
+                            if rev_cents > 0 {
+                                deal.value_cents = rev_cents;
+                            }
                             deal.column_id = close_col_id;
                             let formatted_val = format_revenue_input(if rev_cents > 0 {
                                 rev_cents
@@ -3529,8 +3569,11 @@ fn render_call_modal(
                                 "💰 Venda fechada via Call '{}': R$ {}\n",
                                 draft.title, formatted_val
                             );
-                            deal.notes = format!("{entry}{}", deal.notes);
+                            if !deal.notes.contains(&entry) {
+                                deal.notes = format!("{entry}{}", deal.notes);
+                            }
                             deal.updated_at = now;
+                            app.crm_deals.insert(chat_id.clone(), deal.clone());
                             app.actions.push(Action::SaveCrmDeal(deal));
                         } else if final_status == "lost" {
                             if let Some(mut deal) = app.crm_deals.get(chat_id).cloned() {
@@ -3538,8 +3581,11 @@ fn render_call_modal(
                                     "✕ Call perdida '{}' (Resultado: {}): {}\n",
                                     draft.title, draft.call_result, draft.next_step
                                 );
-                                deal.notes = format!("{entry}{}", deal.notes);
+                                if !deal.notes.contains(&entry) {
+                                    deal.notes = format!("{entry}{}", deal.notes);
+                                }
                                 deal.updated_at = now;
+                                app.crm_deals.insert(chat_id.clone(), deal.clone());
                                 app.actions.push(Action::SaveCrmDeal(deal));
                             }
                         }
@@ -5522,6 +5568,7 @@ fn task_row(app: &mut App, ui: &mut egui::Ui, task: &CrmTask, now: i64, draft: &
                     }));
                 });
                 ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
+                    ui.add_space(14.0);
                     let confirm_id =
                         egui::Id::new(("crm-task-delete-confirm", app.id.as_str(), &task.id));
                     let confirming =
@@ -5591,23 +5638,140 @@ fn task_row(app: &mut App, ui: &mut egui::Ui, task: &CrmTask, now: i64, draft: &
                         draft.link_chat = task.chat_id.is_some();
                     }
 
-                    let done_label = if done { "Reabrir" } else { "Concluir" };
-                    let done_color = if done { cp.secondary } else { cp.accent };
-                    let done_btn = egui::Button::new(
-                        RichText::new(done_label)
-                            .size(12.0)
-                            .strong()
-                            .color(done_color),
-                    )
-                    .fill(cp.surface_hover)
-                    .stroke(Stroke::new(1.0, cp.outline))
-                    .corner_radius(CornerRadius::same(6));
-                    if ui.add(done_btn).clicked() {
-                        let mut x = task.clone();
-                        x.status = if done { "todo" } else { "done" }.into();
-                        x.completed_at = if done { None } else { Some(now) };
-                        x.updated_at = now;
-                        app.actions.push(Action::SaveCrmTask(x));
+                    if matches!(task.kind.as_str(), "call" | "conversation") {
+                        let is_held = matches!(task.status.as_str(), "held" | "done" | "closed");
+                        let held_btn = egui::Button::new(
+                            RichText::new(if is_held { "✓ Realizada" } else { "Realizada" })
+                                .size(11.5)
+                                .strong()
+                                .color(if is_held { cp.on_accent } else { Color32::from_rgb(0x34, 0xd3, 0x99) }),
+                        )
+                        .fill(if is_held { Color32::from_rgb(0x06, 0x4e, 0x3b) } else { cp.surface_hover })
+                        .stroke(Stroke::new(1.0, if is_held { Color32::from_rgb(0x34, 0xd3, 0x99) } else { cp.outline }))
+                        .corner_radius(CornerRadius::same(6));
+                        if ui.add(held_btn).on_hover_text("Marcar call como Realizada").clicked() {
+                            let mut x = task.clone();
+                            x.status = if is_held { "scheduled".into() } else { "held".into() };
+                            if x.status == "held" && x.call_result.is_empty() {
+                                x.call_result = "Realizada".into();
+                            }
+                            x.completed_at = if is_held { None } else { Some(now) };
+                            x.updated_at = now;
+                            if let Some(pos) = app.crm_tasks.iter().position(|t| t.id == x.id) {
+                                app.crm_tasks[pos] = x.clone();
+                            }
+                            app.actions.push(Action::SaveCrmTask(x));
+                            ui.ctx().request_repaint();
+                        }
+
+                        let is_cancelled = task.status == "cancelled";
+                        let cancel_btn = egui::Button::new(
+                            RichText::new(if is_cancelled { "✕ Cancelada ✓" } else { "✕ Cancelada" })
+                                .size(11.5)
+                                .color(cp.danger),
+                        )
+                        .fill(cp.surface_hover)
+                        .stroke(Stroke::new(1.0, cp.danger.gamma_multiply(0.4)))
+                        .corner_radius(CornerRadius::same(6));
+                        if ui.add(cancel_btn).on_hover_text("Marcar call como Cancelada").clicked() {
+                            let mut x = task.clone();
+                            x.status = if is_cancelled { "scheduled".into() } else { "cancelled".into() };
+                            if x.status == "cancelled" && x.call_result.is_empty() {
+                                x.call_result = "Cancelada".into();
+                            }
+                            x.completed_at = if is_cancelled { None } else { Some(now) };
+                            x.updated_at = now;
+                            if let Some(pos) = app.crm_tasks.iter().position(|t| t.id == x.id) {
+                                app.crm_tasks[pos] = x.clone();
+                            }
+                            app.actions.push(Action::SaveCrmTask(x));
+                            ui.ctx().request_repaint();
+                        }
+
+                        ui.menu_button(
+                            RichText::new("📅 Reagendar ▾").size(11.5).strong().color(cp.accent),
+                            |ui| {
+                                if ui.button("Hoje (+1 hora)").clicked() {
+                                    let mut updated = task.clone();
+                                    updated.due_at = Some(now + 3600);
+                                    updated.status = "scheduled".into();
+                                    updated.completed_at = None;
+                                    updated.updated_at = now;
+                                    if let Some(pos) = app.crm_tasks.iter().position(|t| t.id == updated.id) {
+                                        app.crm_tasks[pos] = updated.clone();
+                                    }
+                                    app.actions.push(Action::SaveCrmTask(updated));
+                                    app.toast("Call reagendada para hoje (+1h)!");
+                                    ui.close();
+                                }
+                                if ui.button("Hoje às 18:00").clicked() {
+                                    let mut updated = task.clone();
+                                    let today = crate::util::today();
+                                    let target = crate::util::to_unix_seconds(today, 18, 0).unwrap_or(now + 3600);
+                                    updated.due_at = Some(target);
+                                    updated.status = "scheduled".into();
+                                    updated.completed_at = None;
+                                    updated.updated_at = now;
+                                    if let Some(pos) = app.crm_tasks.iter().position(|t| t.id == updated.id) {
+                                        app.crm_tasks[pos] = updated.clone();
+                                    }
+                                    app.actions.push(Action::SaveCrmTask(updated));
+                                    app.toast("Call reagendada para hoje às 18:00!");
+                                    ui.close();
+                                }
+                                if ui.button("Amanhã às 09:00").clicked() {
+                                    let mut updated = task.clone();
+                                    let today = crate::util::today();
+                                    let tomorrow = today.tomorrow().unwrap_or(today);
+                                    let target = crate::util::to_unix_seconds(tomorrow, 9, 0).unwrap_or(now + 86400);
+                                    updated.due_at = Some(target);
+                                    updated.status = "scheduled".into();
+                                    updated.completed_at = None;
+                                    updated.updated_at = now;
+                                    if let Some(pos) = app.crm_tasks.iter().position(|t| t.id == updated.id) {
+                                        app.crm_tasks[pos] = updated.clone();
+                                    }
+                                    app.actions.push(Action::SaveCrmTask(updated));
+                                    app.toast("Call reagendada para amanhã às 09:00!");
+                                    ui.close();
+                                }
+                                if ui.button("Próxima semana (+7 dias)").clicked() {
+                                    let mut updated = task.clone();
+                                    updated.due_at = Some(now + 7 * 86400);
+                                    updated.status = "scheduled".into();
+                                    updated.completed_at = None;
+                                    updated.updated_at = now;
+                                    if let Some(pos) = app.crm_tasks.iter().position(|t| t.id == updated.id) {
+                                        app.crm_tasks[pos] = updated.clone();
+                                    }
+                                    app.actions.push(Action::SaveCrmTask(updated));
+                                    app.toast("Call reagendada para a próxima semana!");
+                                    ui.close();
+                                }
+                            },
+                        );
+                    } else {
+                        let done_label = if done { "Reabrir" } else { "Concluir" };
+                        let done_color = if done { cp.secondary } else { cp.accent };
+                        let done_btn = egui::Button::new(
+                            RichText::new(done_label)
+                                .size(12.0)
+                                .strong()
+                                .color(done_color),
+                        )
+                        .fill(cp.surface_hover)
+                        .stroke(Stroke::new(1.0, cp.outline))
+                        .corner_radius(CornerRadius::same(6));
+                        if ui.add(done_btn).clicked() {
+                            let mut x = task.clone();
+                            x.status = if done { "todo" } else { "done" }.into();
+                            x.completed_at = if done { None } else { Some(now) };
+                            x.updated_at = now;
+                            if let Some(pos) = app.crm_tasks.iter().position(|t| t.id == x.id) {
+                                app.crm_tasks[pos] = x.clone();
+                            }
+                            app.actions.push(Action::SaveCrmTask(x));
+                        }
                     }
 
                     if let Some(chat) = &task.chat_id {
