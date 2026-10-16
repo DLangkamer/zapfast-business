@@ -1168,6 +1168,7 @@ impl Worker {
                 self.emit_quick_replies();
                 self.emit_broadcast_lists();
                 self.emit_crm_data();
+                self.emit_scheduled();
                 self.emit(Event::Drafts(self.archive.drafts().unwrap_or_default()));
             }
             Err(error) => log::warn!("could not list chats: {error}"),
@@ -1487,6 +1488,7 @@ impl Worker {
         }
         self.emit(Event::Contacts(self.contacts.values().cloned().collect()));
         self.emit_chats();
+        self.emit_scheduled();
     }
 
     /// Re-derives archived rows from raw protobufs after parser changes. Also
@@ -6083,7 +6085,9 @@ impl Worker {
                 currency,
                 access_token,
                 dataset_id,
+                waba_id,
                 test_event_code,
+                event_id,
             } => {
                 let origin = self.archive.contact_origin(&chat_id).ok().flatten();
                 let ctwa_clid = origin.as_ref().and_then(|o| o.ctwa_clid.clone());
@@ -6101,12 +6105,14 @@ impl Worker {
                     let result = super::meta_capi::send_conversion(
                         &access_token,
                         &dataset_id,
+                        waba_id.as_deref(),
                         test_event_code.as_deref(),
                         &chat_clone,
                         &phone,
                         value_cents,
                         ctwa_clid.as_deref(),
                         Some(&event_name_clone),
+                        event_id.as_deref(),
                     );
 
                     let (log, err_msg) = match result {
@@ -6127,6 +6133,12 @@ impl Worker {
                             (log, None)
                         }
                         Err(err) => {
+                            let is_no_click = err.contains("ctwa_clid");
+                            let status = if is_no_click {
+                                "pending_no_click".to_string()
+                            } else {
+                                "error".to_string()
+                            };
                             let log = crate::model::MetaConversionLog {
                                 id: 0,
                                 chat_id: chat_clone,
@@ -6135,7 +6147,7 @@ impl Worker {
                                 currency: currency_str,
                                 ctwa_clid,
                                 phone_masked: ad_attribution::redact_chat_id(&phone),
-                                status: "error".to_string(),
+                                status,
                                 response_json: String::new(),
                                 error_message: err.clone(),
                                 sent_at: now,
@@ -6147,6 +6159,85 @@ impl Worker {
                         log,
                         error: err_msg,
                     });
+                });
+            }
+            Command::LogMetaConversionPendingNoClick {
+                chat_id,
+                value_cents,
+            } => {
+                let phone = crate::model::phone_of(&chat_id)
+                    .unwrap_or(&chat_id)
+                    .to_string();
+                let log = crate::model::MetaConversionLog {
+                    id: 0,
+                    chat_id: chat_id.clone(),
+                    event_name: "Purchase".to_string(),
+                    value_cents,
+                    currency: "BRL".to_string(),
+                    ctwa_clid: None,
+                    phone_masked: ad_attribution::redact_chat_id(&phone),
+                    status: "pending_no_click".to_string(),
+                    response_json: String::new(),
+                    error_message: "Conversão não enviada: lead sem clique rastreado (ctwa_clid ausente)".to_string(),
+                    sent_at: crate::util::now(),
+                };
+                let _ = self.archive.log_meta_conversion(&log);
+                self.emit(Event::MetaConversionUpdated(log));
+            }
+            Command::LogMetaConversionPendingConfirmation {
+                chat_id,
+                value_cents,
+            } => {
+                let origin = self.archive.contact_origin(&chat_id).ok().flatten();
+                let ctwa_clid = origin.as_ref().and_then(|o| o.ctwa_clid.clone());
+                let phone = crate::model::phone_of(&chat_id)
+                    .unwrap_or(&chat_id)
+                    .to_string();
+                let log = crate::model::MetaConversionLog {
+                    id: 0,
+                    chat_id: chat_id.clone(),
+                    event_name: "Purchase".to_string(),
+                    value_cents,
+                    currency: "BRL".to_string(),
+                    ctwa_clid,
+                    phone_masked: ad_attribution::redact_chat_id(&phone),
+                    status: "pending_confirmation".to_string(),
+                    response_json: String::new(),
+                    error_message: "Aguardando confirmação manual do operador para envio".to_string(),
+                    sent_at: crate::util::now(),
+                };
+                let _ = self.archive.log_meta_conversion(&log);
+                self.emit(Event::MetaConversionUpdated(log));
+            }
+            Command::TestMetaCapiConnection {
+                access_token,
+                dataset_id,
+                waba_id,
+                test_event_code,
+            } => {
+                let waker = self.waker.clone();
+                let events = self.events.clone();
+                tokio::task::spawn_blocking(move || {
+                    let result = super::meta_capi::test_connection(
+                        &access_token,
+                        &dataset_id,
+                        waba_id.as_deref(),
+                        test_event_code.as_deref(),
+                    );
+                    let event = match result {
+                        Ok(outcome) => Event::MetaCapiTestResult {
+                            success: true,
+                            message: outcome.message,
+                            raw_response: outcome.raw_response,
+                        },
+                        Err(err) => Event::MetaCapiTestResult {
+                            success: false,
+                            message: err.clone(),
+                            raw_response: String::new(),
+                        },
+                    };
+                    let _ = events.send(event);
+                    waker.wake();
                 });
             }
             Command::MetaConversionFinished { log, error } => {

@@ -367,6 +367,14 @@ fn default_meta_event_name() -> String {
     "Purchase".to_string()
 }
 
+fn default_crm_timeline_mask_messages() -> bool {
+    true
+}
+
+fn default_meta_require_confirmation() -> bool {
+    true
+}
+
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct Settings {
@@ -400,7 +408,7 @@ pub struct Settings {
     /// Width of the CRM sidecar pane beside the open chat.
     pub crm_sidecar_width: f32,
     /// Whether message bodies are masked in CRM Timeline for privacy.
-    #[serde(default)]
+    #[serde(default = "default_crm_timeline_mask_messages")]
     pub crm_timeline_mask_messages: bool,
     /// Whether Meta Conversions API (CAPI for Messaging) integration is active.
     #[serde(default)]
@@ -408,15 +416,21 @@ pub struct Settings {
     /// Meta Graph API access token.
     #[serde(default)]
     pub meta_access_token: String,
-    /// Meta Dataset ID / Pixel ID / WABA ID for event ingestion.
+    /// Meta Dataset ID / Pixel ID for event ingestion.
     #[serde(default)]
     pub meta_dataset_id: String,
+    /// WhatsApp Business Account ID (WABA ID) for user_data.
+    #[serde(default)]
+    pub meta_waba_id: String,
     /// Default conversion event name (e.g. "Purchase", "Lead").
     #[serde(default = "default_meta_event_name")]
     pub meta_event_name: String,
     /// Optional test event code from Meta Events Manager.
     #[serde(default)]
     pub meta_test_event_code: String,
+    /// Whether to require explicit operator confirmation before sending conversion.
+    #[serde(default = "default_meta_require_confirmation")]
+    pub meta_require_confirmation: bool,
     /// Whether to send conversions for leads whose origin is "Não identificado".
     #[serde(default)]
     pub meta_send_unidentified: bool,
@@ -518,12 +532,14 @@ impl Default for Settings {
             sidebar_width: 320.0,
             search_pane_width: 380.0,
             crm_sidecar_width: 340.0,
-            crm_timeline_mask_messages: false,
+            crm_timeline_mask_messages: true,
             meta_capi_enabled: false,
             meta_access_token: String::new(),
             meta_dataset_id: String::new(),
+            meta_waba_id: String::new(),
             meta_event_name: "Purchase".to_string(),
             meta_test_event_code: String::new(),
+            meta_require_confirmation: true,
             meta_send_unidentified: false,
             enter_sends: true,
             send_read_receipts: true,

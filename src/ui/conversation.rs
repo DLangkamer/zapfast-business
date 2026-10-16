@@ -131,16 +131,14 @@ fn header(app: &mut App, ui: &mut egui::Ui, chat: &Chat) -> Rect {
                 ui.set_min_height(HEADER_ROW);
                 let picture = app.avatar(&chat.id);
                 let (subtitle, color) = subtitle(app, chat);
-                let right_controls = 165.0;
+                let title_approx_w = (title.chars().count() as f32 * 10.5 + subtitle.chars().count() as f32 * 7.5).max(60.0);
+                let title_w = (48.0 + title_approx_w).min((ui.available_width() - 220.0).max(80.0));
                 // Treat the avatar, name, and subtitle as one info button.
                 let block = ui
                     .scope(|ui| {
                         // Fix the child height before centering its contents.
                         ui.allocate_ui_with_layout(
-                            vec2(
-                                (ui.available_width() - right_controls).max(80.0),
-                                HEADER_ROW,
-                            ),
+                            vec2(title_w, HEADER_ROW),
                             Layout::left_to_right(Align::Center),
                             |ui| {
                                 let avatar_response = widgets::avatar(
@@ -223,7 +221,6 @@ fn header(app: &mut App, ui: &mut egui::Ui, chat: &Chat) -> Rect {
                     crate::i18n::gettext(app.locale, "Leave group")
                 };
                 ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-                    ui.add_space(14.0);
                     let sidecar_btn = theme::icon_button(
                         ui,
                         Icon::PanelLeft,

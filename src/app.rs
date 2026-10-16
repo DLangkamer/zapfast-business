@@ -623,6 +623,8 @@ pub struct App {
     /// The app lock: whether the window shows only the lock screen, the
     /// inactivity count, and the Settings password form.
     pub app_lock: crate::app_lock::AppLock,
+    /// Result of Meta CAPI connection test for user feedback.
+    pub meta_capi_test_result: Option<Result<String, String>>,
 }
 
 /// A message that flashes after a jump to it, as WhatsApp does.
@@ -1135,6 +1137,7 @@ impl App {
             notifications: Default::default(),
             badge: None,
             app_lock,
+            meta_capi_test_result: None,
         };
         // A hand-edited speed snaps to a supported one, so a speed control
         // always shows the speed that plays.
@@ -2493,6 +2496,18 @@ impl App {
             }
             Event::MetaConversionUpdated(log) => {
                 self.meta_conversions.insert(log.chat_id.clone(), log);
+            }
+            Event::MetaCapiTestResult {
+                success,
+                message,
+                raw_response: _,
+            } => {
+                if success {
+                    self.toast(message.clone());
+                    self.meta_capi_test_result = Some(Ok(message));
+                } else {
+                    self.meta_capi_test_result = Some(Err(message));
+                }
             }
             Event::ContactOriginUpdate(origin) => {
                 self.contact_origins.insert(origin.chat_id.clone(), origin);
@@ -5570,7 +5585,18 @@ impl App {
                     if !already_sent {
                         let origin = self.contact_origins.get(&deal.chat_id);
                         let has_clid = origin.and_then(|o| o.ctwa_clid.as_deref()).is_some();
-                        if has_clid || self.settings.meta_send_unidentified {
+                        if !has_clid {
+                            self.backend.send(Command::LogMetaConversionPendingNoClick {
+                                chat_id: deal.chat_id.clone(),
+                                value_cents: deal.value_cents,
+                            });
+                        } else if self.settings.meta_require_confirmation {
+                            self.backend.send(Command::LogMetaConversionPendingConfirmation {
+                                chat_id: deal.chat_id.clone(),
+                                value_cents: deal.value_cents,
+                            });
+                            self.toast("Conversão aguardando sua confirmação no CRM");
+                        } else {
                             self.actions.push(Action::SendMetaConversion {
                                 chat_id: deal.chat_id.clone(),
                                 force: false,
@@ -6087,11 +6113,69 @@ impl App {
             Action::DeleteAdMapping(ad_id) => {
                 self.backend.send(Command::DeleteAdMapping(ad_id));
             }
-            Action::SendMetaConversion { chat_id, force: _ } => {
-                let deal = self.crm_deals.get(&chat_id);
-                let value = deal.map(|d| d.value_cents as f64 / 100.0);
+            Action::ConfirmMetaConversion(chat_id) => {
+                self.actions.push(Action::SendMetaConversion {
+                    chat_id,
+                    force: true,
+                });
+            }
+            Action::TestMetaCapiConnection => {
                 let token = self.settings.meta_access_token.trim().to_string();
                 let dataset = self.settings.meta_dataset_id.trim().to_string();
+                if token.is_empty() || dataset.is_empty() {
+                    self.toast("Configure o Token de Acesso e Dataset ID nas Configurações");
+                    self.meta_capi_test_result = Some(Err(
+                        "Token de Acesso ou Dataset ID não configurados".to_string(),
+                    ));
+                } else {
+                    self.meta_capi_test_result = None;
+                    let waba = if self.settings.meta_waba_id.trim().is_empty() {
+                        None
+                    } else {
+                        Some(self.settings.meta_waba_id.trim().to_string())
+                    };
+                    let test_code = if self.settings.meta_test_event_code.trim().is_empty() {
+                        None
+                    } else {
+                        Some(self.settings.meta_test_event_code.trim().to_string())
+                    };
+                    self.backend.send(Command::TestMetaCapiConnection {
+                        access_token: token,
+                        dataset_id: dataset,
+                        waba_id: waba,
+                        test_event_code: test_code,
+                    });
+                }
+            }
+            Action::SendMetaConversion { chat_id, force } => {
+                let deal = self.crm_deals.get(&chat_id);
+                let value_cents = deal.map(|d| d.value_cents).unwrap_or(0);
+                let value = Some(value_cents as f64 / 100.0);
+                let token = self.settings.meta_access_token.trim().to_string();
+                let dataset = self.settings.meta_dataset_id.trim().to_string();
+                let origin = self.contact_origins.get(&chat_id);
+                let has_clid = origin.and_then(|o| o.ctwa_clid.as_deref()).is_some();
+
+                // Strict Meta CAPI requirement: ctwa_clid is mandatory for business messaging
+                if !has_clid {
+                    self.backend.send(Command::LogMetaConversionPendingNoClick {
+                        chat_id: chat_id.clone(),
+                        value_cents,
+                    });
+                    self.toast("Lead sem clique rastreado (ctwa_clid ausente). Conversão não enviada.");
+                    return;
+                }
+
+                // Require manual confirmation if enabled
+                if self.settings.meta_require_confirmation && !force {
+                    self.backend.send(Command::LogMetaConversionPendingConfirmation {
+                        chat_id: chat_id.clone(),
+                        value_cents,
+                    });
+                    self.toast("Conversão aguardando sua confirmação no CRM");
+                    return;
+                }
+
                 if token.is_empty() || dataset.is_empty() {
                     self.toast(
                         "Configure o Token de Acesso e Dataset ID do Meta CAPI nas Configurações",
@@ -6107,6 +6191,16 @@ impl App {
                     } else {
                         self.settings.meta_event_name.trim().to_string()
                     };
+                    let waba = if self.settings.meta_waba_id.trim().is_empty() {
+                        None
+                    } else {
+                        Some(self.settings.meta_waba_id.trim().to_string())
+                    };
+                    let event_id = format!(
+                        "deal_{}_{}",
+                        chat_id,
+                        deal.map(|d| d.updated_at).unwrap_or(0)
+                    );
                     self.backend.send(Command::SendMetaConversion {
                         chat_id,
                         event_name,
@@ -6114,7 +6208,9 @@ impl App {
                         currency: Some("BRL".to_string()),
                         access_token: token,
                         dataset_id: dataset,
+                        waba_id: waba,
                         test_event_code: test_code,
+                        event_id: Some(event_id),
                     });
                 }
             }

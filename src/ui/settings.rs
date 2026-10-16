@@ -737,6 +737,28 @@ fn sections(app: &App) -> Vec<Section> {
     );
     meta_capi_section.row(
         Text {
+            shown: "ID da Conta do WhatsApp Business (WABA ID)".into(),
+            source: "WhatsApp Business Account ID (WABA ID)".into(),
+        },
+        Text {
+            shown: "Identificador numérico da conta do WhatsApp Business associada no Gerenciador de Negócios.".into(),
+            source: "Numeric WhatsApp Business Account ID associated in Business Manager.".into(),
+        },
+        move |ui, app| {
+            let response = ui.add(
+                egui::TextEdit::singleline(&mut app.settings.meta_waba_id)
+                    .font(theme::regular(13.0))
+                    .text_color(palette.text)
+                    .hint_text("ex: 109876543210987")
+                    .desired_width(220.0),
+            );
+            if response.changed() {
+                app.actions.push(Action::SettingsChanged);
+            }
+        },
+    );
+    meta_capi_section.row(
+        Text {
             shown: "Nome do Evento Padrão".into(),
             source: "Default Event Name".into(),
         },
@@ -782,14 +804,95 @@ fn sections(app: &App) -> Vec<Section> {
     );
     meta_capi_section.toggle(
         Text {
-            shown: "Enviar conversões de leads sem clique (Plano B)".into(),
-            source: "Send conversions for leads without click code (Plan B)".into(),
+            shown: "Exigir confirmação manual antes do disparo".into(),
+            source: "Require manual confirmation before dispatching".into(),
         },
         Text {
-            shown: "Quando o lead não possui ctwa_clid capturado, envia com hash de telefone e sinalizado como experimental.".into(),
-            source: "When lead lacks ctwa_clid, sends hashed phone marked as plan_b_experimental.".into(),
+            shown: "Quando ativado, fechamentos no CRM geram uma pendência no painel lateral para confirmação do operador.".into(),
+            source: "When enabled, deal closures create a pending confirmation in the CRM sidecar.".into(),
         },
-        |settings| &mut settings.meta_send_unidentified,
+        |settings| &mut settings.meta_require_confirmation,
+    );
+    meta_capi_section.row(
+        Text {
+            shown: "Testar Conexão com Meta (CAPI)".into(),
+            source: "Test Meta CAPI Connection".into(),
+        },
+        Text {
+            shown: "Valida as credenciais enviando um evento de teste e exibe a resposta real da API da Meta na tela.".into(),
+            source: "Validates credentials with a test event and displays real-time API response.".into(),
+        },
+        move |ui, app| {
+            ui.vertical(|ui| {
+                if ui
+                    .button(
+                        egui::RichText::new("⚡ Testar Conexão com Meta")
+                            .size(12.0)
+                            .strong(),
+                    )
+                    .clicked()
+                {
+                    app.actions.push(Action::TestMetaCapiConnection);
+                }
+
+                if let Some(ref res) = app.meta_capi_test_result {
+                    ui.add_space(4.0);
+                    match res {
+                        Ok(msg) => {
+                            Frame::new()
+                                .fill(palette.accent.gamma_multiply(0.12))
+                                .stroke(Stroke::new(1.0, palette.accent.gamma_multiply(0.40)))
+                                .corner_radius(CornerRadius::same(6))
+                                .inner_margin(Margin::same(6))
+                                .show(ui, |ui| {
+                                    ui.label(
+                                        egui::RichText::new(format!("✓ {}", msg))
+                                            .size(11.0)
+                                            .color(palette.accent),
+                                    );
+                                });
+                        }
+                        Err(err) => {
+                            Frame::new()
+                                .fill(palette.danger.gamma_multiply(0.12))
+                                .stroke(Stroke::new(1.0, palette.danger.gamma_multiply(0.40)))
+                                .corner_radius(CornerRadius::same(6))
+                                .inner_margin(Margin::same(6))
+                                .show(ui, |ui| {
+                                    ui.label(
+                                        egui::RichText::new(format!("✕ {}", err))
+                                            .size(11.0)
+                                            .color(palette.danger),
+                                    );
+                                });
+                        }
+                    }
+                }
+            });
+        },
+    );
+    meta_capi_section.row(
+        Text {
+            shown: "Diagnóstico de Metadados de Leads".into(),
+            source: "Lead Metadata Diagnostic".into(),
+        },
+        Text {
+            shown: "Inspeciona quais campos de metadados reais (ad_id, ctwa_clid, etc.) o WhatsApp entregou por lead sem expor conversas.".into(),
+            source: "Inspects which metadata fields WhatsApp delivered per lead without exposing conversations.".into(),
+        },
+        move |ui, app| {
+            if theme::soft_button(
+                ui,
+                &palette,
+                Some(Icon::Search),
+                "Inspecionar Metadados…",
+                false,
+            )
+            .clicked()
+            {
+                app.actions.push(Action::ShowDialog(Dialog::LeadAttributionDiagnostic));
+            }
+        },
     );
     meta_capi_section.row(
         Text {

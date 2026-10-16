@@ -251,7 +251,7 @@ struct AdStats {
     revenue_cents: i64,
 }
 
-fn render_attribution_tab(app: &mut App, ui: &mut egui::Ui, palette: &Palette) {
+pub fn render_attribution_tab(app: &mut App, ui: &mut egui::Ui, palette: &Palette) {
     let period_id = egui::Id::new("crm_attribution_period_filter");
     let mut period_days: u32 = ui.data_mut(|d| d.get_temp(period_id)).unwrap_or(30);
 
@@ -289,6 +289,21 @@ fn render_attribution_tab(app: &mut App, ui: &mut egui::Ui, palette: &Palette) {
             {
                 app.actions
                     .push(Action::ShowDialog(Dialog::TextAttributionRules));
+            }
+
+            ui.add_space(6.0);
+
+            if theme::soft_button(
+                ui,
+                palette,
+                Some(Icon::Search),
+                "Diagnóstico de Leads…",
+                false,
+            )
+            .clicked()
+            {
+                app.actions
+                    .push(Action::ShowDialog(Dialog::LeadAttributionDiagnostic));
             }
         });
     });

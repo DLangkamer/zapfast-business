@@ -65,10 +65,20 @@ pub fn show(app: &mut App, ctx: &egui::Context) {
                 Dialog::TextAttributionRules => {
                     640.0_f32.min((ui.ctx().content_rect().width() - 48.0).max(320.0))
                 }
+                Dialog::LeadAttributionDiagnostic => {
+                    760.0_f32.min((ui.ctx().content_rect().width() - 48.0).max(320.0))
+                }
             });
             ui.spacing_mut().item_spacing.y = 8.0;
             match dialog {
-                Dialog::Kanban => super::kanban::show(app, ui),
+                Dialog::Kanban => {
+                    app.dialog = None;
+                    app.page = crate::model::Page::Crm;
+                    app.crm_requested_view = Some("funnel".into());
+                }
+                Dialog::LeadAttributionDiagnostic => {
+                    super::lead_attribution_diagnostic::show(app, ui);
+                }
                 Dialog::CrmMetrics => super::crm_metrics::show(app, ui),
                 Dialog::CrmTasks => super::crm_tasks::show(app, ui),
                 Dialog::TextAttributionRules => super::text_attribution_rules::manager(app, ui),

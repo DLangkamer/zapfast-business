@@ -1479,6 +1479,8 @@ pub enum Dialog {
     },
     /// Manage Plan B text attribution rules for Click-to-WhatsApp.
     TextAttributionRules,
+    /// Diagnostic inspection for ad attribution fields on real leads.
+    LeadAttributionDiagnostic,
 }
 
 /// One recipient's receipts for one of our group messages.
@@ -2000,6 +2002,8 @@ pub enum Action {
         chat_id: ChatId,
         force: bool,
     },
+    ConfirmMetaConversion(ChatId),
+    TestMetaCapiConnection,
     ExportCrmBackup(std::path::PathBuf),
     ImportCrmBackup(std::path::PathBuf),
     PickExportCrmBackup,

@@ -14,6 +14,7 @@ pub mod image_preview;
 pub mod kanban;
 pub mod keys;
 pub mod labels;
+pub mod lead_attribution_diagnostic;
 pub mod lock;
 pub mod login;
 pub mod message_info;

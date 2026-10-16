@@ -403,6 +403,51 @@ fn render_lead_origin(app: &mut App, ui: &mut egui::Ui, palette: &Palette, chat_
                                     );
                                 });
                             });
+                    } else if conv.status == "pending_confirmation" {
+                        Frame::new()
+                            .fill(palette.warning.gamma_multiply(0.12))
+                            .stroke(Stroke::new(1.0, palette.warning.gamma_multiply(0.40)))
+                            .corner_radius(CornerRadius::same(6))
+                            .inner_margin(Margin::same(6))
+                            .show(ui, |ui| {
+                                ui.horizontal(|ui| {
+                                    theme::icon(ui, Icon::Clock, 13.0, palette.warning);
+                                    theme::text(
+                                        ui,
+                                        "Aguardando confirmação manual para envio ao Meta",
+                                        theme::medium(10.5),
+                                        palette.warning,
+                                    );
+                                });
+                                ui.add_space(4.0);
+                                if ui
+                                    .button(
+                                        egui::RichText::new("✓ Confirmar e Enviar Conversão")
+                                            .size(11.0)
+                                            .strong(),
+                                    )
+                                    .clicked()
+                                {
+                                    app.actions.push(Action::ConfirmMetaConversion(chat_id.to_string()));
+                                }
+                            });
+                    } else if conv.status == "pending_no_click" {
+                        Frame::new()
+                            .fill(palette.dim.gamma_multiply(0.12))
+                            .stroke(Stroke::new(1.0, palette.dim.gamma_multiply(0.30)))
+                            .corner_radius(CornerRadius::same(6))
+                            .inner_margin(Margin::same(6))
+                            .show(ui, |ui| {
+                                ui.horizontal(|ui| {
+                                    theme::icon(ui, Icon::CircleAlert, 13.0, palette.dim);
+                                    theme::text(
+                                        ui,
+                                        "Pendente: sem clique rastreado (ctwa_clid ausente). A API da Meta exige anúncio com clique.",
+                                        theme::regular(10.5),
+                                        palette.dim,
+                                    );
+                                });
+                            });
                     } else {
                         Frame::new()
                             .fill(palette.danger.gamma_multiply(0.12))
@@ -419,6 +464,7 @@ fn render_lead_origin(app: &mut App, ui: &mut egui::Ui, palette: &Palette, chat_
                                         palette.danger,
                                     );
                                 });
+                                ui.add_space(4.0);
                                 if ui.button(egui::RichText::new("Tentar Novamente").size(10.5)).clicked() {
                                     app.actions.push(Action::SendMetaConversion {
                                         chat_id: chat_id.to_string(),
@@ -821,7 +867,7 @@ fn render_header(app: &mut App, ui: &mut egui::Ui, palette: &Palette, chat: &Cha
 
         ui.add_space(4.0);
 
-        let right_buttons_w = 88.0;
+        let right_buttons_w = 110.0;
         let text_w = (ui.available_width() - right_buttons_w).max(40.0);
         ui.allocate_ui_with_layout(vec2(text_w, 34.0), Layout::top_down(Align::Min), |ui| {
             ui.add(
@@ -844,7 +890,6 @@ fn render_header(app: &mut App, ui: &mut egui::Ui, palette: &Palette, chat: &Cha
 
         // Right action buttons anchored at the right border without hit-test conflicts
         ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-            ui.add_space(14.0);
             if theme::icon_button(
                 ui,
                 Icon::ChevronRight,

@@ -341,3 +341,48 @@ A conexão com o computador caiu antes da limpeza final:
 8. CRM-008 (avatar) e CRM-009 (textos longos no Kanban).
 9. CRM-010, CRM-011, CRM-018 (backup/arquivos).
 10. CRM-020, CRM-021 e melhorias de interface.
+
+---
+
+# 7. Atualização v0.26.11 — Correções e Melhorias Concluídas
+
+## 7.1 Mensagens Agendadas (Persistência ao Iniciar / Reabrir)
+- **Problema**: Mensagens agendadas salvas no SQLite desapareciam da interface sempre que o ZapFast era fechado e reaberto, reaparecendo apenas caso uma mensagem vencesse durante a execução.
+- **Causa Raiz**: O backend só emitia `Event::ScheduledMessages` dentro de `pump_scheduled_messages()` quando havia alteração por disparo de mensagem, e o ciclo de inicialização (`load_state` / `emit_chats`) nunca emitia a lista inicial.
+- **Solução**: Chamada a `self.emit_scheduled()` adicionada em `load_state()` e `emit_chats()` em `src/backend/worker.rs`. Ao iniciar ou reconectar qualquer conta, todas as mensagens pendentes são imediatamente enviadas para `app.scheduled_messages` e exibidas.
+
+## 7.2 Unificação de Telas de Funil
+- Redirecionamento completo de `Dialog::Kanban` para a Central CRM (`Page::Crm` com visão `funnel`).
+- Fim da duplicidade entre a antiga janela popup de Kanban e o espaço de trabalho integrado da Central CRM.
+
+## 7.3 Central CRM: Atribuição & ROI Integrada
+- Adição da visualização **Atribuição & ROI** (`WorkspaceView::Attribution`) diretamente na barra lateral de navegação da Central CRM.
+- Visualização completa de métricas de investimento, receita atribuída, ROI/ROAS, leads por campanha e taxa de conversão.
+
+## 7.4 Funil Comercial: Filtros de Origem e Badges nos Cards
+- **Filtro de Origem**: Combo no topo do Funil para filtrar negócios por campanha específica, anúncio, ou leads não identificados (`__unidentified__`).
+- **Badges nos Cards**: Cada card de negócio no Funil exibe explicitamente `📣 [nome do anúncio / campanha]` em destaque ou `Não identificado`.
+
+## 7.5 Edição de Etapas no Funil da Central CRM
+- Botão "Editar etapa" nos controles de cabeçalho de cada coluna do funil.
+- Modal dedicado para renomear título da etapa e selecionar nova paleta de cor de destaque.
+
+## 7.6 Meta Conversions API (CAPI) para Business Messaging — Conformidade Estrita
+- **Autenticação Segura**: Envio via cabeçalho HTTP `Authorization: Bearer <token>`, eliminando tokens de URLs e logs.
+- **Trava Estrita de Disparo**: Conforme a especificação oficial da Meta para Business Messaging, conversões só são enviadas à API se houver `ctwa_clid` válido.
+- **Status Auditável `pending_no_click`**: Negócios fechados sem clique de anúncio rastreado não quebram nem disparam falsas conversões; são registrados localmente como `pending_no_click`.
+- **Identificador de Negócio (WABA)**: Inclusão obrigatória de `whatsapp_business_account_id` dentro do payload `user_data`.
+- **Deduplicação Determinística**: Geração de `event_id` no formato `deal_{chat_id}_{updated_at}` para evitar duplicações no Meta Events Manager.
+- **Confirmação Manual Opcional**: Configuração `meta_require_confirmation` permitindo que o operador valide a conversão antes do disparo automático.
+- **Ambiente de Teste**: Suporte a `test_event_code` e botão "Testar Conexão com Meta" nas Configurações com feedback em tempo real.
+
+## 7.7 Diagnóstico de Atribuição de Leads (Privacidade Absoluta)
+- Nova tela `Dialog::LeadAttributionDiagnostic` acessível pelas Configurações e pela aba Atribuição.
+- Permite inspecionar metadados de anúncio recebidos (`ad_id`, `ctwa_clid`, `source_type`, carimbos de data/hora, status CAPI).
+- Rigorosamente aderente ao `AGENTS.md`: nunca lê, armazena ou exibe texto de conversas.
+
+## 7.8 Polimento de Interface e Usabilidade
+- **Hit-Test em Monitores Ultrawide**: Correção da largura da área de título do cabeçalho da conversa (`conversation.rs`), impedindo que uma faixa invisível bloqueie cliques no botão da sidebar do CRM.
+- **Responsividade**: Cards de KPI métricos ajustam-se dinamicamente à largura da janela.
+- **Privacidade na Timeline**: Opção "Ocultar texto das mensagens" passa a vir ativada por padrão (`crm_timeline_mask_messages: true`).
+

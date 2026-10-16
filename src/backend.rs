@@ -806,6 +806,22 @@ pub enum Command {
         currency: Option<String>,
         access_token: String,
         dataset_id: String,
+        waba_id: Option<String>,
+        test_event_code: Option<String>,
+        event_id: Option<String>,
+    },
+    LogMetaConversionPendingNoClick {
+        chat_id: String,
+        value_cents: i64,
+    },
+    LogMetaConversionPendingConfirmation {
+        chat_id: String,
+        value_cents: i64,
+    },
+    TestMetaCapiConnection {
+        access_token: String,
+        dataset_id: String,
+        waba_id: Option<String>,
         test_event_code: Option<String>,
     },
     MetaConversionFinished {
@@ -858,6 +874,11 @@ pub enum Event {
         meta_conversions: Vec<crate::model::MetaConversionLog>,
     },
     MetaConversionUpdated(crate::model::MetaConversionLog),
+    MetaCapiTestResult {
+        success: bool,
+        message: String,
+        raw_response: String,
+    },
     ContactOriginUpdate(crate::model::ContactOrigin),
     ScheduledMessages(Vec<crate::archive::ScheduledMessage>),
     /// Unsent text stored for each chat, sent once at startup.

@@ -1,14 +1,17 @@
 //! Meta Conversions API (CAPI) client for Business Messaging.
 //!
 //! Submits conversion events (e.g. Purchase, Lead) directly to the Meta Conversions API
-//! using the Click-to-WhatsApp click identifier (`ctwa_clid`) or privacy-safe hashed phone numbers.
+//! using the Click-to-WhatsApp click identifier (`ctwa_clid`) and WhatsApp Business Account ID.
 //!
-//! For leads that arrived via Plan B (text rules without direct `ctwa_clid`), events are
-//! explicitly flagged as `plan_b_experimental` attribution, as required by Meta specifications.
+//! Conforming to official Meta Business Messaging CAPI documentation:
+//! - Conversions require `ctwa_clid` to attribute to Click-to-WhatsApp ads.
+//! - Access token is transmitted securely via `Authorization: Bearer` header, never in URL parameters.
+//! - Tokens are strictly protected and never written to logs.
+//! - Events include `event_id` to ensure server-side deduplication.
 
 use sha2::{Digest, Sha256};
 
-/// Normalizes a customer phone number into international E.164 digits and computes its SHA-256 hash.
+/// Normalizes a customer phone number into international digits and computes its SHA-256 hash.
 pub fn hash_phone(phone: &str) -> String {
     let digits: String = phone.chars().filter(|c| c.is_ascii_digit()).collect();
     let normalized = digits.trim_start_matches('+').to_lowercase();
@@ -32,17 +35,21 @@ pub struct MetaConversionOutcome {
 
 /// Dispatches a conversion event to Meta Conversions API via Graph API v21.0.
 ///
-/// Runs synchronously within the caller's thread; callers on the UI thread should spawn
-/// a thread or tokio task to prevent blocking the frame loop.
+/// Follows Meta Business Messaging CAPI specifications:
+/// - Rejects dispatch without `ctwa_clid`.
+/// - Never includes the access token in URL query parameters.
+/// - Never logs sensitive credentials.
 pub fn send_conversion(
     token: &str,
     dataset_id: &str,
+    waba_id: Option<&str>,
     test_event_code: Option<&str>,
     _chat_id: &str,
     phone: &str,
     value_cents: i64,
     ctwa_clid: Option<&str>,
     custom_event_name: Option<&str>,
+    event_id: Option<&str>,
 ) -> Result<MetaConversionOutcome, String> {
     let token = token.trim();
     if token.is_empty() {
@@ -56,6 +63,14 @@ pub fn send_conversion(
         );
     }
 
+    // Official Meta requirement: Conversions for Business Messaging require ctwa_clid
+    let clid = match ctwa_clid {
+        Some(c) if !c.trim().is_empty() => c.trim(),
+        _ => {
+            return Err("Envio recusado: Meta Conversions API para Business Messaging exige ctwa_clid (clique rastreado).".to_string());
+        }
+    };
+
     let event_name = custom_event_name
         .filter(|s| !s.is_empty())
         .unwrap_or("Purchase");
@@ -64,33 +79,24 @@ pub fn send_conversion(
     let hashed_ph = hash_phone(phone);
     let value_reais = value_cents as f64 / 100.0;
 
-    let has_clid = ctwa_clid.is_some_and(|c| !c.trim().is_empty());
-
     // Build user_data
     let mut user_data = serde_json::json!({
-        "ph": [hashed_ph]
+        "ph": [hashed_ph],
+        "ctwa_clid": clid,
     });
-    if let Some(clid) = ctwa_clid.filter(|c| !c.trim().is_empty()) {
-        user_data["ctwa_clid"] = serde_json::Value::String(clid.to_string());
+    if let Some(waba) = waba_id.filter(|w| !w.trim().is_empty()) {
+        user_data["whatsapp_business_account_id"] = serde_json::Value::String(waba.trim().to_string());
     }
 
     // Build custom_data
-    let mut custom_data = serde_json::json!({
+    let custom_data = serde_json::json!({
         "currency": "BRL",
         "value": value_reais,
+        "attribution_type": "direct_ctwa",
     });
-    if has_clid {
-        custom_data["attribution_type"] = serde_json::Value::String("direct_ctwa".to_string());
-    } else {
-        custom_data["attribution_type"] =
-            serde_json::Value::String("plan_b_experimental".to_string());
-        custom_data["note"] = serde_json::Value::String(
-            "Atribuição Plano B por regras de texto sem ctwa_clid".to_string(),
-        );
-    }
 
-    // Build event object
-    let event_obj = serde_json::json!({
+    // Build event object with deduplication event_id
+    let mut event_obj = serde_json::json!({
         "event_name": event_name,
         "event_time": now_unix,
         "action_source": "business_messaging",
@@ -98,6 +104,10 @@ pub fn send_conversion(
         "user_data": user_data,
         "custom_data": custom_data,
     });
+
+    if let Some(eid) = event_id.filter(|e| !e.trim().is_empty()) {
+        event_obj["event_id"] = serde_json::Value::String(eid.trim().to_string());
+    }
 
     let mut payload = serde_json::json!({
         "data": [event_obj],
@@ -108,25 +118,14 @@ pub fn send_conversion(
         payload["test_event_code"] = serde_json::Value::String(code.trim().to_string());
     }
 
-    let url = format!(
-        "https://graph.facebook.com/v21.0/{}/events?access_token={}",
-        dataset_id,
-        urlencoding_simple(token)
-    );
-
+    // Token is securely sent in the Authorization header, NEVER in the URL
+    let url = format!("https://graph.facebook.com/v21.0/{}/events", dataset_id);
     let payload_str = payload.to_string();
-
-    log::info!(
-        target: "zapfast::meta_capi",
-        "Sending Meta conversion event '{}' for contact (has_clid={}, value=R${:.2})",
-        event_name,
-        has_clid,
-        value_reais
-    );
 
     let agent = crate::proxy::agent();
     let response = agent
         .post(&url)
+        .header("Authorization", format!("Bearer {token}"))
         .header("Content-Type", "application/json")
         .send(payload_str.as_bytes());
 
@@ -139,17 +138,10 @@ pub fn send_conversion(
             if status.as_u16() >= 200 && status.as_u16() < 300 {
                 let events_received = parsed["events_received"].as_u64().unwrap_or(1) as usize;
                 let fbtrace_id = parsed["fbtrace_id"].as_str().map(ToString::to_string);
-                let message = if has_clid {
-                    format!(
-                        "Conversão '{}' (R$ {:.2}) enviada ao Meta com sucesso",
-                        event_name, value_reais
-                    )
-                } else {
-                    format!(
-                        "Conversão '{}' (R$ {:.2}) enviada ao Meta (Plano B - Experimental)",
-                        event_name, value_reais
-                    )
-                };
+                let message = format!(
+                    "Conversão '{}' (R$ {:.2}) enviada ao Meta com sucesso",
+                    event_name, value_reais
+                );
                 Ok(MetaConversionOutcome {
                     success: true,
                     event_name: event_name.to_string(),
@@ -161,10 +153,12 @@ pub fn send_conversion(
             } else {
                 let err_msg = parsed["error"]["message"]
                     .as_str()
-                    .unwrap_or("Erro desconhecido retornado pelo Meta");
+                    .unwrap_or("Erro retornado pelo Meta");
+                let err_type = parsed["error"]["type"].as_str().unwrap_or("");
+                let err_code = parsed["error"]["code"].as_i64().unwrap_or(0);
                 Err(format!(
-                    "Erro Meta Graph API (HTTP {}): {}",
-                    status, err_msg
+                    "Meta Graph API (HTTP {} / code {}): {} ({})",
+                    status, err_code, err_msg, err_type
                 ))
             }
         }
@@ -172,10 +166,98 @@ pub fn send_conversion(
     }
 }
 
-fn urlencoding_simple(s: &str) -> String {
-    s.replace('&', "%26")
-        .replace('+', "%2B")
-        .replace(' ', "%20")
+/// Sends a test event with the test_event_code to validate connectivity and display exact response.
+pub fn test_connection(
+    token: &str,
+    dataset_id: &str,
+    waba_id: Option<&str>,
+    test_event_code: Option<&str>,
+) -> Result<MetaConversionOutcome, String> {
+    let token = token.trim();
+    if token.is_empty() {
+        return Err("Token de Acesso do Meta não informado".to_string());
+    }
+    let dataset_id = dataset_id.trim();
+    if dataset_id.is_empty() {
+        return Err("Dataset / Pixel ID não informado".to_string());
+    }
+
+    let now_unix = crate::util::now();
+    let dummy_hash = hash_phone("5511999999999");
+    let mut user_data = serde_json::json!({
+        "ph": [dummy_hash],
+        "ctwa_clid": "TEST_CTWA_CLID_VALIDATION",
+    });
+    if let Some(waba) = waba_id.filter(|w| !w.trim().is_empty()) {
+        user_data["whatsapp_business_account_id"] = serde_json::Value::String(waba.trim().to_string());
+    }
+
+    let event_obj = serde_json::json!({
+        "event_name": "TestEvent",
+        "event_time": now_unix,
+        "action_source": "business_messaging",
+        "messaging_channel": "whatsapp",
+        "user_data": user_data,
+        "custom_data": {
+            "currency": "BRL",
+            "value": 1.00,
+            "test_mode": true
+        },
+        "event_id": format!("test_{}", now_unix),
+    });
+
+    let mut payload = serde_json::json!({
+        "data": [event_obj],
+    });
+
+    if let Some(code) = test_event_code.filter(|c| !c.trim().is_empty()) {
+        payload["test_event_code"] = serde_json::Value::String(code.trim().to_string());
+    }
+
+    let url = format!("https://graph.facebook.com/v21.0/{}/events", dataset_id);
+    let payload_str = payload.to_string();
+
+    let agent = crate::proxy::agent();
+    let response = agent
+        .post(&url)
+        .header("Authorization", format!("Bearer {token}"))
+        .header("Content-Type", "application/json")
+        .send(payload_str.as_bytes());
+
+    match response {
+        Ok(mut resp) => {
+            let status = resp.status();
+            let body_str = resp.body_mut().read_to_string().unwrap_or_default();
+            let parsed: serde_json::Value = serde_json::from_str(&body_str).unwrap_or_default();
+
+            if status.as_u16() >= 200 && status.as_u16() < 300 {
+                let events_received = parsed["events_received"].as_u64().unwrap_or(1) as usize;
+                let fbtrace_id = parsed["fbtrace_id"].as_str().map(ToString::to_string);
+                Ok(MetaConversionOutcome {
+                    success: true,
+                    event_name: "TestEvent".to_string(),
+                    events_received,
+                    fbtrace_id: fbtrace_id.clone(),
+                    message: format!(
+                        "Conexão com Meta validada! HTTP {} ({} evento recebido, trace: {})",
+                        status, events_received, fbtrace_id.as_deref().unwrap_or("n/a")
+                    ),
+                    raw_response: body_str,
+                })
+            } else {
+                let err_msg = parsed["error"]["message"]
+                    .as_str()
+                    .unwrap_or("Erro retornado pelo Meta");
+                let err_type = parsed["error"]["type"].as_str().unwrap_or("");
+                let err_code = parsed["error"]["code"].as_i64().unwrap_or(0);
+                Err(format!(
+                    "HTTP {} (Code {} / {}): {}\nResposta: {}",
+                    status, err_code, err_type, err_msg, body_str
+                ))
+            }
+        }
+        Err(err) => Err(format!("Falha na conexão com os servidores da Meta: {err}")),
+    }
 }
 
 #[cfg(test)]

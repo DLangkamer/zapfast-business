@@ -54,6 +54,7 @@ enum WorkspaceView {
     Calls,
     Agenda,
     Funnel,
+    Attribution,
 }
 
 #[derive(Clone)]
@@ -191,6 +192,7 @@ pub fn show(app: &mut App, ui: &mut egui::Ui) {
             "timeline" => view = WorkspaceView::Timeline,
             "calls" => view = WorkspaceView::Calls,
             "agenda" => view = WorkspaceView::Agenda,
+            "attribution" => view = WorkspaceView::Attribution,
             _ => view = WorkspaceView::Overview,
         }
     }
@@ -308,6 +310,14 @@ pub fn show(app: &mut App, ui: &mut egui::Ui) {
                             "Funil comercial",
                             &cp,
                         );
+                        nav_item(
+                            ui,
+                            &mut view,
+                            WorkspaceView::Attribution,
+                            Icon::ExternalLink,
+                            "Atribuição & ROI",
+                            &cp,
+                        );
                         ui.with_layout(Layout::bottom_up(Align::Min), |ui| {
                             if is_compact_sidebar {
                                 let back_btn = egui::Button::new(
@@ -392,6 +402,10 @@ pub fn show(app: &mut App, ui: &mut egui::Ui) {
                             WorkspaceView::Funnel => {
                                 ("Funil comercial", "Negócios e etapas do pipeline de vendas")
                             }
+                            WorkspaceView::Attribution => (
+                                "Atribuição de Anúncios & ROI",
+                                "Métricas de campanhas, criativos, ctwa_clid e retorno sobre investimento",
+                            ),
                         };
 
                         crm_header(ui, &cp, title, subtitle, |ui| match view {
@@ -411,6 +425,39 @@ pub fn show(app: &mut App, ui: &mut egui::Ui) {
                                 }
                             }
                             WorkspaceView::Calls => {}
+                            WorkspaceView::Attribution => {
+                                ui.horizontal(|ui| {
+                                    if theme::soft_button(
+                                        ui,
+                                        &app.palette,
+                                        Some(Icon::Settings),
+                                        "Regras de Texto (Plano B)…",
+                                        false,
+                                    )
+                                    .clicked()
+                                    {
+                                        app.actions.push(Action::ShowDialog(
+                                            crate::model::Dialog::TextAttributionRules,
+                                        ));
+                                    }
+
+                                    ui.add_space(6.0);
+
+                                    if theme::soft_button(
+                                        ui,
+                                        &app.palette,
+                                        Some(Icon::Search),
+                                        "Diagnóstico de Leads…",
+                                        false,
+                                    )
+                                    .clicked()
+                                    {
+                                        app.actions.push(Action::ShowDialog(
+                                            crate::model::Dialog::LeadAttributionDiagnostic,
+                                        ));
+                                    }
+                                });
+                            }
                             WorkspaceView::Funnel => {
                                 let add_stage_id = egui::Id::new("funnel_add_stage_open");
                                 let add_deal_id = egui::Id::new("funnel_add_deal_open");
@@ -477,6 +524,14 @@ pub fn show(app: &mut App, ui: &mut egui::Ui) {
                                     super::crm_tasks::show_agenda_workspace(app, ui)
                                 }
                                 WorkspaceView::Funnel => funnel(app, ui, &cp),
+                                WorkspaceView::Attribution => {
+                                    let palette = app.palette;
+                                    super::crm_metrics::render_attribution_tab(
+                                        app,
+                                        ui,
+                                        &palette,
+                                    );
+                                }
                             },
                         );
                     });
@@ -1451,7 +1506,26 @@ fn funnel(app: &mut App, ui: &mut egui::Ui, cp: &CrmPalette) {
     let mut sorted_cols = app.crm_columns.clone();
     sorted_cols.sort_by_key(|c| c.order);
 
-    // 2. Compute metrics across all deals matching search filter
+    // Extract unique campaigns/origins for the origin filter dropdown
+    let mut available_origins: Vec<String> = app
+        .contact_origins
+        .values()
+        .filter_map(|o| {
+            if !o.campaign_name.trim().is_empty() {
+                Some(o.campaign_name.clone())
+            } else if !o.ad_name.trim().is_empty() {
+                Some(o.ad_name.clone())
+            } else {
+                None
+            }
+        })
+        .collect();
+    available_origins.sort();
+    available_origins.dedup();
+
+    let origin_filter = app.crm_campaign_filter.clone();
+
+    // 2. Compute metrics across all deals matching search and origin filter
     let mut total_deals = 0;
     let mut total_value: i64 = 0;
     let mut closed_count = 0;
@@ -1463,14 +1537,27 @@ fn funnel(app: &mut App, ui: &mut egui::Ui, cp: &CrmPalette) {
             .chat(&deal.chat_id)
             .map(|c| app.chat_title(c))
             .unwrap_or_else(|| deal.chat_id.clone());
-        let is_match = search_lower.is_empty()
+        let is_search_match = search_lower.is_empty()
             || chat_name.to_lowercase().contains(&search_lower)
             || deal.notes.to_lowercase().contains(&search_lower)
             || deal
                 .tags
                 .iter()
                 .any(|t| t.to_lowercase().contains(&search_lower));
-        if is_match {
+
+        let origin = app.contact_origins.get(&deal.chat_id);
+        let is_origin_match = match origin_filter.as_deref() {
+            Some("__unidentified__") => origin.is_none() || origin.is_some_and(|o| !o.is_identified()),
+            Some(camp) => origin.is_some_and(|o| {
+                o.campaign_name == camp
+                    || o.ad_name == camp
+                    || o.title == camp
+                    || o.ad_id.as_deref() == Some(camp)
+            }),
+            None => true,
+        };
+
+        if is_search_match && is_origin_match {
             total_deals += 1;
             total_value += deal.value_cents;
             if deal.column_id == last_col_id
@@ -1489,8 +1576,21 @@ fn funnel(app: &mut App, ui: &mut egui::Ui, cp: &CrmPalette) {
         0
     };
 
-    // 3. Top KPI Metric Cards
-    let metric_width = ((ui.available_width() - 36.0) / 4.0).max(145.0);
+    // 3. Top KPI Metric Cards (responsive columns to never overflow on narrow screens)
+    let avail_metrics = ui.available_width();
+    let num_metric_cols = if avail_metrics < 380.0 {
+        1.0
+    } else if avail_metrics < 640.0 {
+        2.0
+    } else if avail_metrics < 920.0 {
+        3.0
+    } else {
+        4.0
+    };
+    let metric_width = ((avail_metrics - (num_metric_cols - 1.0) * 10.0) / num_metric_cols)
+        .floor()
+        .max(130.0);
+
     ui.horizontal_wrapped(|ui| {
         metric_str(
             ui,
@@ -1528,17 +1628,57 @@ fn funnel(app: &mut App, ui: &mut egui::Ui, cp: &CrmPalette) {
 
     ui.add_space(14.0);
 
-    // 4. Search and Filter Bar
+    // 4. Search and Origin Filter Bar
     ui.horizontal(|ui| {
         theme::icon(ui, Icon::Search, 16.0, cp.dim);
         ui.add(
             egui::TextEdit::singleline(&mut app.crm_search)
                 .hint_text("Buscar por contato, telefone, notas internas ou etiquetas...")
-                .desired_width((ui.available_width() - 60.0).max(200.0)),
+                .desired_width((ui.available_width() - 250.0).max(180.0)),
         );
         if !app.crm_search.is_empty() {
             if theme::icon_button(ui, Icon::X, 13.0, cp.dim, cp.text, "Limpar busca").clicked() {
                 app.crm_search.clear();
+            }
+        }
+
+        ui.add_space(8.0);
+        theme::icon(ui, Icon::Tag, 14.0, cp.accent);
+        let selected_camp_text = match app.crm_campaign_filter.as_deref() {
+            Some("__unidentified__") => "Origem: Não identificado",
+            Some(camp) => camp,
+            None => "Todas as origens",
+        };
+        egui::ComboBox::from_id_salt("funnel_origin_filter_combo")
+            .selected_text(selected_camp_text)
+            .show_ui(ui, |ui| {
+                if ui
+                    .selectable_label(app.crm_campaign_filter.is_none(), "Todas as origens")
+                    .clicked()
+                {
+                    app.crm_campaign_filter = None;
+                }
+                if ui
+                    .selectable_label(
+                        app.crm_campaign_filter.as_deref() == Some("__unidentified__"),
+                        "Não identificado",
+                    )
+                    .clicked()
+                {
+                    app.crm_campaign_filter = Some("__unidentified__".to_string());
+                }
+                for camp in &available_origins {
+                    let is_sel = app.crm_campaign_filter.as_deref() == Some(camp.as_str());
+                    if ui.selectable_label(is_sel, camp).clicked() {
+                        app.crm_campaign_filter = Some(camp.clone());
+                    }
+                }
+            });
+        if app.crm_campaign_filter.is_some() {
+            if theme::icon_button(ui, Icon::X, 13.0, cp.dim, cp.text, "Limpar filtro de origem")
+                .clicked()
+            {
+                app.crm_campaign_filter = None;
             }
         }
     });
@@ -1566,6 +1706,7 @@ fn funnel(app: &mut App, ui: &mut egui::Ui, cp: &CrmPalette) {
                         col_idx,
                         num_cols,
                         &search_lower,
+                        origin_filter.as_deref(),
                         &sorted_cols,
                     );
                 }
@@ -1639,6 +1780,37 @@ fn render_funnel_popovers(app: &mut App, ui: &mut egui::Ui, cp: &CrmPalette, col
             });
         if !is_open {
             ui.ctx().data_mut(|d| d.insert_temp(add_stage_id, false));
+        }
+    }
+
+    // Modal: Editar Etapa
+    let edit_stage_id = egui::Id::new("funnel_edit_stage_col");
+    let edit_col: Option<CrmColumn> = ui
+        .ctx()
+        .data(|d| d.get_temp(edit_stage_id))
+        .flatten();
+
+    if let Some(col_to_edit) = edit_col {
+        let mut is_open = true;
+        egui::Window::new("Editar Etapa do Funil")
+            .id(ui.id().with("crm-edit-stage-modal-win"))
+            .open(&mut is_open)
+            .collapsible(false)
+            .resizable(false)
+            .fixed_size(vec2(380.0, 240.0))
+            .anchor(egui::Align2::CENTER_CENTER, vec2(0.0, 0.0))
+            .frame(
+                Frame::new()
+                    .fill(cp.panel)
+                    .stroke(Stroke::new(1.0, cp.outline))
+                    .corner_radius(CornerRadius::same(12))
+                    .inner_margin(Margin::same(18)),
+            )
+            .show(ui.ctx(), |ui| {
+                render_edit_stage_modal(app, ui, cp, &edit_stage_id, col_to_edit);
+            });
+        if !is_open {
+            ui.ctx().data_mut(|d| d.insert_temp(edit_stage_id, None::<CrmColumn>));
         }
     }
 
@@ -2060,6 +2232,112 @@ fn render_stage_modal(app: &mut App, ui: &mut egui::Ui, cp: &CrmPalette, add_sta
     });
 }
 
+fn render_edit_stage_modal(
+    app: &mut App,
+    ui: &mut egui::Ui,
+    cp: &CrmPalette,
+    edit_stage_id: &egui::Id,
+    col: CrmColumn,
+) {
+    let name_id = egui::Id::new(("modal_edit_stage_name", &col.id));
+    let color_id = egui::Id::new(("modal_edit_stage_color", &col.id));
+
+    let mut name = ui
+        .ctx()
+        .data(|d| d.get_temp::<String>(name_id))
+        .unwrap_or_else(|| col.title.clone());
+    let mut color_hex = ui
+        .ctx()
+        .data(|d| d.get_temp::<String>(color_id))
+        .unwrap_or_else(|| col.color.clone());
+
+    ui.vertical(|ui| {
+        ui.label(
+            RichText::new("Nome da Etapa:")
+                .size(13.0)
+                .color(cp.secondary),
+        );
+        ui.add(
+            egui::TextEdit::singleline(&mut name)
+                .hint_text("ex: Proposta Enviada")
+                .desired_width(ui.available_width() - 8.0),
+        );
+
+        ui.add_space(8.0);
+        ui.label(
+            RichText::new("Cor de Destaque:")
+                .size(13.0)
+                .color(cp.secondary),
+        );
+        let colors = [
+            ("#00e699", "Neon"),
+            ("#3b82f6", "Azul"),
+            ("#eab308", "Amarelo"),
+            ("#8b5cf6", "Roxo"),
+            ("#ff4757", "Vermelho"),
+            ("#f97316", "Laranja"),
+            ("#6b7280", "Cinza"),
+        ];
+
+        ui.horizontal(|ui| {
+            for (hex, _lbl) in colors {
+                let is_active = color_hex == hex;
+                let c = parse_hex_color(hex).unwrap_or(cp.accent);
+                let (r, resp) = ui.allocate_exact_size(Vec2::splat(20.0), egui::Sense::click());
+                ui.painter()
+                    .circle_filled(r.center(), if is_active { 9.0 } else { 7.0 }, c);
+                if is_active {
+                    ui.painter()
+                        .circle_stroke(r.center(), 11.0, Stroke::new(1.5, cp.text));
+                }
+                if resp.clicked() {
+                    color_hex = hex.to_owned();
+                }
+            }
+        });
+
+        ui.add_space(16.0);
+        ui.horizontal(|ui| {
+            let cancel_btn = egui::Button::new(RichText::new("Cancelar").size(13.0).color(cp.text))
+                .fill(cp.surface_hover)
+                .stroke(Stroke::new(1.0, cp.outline))
+                .corner_radius(CornerRadius::same(6))
+                .min_size(vec2(90.0, 32.0));
+            if ui.add(cancel_btn).clicked() {
+                ui.ctx()
+                    .data_mut(|d| d.insert_temp(*edit_stage_id, None::<CrmColumn>));
+            }
+
+            ui.add_space(8.0);
+
+            let can_save = !name.trim().is_empty();
+            let save_btn = egui::Button::new(
+                RichText::new("Salvar Etapa")
+                    .size(13.0)
+                    .strong()
+                    .color(cp.on_accent),
+            )
+            .fill(cp.accent)
+            .corner_radius(CornerRadius::same(6))
+            .min_size(vec2(120.0, 32.0));
+
+            if ui.add_enabled(can_save, save_btn).clicked() {
+                let mut updated_col = col.clone();
+                updated_col.title = name.trim().to_owned();
+                updated_col.color = color_hex.clone();
+                app.actions.push(Action::SaveCrmColumn(updated_col));
+                ui.ctx()
+                    .data_mut(|d| d.insert_temp(*edit_stage_id, None::<CrmColumn>));
+            }
+        });
+    });
+
+    ui.ctx().data_mut(|d| {
+        d.insert_temp(name_id, name);
+        d.insert_temp(color_id, color_hex);
+    });
+}
+
 fn render_funnel_column(
     app: &mut App,
     ui: &mut egui::Ui,
@@ -2068,6 +2346,7 @@ fn render_funnel_column(
     col_idx: usize,
     total_cols: usize,
     search_lower: &str,
+    origin_filter: Option<&str>,
     sorted_cols: &[CrmColumn],
 ) {
     let col_color = parse_hex_color(&col.color).unwrap_or(cp.accent);
@@ -2085,7 +2364,22 @@ fn render_funnel_column(
             } else {
                 false
             };
-            col_match && {
+            let origin_match = match origin_filter {
+                Some("__unidentified__") => {
+                    let orig = app.contact_origins.get(&d.chat_id);
+                    orig.is_none() || orig.is_some_and(|o| !o.is_identified())
+                }
+                Some(camp) => {
+                    app.contact_origins.get(&d.chat_id).is_some_and(|o| {
+                        o.campaign_name == camp
+                            || o.ad_name == camp
+                            || o.title == camp
+                            || o.ad_id.as_deref() == Some(camp)
+                    })
+                }
+                None => true,
+            };
+            col_match && origin_match && {
                 if search_lower.is_empty() {
                     true
                 } else {
@@ -2178,6 +2472,23 @@ fn render_funnel_column(
                                     d.insert_temp(delete_stage_confirm_id, Some(col.id.clone()))
                                 });
                             }
+                        }
+
+                        // Edit stage button
+                        if theme::icon_button(
+                            ui,
+                            Icon::Settings,
+                            12.0,
+                            cp.dim,
+                            cp.accent,
+                            "Editar etapa",
+                        )
+                        .clicked()
+                        {
+                            let edit_stage_id = egui::Id::new("funnel_edit_stage_col");
+                            ui.ctx().data_mut(|d| {
+                                d.insert_temp(edit_stage_id, Some(col.clone()))
+                            });
                         }
 
                         // Reorder right
@@ -2296,6 +2607,26 @@ fn render_deal_card(
                     );
                 });
 
+                ui.add_space(3.0);
+
+                // Origin badge (anúncio/campanha ou Não identificado)
+                let origin = app.contact_origins.get(&deal.chat_id);
+                let (badge_text, badge_color) = if let Some(orig) = origin {
+                    if orig.is_identified() {
+                        (format!("📣 {}", orig.display_label()), cp.accent)
+                    } else {
+                        ("Não identificado".to_string(), cp.dim)
+                    }
+                } else {
+                    ("Não identificado".to_string(), cp.dim)
+                };
+                Frame::new()
+                    .fill(badge_color.gamma_multiply(0.12))
+                    .corner_radius(CornerRadius::same(4))
+                    .inner_margin(Margin::symmetric(6, 2))
+                    .show(ui, |ui| {
+                        ui.label(RichText::new(badge_text).size(10.5).color(badge_color));
+                    });
                 ui.add_space(4.0);
 
                 // Value row
