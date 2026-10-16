@@ -1128,6 +1128,144 @@ impl Contact {
     }
 }
 
+/// Marketing / Click-to-WhatsApp (CTWA) origin of a contact.
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ContactOrigin {
+    pub chat_id: String,
+    pub ad_id: Option<String>,
+    pub ad_name: String,
+    pub campaign_name: String,
+    pub adset_name: String,
+    pub title: String,
+    pub body: String,
+    pub source_type: String,
+    pub source_url: String,
+    #[serde(skip)]
+    pub thumbnail: Option<Vec<u8>>,
+    pub thumbnail_path: Option<String>,
+    pub ctwa_clid: Option<String>,
+    pub first_contact_at: i64,
+    pub created_at: i64,
+}
+
+impl ContactOrigin {
+    /// Friendly summary label of the lead origin (e.g. ad name, title, or "Não identificado").
+    pub fn display_label(&self) -> &str {
+        if !self.ad_name.is_empty() {
+            &self.ad_name
+        } else if !self.title.is_empty() {
+            &self.title
+        } else if !self.campaign_name.is_empty() {
+            &self.campaign_name
+        } else if self.ad_id.is_some() {
+            "Anúncio identificado"
+        } else {
+            "Não identificado"
+        }
+    }
+
+    /// Campaign name or fallback.
+    pub fn display_campaign(&self) -> &str {
+        if !self.campaign_name.is_empty() {
+            &self.campaign_name
+        } else {
+            "Não identificado"
+        }
+    }
+
+    /// Whether this origin represents an identified ad campaign.
+    pub fn is_identified(&self) -> bool {
+        self.ad_id.is_some() || !self.ad_name.is_empty() || !self.campaign_name.is_empty()
+    }
+}
+
+/// Mapping between Meta Ad ID and its business names (Campaign, Ad Set, Ad).
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct AdCampaignMapping {
+    pub ad_id: String,
+    pub ad_name: String,
+    pub campaign_name: String,
+    pub adset_name: String,
+    pub source: String,
+    pub updated_at: i64,
+}
+
+/// Discovery audit log entry for captured Click-to-WhatsApp payloads.
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct CtwaDiscoveryLog {
+    pub id: i64,
+    pub chat_masked: String,
+    pub is_first_contact: bool,
+    pub ad_id: Option<String>,
+    pub title: Option<String>,
+    pub body: Option<String>,
+    pub media_type: Option<String>,
+    pub source_url: Option<String>,
+    pub source_type: Option<String>,
+    pub has_thumbnail: bool,
+    pub thumbnail_bytes: usize,
+    pub ctwa_clid: Option<String>,
+    pub ref_param: Option<String>,
+    pub utm_source: Option<String>,
+    pub utm_campaign: Option<String>,
+    pub conversion_source: Option<String>,
+    pub has_signals: bool,
+    pub has_payload: bool,
+    pub greeting_message: Option<String>,
+    pub created_at: i64,
+}
+
+/// Rule for Plan B text matching: associates incoming lead with an ad/campaign based on message text patterns.
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct TextAttributionRule {
+    pub id: i64,
+    pub ad_id: Option<String>,
+    pub ad_name: String,
+    pub campaign_name: String,
+    pub adset_name: String,
+    pub pattern: String,
+    pub match_type: String, // "contains", "exact", "starts_with"
+    pub case_sensitive: bool,
+    pub active: bool,
+    pub created_at: i64,
+}
+
+impl TextAttributionRule {
+    /// Tests whether the provided message text matches this rule.
+    pub fn matches(&self, message_text: &str) -> bool {
+        if !self.active || self.pattern.trim().is_empty() {
+            return false;
+        }
+        let (haystack, needle) = if self.case_sensitive {
+            (message_text.to_string(), self.pattern.clone())
+        } else {
+            (message_text.to_lowercase(), self.pattern.to_lowercase())
+        };
+
+        match self.match_type.as_str() {
+            "exact" => haystack.trim() == needle.trim(),
+            "starts_with" => haystack.trim_start().starts_with(needle.trim_start()),
+            _ => haystack.contains(&needle), // default "contains"
+        }
+    }
+}
+
+/// Audit log for Meta Conversions API (CAPI for Messaging) submissions.
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct MetaConversionLog {
+    pub id: i64,
+    pub chat_id: String,
+    pub event_name: String,
+    pub value_cents: i64,
+    pub currency: String,
+    pub ctwa_clid: Option<String>,
+    pub phone_masked: String,
+    pub status: String, // "sent", "error", "skipped"
+    pub response_json: String,
+    pub error_message: String,
+    pub sent_at: i64,
+}
+
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Page {
     Chats,
@@ -1339,6 +1477,8 @@ pub enum Dialog {
         chat: ChatId,
         message: String,
     },
+    /// Manage Plan B text attribution rules for Click-to-WhatsApp.
+    TextAttributionRules,
 }
 
 /// One recipient's receipts for one of our group messages.
@@ -1852,6 +1992,14 @@ pub enum Action {
     DeleteCrmTask(String),
     SaveCrmProject(CrmProject),
     DeleteCrmProject(String),
+    SaveTextAttributionRule(TextAttributionRule),
+    DeleteTextAttributionRule(i64),
+    SaveAdMapping(AdCampaignMapping),
+    DeleteAdMapping(String),
+    SendMetaConversion {
+        chat_id: ChatId,
+        force: bool,
+    },
     ExportCrmBackup(std::path::PathBuf),
     ImportCrmBackup(std::path::PathBuf),
     PickExportCrmBackup,
@@ -2462,5 +2610,30 @@ mod tests {
         assert!(live(false).live_location_over(1_000, 1_001 + LIVE_LOCATION_LIMIT));
         assert!(live(true).live_location_over(1_000, 1_000));
         assert!(!Content::text("hi").live_location_over(0, i64::MAX));
+    }
+
+    #[test]
+    fn contact_origin_display_label_and_fallback_semantics() {
+        let mut origin = ContactOrigin::default();
+        assert_eq!(origin.display_label(), "Não identificado");
+        assert_eq!(origin.display_campaign(), "Não identificado");
+        assert!(!origin.is_identified());
+
+        // 1. With Ad ID only
+        origin.ad_id = Some("12021598472".to_string());
+        assert_eq!(origin.display_label(), "Anúncio identificado");
+        assert!(origin.is_identified());
+
+        // 2. With creative Title
+        origin.title = "Camiseta Black Friday".to_string();
+        assert_eq!(origin.display_label(), "Camiseta Black Friday");
+
+        // 3. With Ad Name mapped
+        origin.ad_name = "AD01 - Vídeo Depoimento".to_string();
+        assert_eq!(origin.display_label(), "AD01 - Vídeo Depoimento");
+
+        // 4. Campaign display
+        origin.campaign_name = "Campanha Vendas Q4".to_string();
+        assert_eq!(origin.display_campaign(), "Campanha Vendas Q4");
     }
 }

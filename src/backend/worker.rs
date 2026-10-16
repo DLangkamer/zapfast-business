@@ -35,6 +35,7 @@ use whatsapp_rust::wacore_binary::jid::JidExt;
 use whatsapp_rust::waproto::buffa::Message as _;
 use whatsapp_rust::{AppStateResyncMode, MediaRetryResult, MediaReuploadRequest, WAPatchName};
 
+mod ad_attribution;
 mod bot_replies;
 mod channel_pictures;
 mod contact_names;
@@ -1216,12 +1217,38 @@ impl Worker {
             log::warn!("could not list crm projects: {err}");
             Vec::new()
         });
+        let contact_origins = self.archive.list_contact_origins().unwrap_or_else(|err| {
+            log::warn!("could not list contact origins: {err}");
+            std::collections::HashMap::new()
+        });
+        let ad_mappings = self.archive.list_ad_mappings().unwrap_or_else(|err| {
+            log::warn!("could not list ad mappings: {err}");
+            Vec::new()
+        });
+        let text_attribution_rules =
+            self.archive
+                .list_text_attribution_rules()
+                .unwrap_or_else(|err| {
+                    log::warn!("could not list text attribution rules: {err}");
+                    Vec::new()
+                });
+        let meta_conversions = self
+            .archive
+            .list_meta_conversions(500)
+            .unwrap_or_else(|err| {
+                log::warn!("could not list meta conversions: {err}");
+                Vec::new()
+            });
         self.emit(Event::CrmData {
             columns,
             deals,
             followups,
             tasks,
             projects,
+            contact_origins,
+            ad_mappings,
+            text_attribution_rules,
+            meta_conversions,
         });
     }
 
@@ -3254,6 +3281,16 @@ impl Worker {
         };
         let push_name = (!info.push_name.is_empty()).then(|| info.push_name.clone());
         let base = message.get_base_message();
+        if !from_me {
+            if let Some(origin) = ad_attribution::handle_incoming_ctwa(
+                &self.archive,
+                base,
+                &chat,
+                info.timestamp.timestamp(),
+            ) {
+                self.emit(Event::ContactOriginUpdate(origin));
+            }
+        }
         if let Some(expiration) = base.get_ephemeral_expiration()
             && self
                 .archive
@@ -6010,6 +6047,121 @@ impl Worker {
                 send_at,
             } => {
                 self.execute_bulk_dispatch(targets, content, interval_seconds, send_at);
+            }
+            Command::SaveTextAttributionRule(rule) => {
+                if let Err(e) = self.archive.save_text_attribution_rule(&rule) {
+                    self.emit(Event::Error(format!("Erro ao salvar regra: {e}")));
+                }
+                self.emit_crm_data();
+            }
+            Command::DeleteTextAttributionRule(id) => {
+                if let Err(e) = self.archive.delete_text_attribution_rule(id) {
+                    self.emit(Event::Error(format!("Erro ao excluir regra: {e}")));
+                }
+                self.emit_crm_data();
+            }
+            Command::SaveAdMapping(mapping) => {
+                if let Err(e) = self.archive.save_ad_mapping(&mapping) {
+                    self.emit(Event::Error(format!(
+                        "Erro ao salvar mapeamento de anúncio: {e}"
+                    )));
+                }
+                self.emit_crm_data();
+            }
+            Command::DeleteAdMapping(ad_id) => {
+                if let Err(e) = self.archive.delete_ad_mapping(&ad_id) {
+                    self.emit(Event::Error(format!(
+                        "Erro ao excluir mapeamento de anúncio: {e}"
+                    )));
+                }
+                self.emit_crm_data();
+            }
+            Command::SendMetaConversion {
+                chat_id,
+                event_name,
+                value,
+                currency,
+                access_token,
+                dataset_id,
+                test_event_code,
+            } => {
+                let origin = self.archive.contact_origin(&chat_id).ok().flatten();
+                let ctwa_clid = origin.as_ref().and_then(|o| o.ctwa_clid.clone());
+                let phone = crate::model::phone_of(&chat_id)
+                    .unwrap_or(&chat_id)
+                    .to_string();
+                let value_cents = value.map(|v| (v * 100.0).round() as i64).unwrap_or(0);
+                let commands = self.commands.clone();
+                let chat_clone = chat_id.clone();
+                let event_name_clone = event_name.clone();
+                let currency_str = currency.unwrap_or_else(|| "BRL".to_string());
+
+                tokio::task::spawn_blocking(move || {
+                    let now = crate::util::now();
+                    let result = super::meta_capi::send_conversion(
+                        &access_token,
+                        &dataset_id,
+                        test_event_code.as_deref(),
+                        &chat_clone,
+                        &phone,
+                        value_cents,
+                        ctwa_clid.as_deref(),
+                        Some(&event_name_clone),
+                    );
+
+                    let (log, err_msg) = match result {
+                        Ok(resp) => {
+                            let log = crate::model::MetaConversionLog {
+                                id: 0,
+                                chat_id: chat_clone,
+                                event_name: event_name_clone,
+                                value_cents,
+                                currency: currency_str,
+                                ctwa_clid,
+                                phone_masked: ad_attribution::redact_chat_id(&phone),
+                                status: "sent".to_string(),
+                                response_json: resp.raw_response,
+                                error_message: String::new(),
+                                sent_at: now,
+                            };
+                            (log, None)
+                        }
+                        Err(err) => {
+                            let log = crate::model::MetaConversionLog {
+                                id: 0,
+                                chat_id: chat_clone,
+                                event_name: event_name_clone,
+                                value_cents,
+                                currency: currency_str,
+                                ctwa_clid,
+                                phone_masked: ad_attribution::redact_chat_id(&phone),
+                                status: "error".to_string(),
+                                response_json: String::new(),
+                                error_message: err.clone(),
+                                sent_at: now,
+                            };
+                            (log, Some(err))
+                        }
+                    };
+                    let _ = commands.send(Command::MetaConversionFinished {
+                        log,
+                        error: err_msg,
+                    });
+                });
+            }
+            Command::MetaConversionFinished { log, error } => {
+                let _ = self.archive.log_meta_conversion(&log);
+                let ev_name = log.event_name.clone();
+                self.emit(Event::MetaConversionUpdated(log));
+                if let Some(err) = error {
+                    self.emit(Event::Error(format!(
+                        "Falha ao enviar conversão Meta: {err}"
+                    )));
+                } else {
+                    self.emit(Event::Info(format!(
+                        "Conversão '{ev_name}' enviada à Meta com sucesso!"
+                    )));
+                }
             }
             Command::BusinessStateRecovered(success) => {
                 if success {

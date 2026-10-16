@@ -11,8 +11,9 @@ use std::time::Instant;
 use crate::app::{ComposerMention, Conversation};
 use crate::backend::{Backend, LinkStatus, Waker};
 use crate::model::{
-    AccountId, BroadcastList, Chat, ChatFilter, ChatId, Contact, CrmColumn, CrmDeal, CrmFollowup,
-    CrmProject, CrmTask, Label, Message, PollDraft, QuickReply, StickerPack,
+    AccountId, AdCampaignMapping, BroadcastList, Chat, ChatFilter, ChatId, Contact, ContactOrigin,
+    CrmColumn, CrmDeal, CrmFollowup, CrmProject, CrmTask, Label, Message, MetaConversionLog,
+    PollDraft, QuickReply, StickerPack, TextAttributionRule,
 };
 use crate::paths::{AccountDirs, AppDirs};
 use crate::settings::AccountSettings;
@@ -77,6 +78,12 @@ pub struct Account {
     pub crm_followups: Vec<CrmFollowup>,
     pub crm_tasks: Vec<CrmTask>,
     pub crm_projects: Vec<CrmProject>,
+    pub contact_origins: HashMap<String, ContactOrigin>,
+    pub ad_mappings: Vec<AdCampaignMapping>,
+    pub text_attribution_rules: Vec<TextAttributionRule>,
+    pub meta_conversions: HashMap<String, MetaConversionLog>,
+    pub crm_campaign_filter: Option<String>,
+    pub crm_ad_filter: Option<String>,
     pub crm_search: String,
     pub crm_notified_followups: HashSet<String>,
     pub quick_replies: Vec<QuickReply>,
@@ -161,6 +168,12 @@ impl Account {
             crm_followups: Vec::new(),
             crm_tasks: Vec::new(),
             crm_projects: Vec::new(),
+            contact_origins: HashMap::new(),
+            ad_mappings: Vec::new(),
+            text_attribution_rules: Vec::new(),
+            meta_conversions: HashMap::new(),
+            crm_campaign_filter: None,
+            crm_ad_filter: None,
             crm_search: String::new(),
             crm_notified_followups: HashSet::new(),
             quick_replies: Vec::new(),

@@ -363,6 +363,10 @@ pub enum NotificationSound {
     Custom(std::path::PathBuf),
 }
 
+fn default_meta_event_name() -> String {
+    "Purchase".to_string()
+}
+
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct Settings {
@@ -398,6 +402,24 @@ pub struct Settings {
     /// Whether message bodies are masked in CRM Timeline for privacy.
     #[serde(default)]
     pub crm_timeline_mask_messages: bool,
+    /// Whether Meta Conversions API (CAPI for Messaging) integration is active.
+    #[serde(default)]
+    pub meta_capi_enabled: bool,
+    /// Meta Graph API access token.
+    #[serde(default)]
+    pub meta_access_token: String,
+    /// Meta Dataset ID / Pixel ID / WABA ID for event ingestion.
+    #[serde(default)]
+    pub meta_dataset_id: String,
+    /// Default conversion event name (e.g. "Purchase", "Lead").
+    #[serde(default = "default_meta_event_name")]
+    pub meta_event_name: String,
+    /// Optional test event code from Meta Events Manager.
+    #[serde(default)]
+    pub meta_test_event_code: String,
+    /// Whether to send conversions for leads whose origin is "Não identificado".
+    #[serde(default)]
+    pub meta_send_unidentified: bool,
     /// Whether Enter sends. Off, Enter adds a line and Ctrl+Enter (Cmd+Enter
     /// on macOS) sends.
     pub enter_sends: bool,
@@ -497,6 +519,12 @@ impl Default for Settings {
             search_pane_width: 380.0,
             crm_sidecar_width: 340.0,
             crm_timeline_mask_messages: false,
+            meta_capi_enabled: false,
+            meta_access_token: String::new(),
+            meta_dataset_id: String::new(),
+            meta_event_name: "Purchase".to_string(),
+            meta_test_event_code: String::new(),
+            meta_send_unidentified: false,
             enter_sends: true,
             send_read_receipts: true,
             mark_read_on_open: true,

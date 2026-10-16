@@ -109,7 +109,25 @@ fn render_top_bar(app: &mut App, ui: &mut egui::Ui, palette: &Palette) {
                         .any(|t| t.to_lowercase().contains(&search_lower))
                     || d.notes.to_lowercase().contains(&search_lower)
             };
-            if is_match {
+            let matches_origin = {
+                let origin = app.contact_origins.get(&d.chat_id);
+                let camp_ok = match &app.crm_campaign_filter {
+                    None => true,
+                    Some(camp) if camp == "__unidentified__" => {
+                        origin.is_none_or(|o| !o.is_identified() || o.display_campaign().is_empty())
+                    }
+                    Some(camp) => origin.is_some_and(|o| o.display_campaign() == *camp),
+                };
+                let ad_ok = match &app.crm_ad_filter {
+                    None => true,
+                    Some(ad) if ad == "__unidentified__" => {
+                        origin.is_none_or(|o| !o.is_identified())
+                    }
+                    Some(ad) => origin.is_some_and(|o| o.display_label() == *ad),
+                };
+                camp_ok && ad_ok
+            };
+            if is_match && matches_origin {
                 count += 1;
                 val += d.value_cents;
             }
@@ -352,16 +370,135 @@ fn render_top_bar(app: &mut App, ui: &mut egui::Ui, palette: &Palette) {
 fn render_search_bar(app: &mut App, ui: &mut egui::Ui, palette: &Palette) {
     ui.horizontal(|ui| {
         theme::icon(ui, Icon::Search, 15.0, palette.dim);
+        let search_w = (ui.available_width() - 440.0).max(180.0);
         ui.add(
             egui::TextEdit::singleline(&mut app.crm_search)
-                .hint_text("Buscar por contato, telefone, nota interna ou etiqueta...")
-                .desired_width(ui.available_width() - 40.0),
+                .hint_text("Buscar por contato, telefone, nota ou etiqueta...")
+                .desired_width(search_w),
         );
         if !app.crm_search.is_empty() {
             if theme::icon_button(ui, Icon::X, 12.0, palette.dim, palette.text, "Limpar busca")
                 .clicked()
             {
                 app.crm_search.clear();
+            }
+        }
+
+        ui.add_space(8.0);
+        ui.separator();
+        ui.add_space(4.0);
+
+        // Collect unique campaigns
+        let mut campaigns: Vec<String> = app
+            .contact_origins
+            .values()
+            .filter(|o| o.is_identified() && o.display_campaign() != "Não identificado")
+            .map(|o| o.display_campaign().to_string())
+            .chain(
+                app.ad_mappings
+                    .iter()
+                    .filter(|m| !m.campaign_name.is_empty())
+                    .map(|m| m.campaign_name.clone()),
+            )
+            .collect();
+        campaigns.sort();
+        campaigns.dedup();
+
+        // 1. Campaign filter dropdown
+        let current_camp_label = match &app.crm_campaign_filter {
+            None => "Todas as Campanhas".to_string(),
+            Some(c) if c == "__unidentified__" => "Não identificado".to_string(),
+            Some(c) => c.clone(),
+        };
+
+        egui::ComboBox::from_id_salt("kanban_campaign_filter")
+            .selected_text(format!("Campanha: {}", current_camp_label))
+            .width(180.0)
+            .show_ui(ui, |ui| {
+                if ui
+                    .selectable_label(app.crm_campaign_filter.is_none(), "Todas as Campanhas")
+                    .clicked()
+                {
+                    app.crm_campaign_filter = None;
+                }
+                if ui
+                    .selectable_label(
+                        app.crm_campaign_filter.as_deref() == Some("__unidentified__"),
+                        "Não identificado",
+                    )
+                    .clicked()
+                {
+                    app.crm_campaign_filter = Some("__unidentified__".to_string());
+                }
+                if !campaigns.is_empty() {
+                    ui.separator();
+                    for camp in &campaigns {
+                        let selected = app.crm_campaign_filter.as_deref() == Some(camp.as_str());
+                        if ui.selectable_label(selected, camp).clicked() {
+                            app.crm_campaign_filter = Some(camp.clone());
+                        }
+                    }
+                }
+            });
+
+        // Collect unique ads
+        let mut ads: Vec<String> = app
+            .contact_origins
+            .values()
+            .filter(|o| o.is_identified() && o.display_label() != "Não identificado")
+            .map(|o| o.display_label().to_string())
+            .chain(
+                app.ad_mappings
+                    .iter()
+                    .filter(|m| !m.ad_name.is_empty())
+                    .map(|m| m.ad_name.clone()),
+            )
+            .collect();
+        ads.sort();
+        ads.dedup();
+
+        // 2. Ad filter dropdown
+        let current_ad_label = match &app.crm_ad_filter {
+            None => "Todos os Anúncios".to_string(),
+            Some(a) if a == "__unidentified__" => "Não identificado".to_string(),
+            Some(a) => a.clone(),
+        };
+
+        egui::ComboBox::from_id_salt("kanban_ad_filter")
+            .selected_text(format!("Anúncio: {}", current_ad_label))
+            .width(170.0)
+            .show_ui(ui, |ui| {
+                if ui
+                    .selectable_label(app.crm_ad_filter.is_none(), "Todos os Anúncios")
+                    .clicked()
+                {
+                    app.crm_ad_filter = None;
+                }
+                if ui
+                    .selectable_label(
+                        app.crm_ad_filter.as_deref() == Some("__unidentified__"),
+                        "Não identificado",
+                    )
+                    .clicked()
+                {
+                    app.crm_ad_filter = Some("__unidentified__".to_string());
+                }
+                if !ads.is_empty() {
+                    ui.separator();
+                    for ad in &ads {
+                        let selected = app.crm_ad_filter.as_deref() == Some(ad.as_str());
+                        if ui.selectable_label(selected, ad).clicked() {
+                            app.crm_ad_filter = Some(ad.clone());
+                        }
+                    }
+                }
+            });
+
+        // Clear filters button if any filter is active
+        if app.crm_campaign_filter.is_some() || app.crm_ad_filter.is_some() {
+            if ui.small_button("✕ Limpar filtros").clicked() {
+                app.crm_campaign_filter = None;
+                app.crm_ad_filter = None;
             }
         }
     });
@@ -893,7 +1030,25 @@ fn render_column(
             let matches_name = contact_name.contains(search);
             let matches_tags = d.tags.iter().any(|t| t.to_lowercase().contains(search));
             let matches_notes = d.notes.to_lowercase().contains(search);
-            matches_name || matches_tags || matches_notes
+            let text_match = matches_name || matches_tags || matches_notes;
+            if !text_match {
+                return false;
+            }
+
+            let origin = app.contact_origins.get(&d.chat_id);
+            let camp_ok = match &app.crm_campaign_filter {
+                None => true,
+                Some(camp) if camp == "__unidentified__" => {
+                    origin.is_none_or(|o| !o.is_identified() || o.display_campaign().is_empty())
+                }
+                Some(camp) => origin.is_some_and(|o| o.display_campaign() == *camp),
+            };
+            let ad_ok = match &app.crm_ad_filter {
+                None => true,
+                Some(ad) if ad == "__unidentified__" => origin.is_none_or(|o| !o.is_identified()),
+                Some(ad) => origin.is_some_and(|o| o.display_label() == *ad),
+            };
+            camp_ok && ad_ok
         })
         .cloned()
         .collect();
@@ -1100,6 +1255,69 @@ fn render_deal_card(app: &mut App, ui: &mut egui::Ui, palette: &Palette, deal: &
                         });
                     }
                 });
+
+                // Origin badge (Ad or "Não identificado")
+                let origin = app.contact_origins.get(&deal.chat_id);
+                let (badge_text, is_identified): (&str, bool) = if let Some(orig) = origin {
+                    if orig.is_identified() {
+                        (orig.display_label(), true)
+                    } else {
+                        ("Não identificado", false)
+                    }
+                } else {
+                    ("Não identificado", false)
+                };
+
+                ui.add_space(3.0);
+                Frame::new()
+                    .fill(if is_identified { palette.surface_hover } else { palette.surface })
+                    .stroke(Stroke::new(
+                        1.0,
+                        if is_identified {
+                            palette.accent.gamma_multiply(0.4)
+                        } else {
+                            palette.surface_hover
+                        },
+                    ))
+                    .corner_radius(CornerRadius::same(4))
+                    .inner_margin(Margin::symmetric(6, 2))
+                    .show(ui, |ui| {
+                        ui.horizontal(|ui| {
+                            let icon = if is_identified { Icon::ExternalLink } else { Icon::Tag };
+                            let icon_color = if is_identified { palette.accent } else { palette.dim };
+                            let (r, _) = ui.allocate_exact_size(Vec2::splat(11.0), egui::Sense::hover());
+                            icon.image(icon_color, 11.0).paint_at(ui, r);
+
+                            let text_color = if is_identified { palette.text } else { palette.dim };
+                            let disp = if is_identified {
+                                format!("📣 {}", badge_text)
+                            } else {
+                                badge_text.to_string()
+                            };
+                            let truncated = if disp.chars().count() > 26 {
+                                format!("{}…", disp.chars().take(26).collect::<String>())
+                            } else {
+                                disp
+                            };
+                            theme::text(ui, &truncated, theme::medium(10.5), text_color);
+                        });
+                    })
+                    .response
+                    .on_hover_text(if let Some(orig) = origin {
+                        if orig.is_identified() {
+                            format!(
+                                "Origem do Lead:\n• Anúncio: {}\n• Campanha: {}\n• Conjunto: {}\n• 1º Contato: {}",
+                                orig.display_label(),
+                                orig.display_campaign(),
+                                if orig.adset_name.is_empty() { "—" } else { &orig.adset_name },
+                                super::crm_sidecar::format_timestamp(orig.first_contact_at),
+                            )
+                        } else {
+                            "Origem: Não identificado (contato direto ou orgânico)".to_string()
+                        }
+                    } else {
+                        "Origem: Não identificado (sem parâmetros de anúncio rastreados)".to_string()
+                    });
 
                 // Deal Value
                 if deal.value_cents > 0 {

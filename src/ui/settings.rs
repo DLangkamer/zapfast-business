@@ -674,6 +674,147 @@ fn sections(app: &App) -> Vec<Section> {
         },
     );
 
+    let mut meta_capi_section = Section::new(Text {
+        shown: "Meta Ads & Conversions API".into(),
+        source: "Meta Ads & Conversions API".into(),
+    });
+    meta_capi_section.toggle(
+        Text {
+            shown: "Ativar envio de conversões ao Meta CAPI".into(),
+            source: "Enable Meta CAPI conversions".into(),
+        },
+        Text {
+            shown: "Envia eventos de compra e leads diretamente para o Meta Events Manager quando vendas forem fechadas no CRM.".into(),
+            source: "Sends purchase/lead events directly to Meta Events Manager when deals close in CRM.".into(),
+        },
+        |settings| &mut settings.meta_capi_enabled,
+    );
+    meta_capi_section.row(
+        Text {
+            shown: "Token de Acesso do Meta".into(),
+            source: "Meta Access Token".into(),
+        },
+        Text {
+            shown: "Token permanente de usuário do sistema com permissão de Gerenciamento de Mensagens de Negócios.".into(),
+            source: "Permanent System User Token with whatsapp_business_messaging permissions.".into(),
+        },
+        move |ui, app| {
+            let response = ui.add(
+                egui::TextEdit::singleline(&mut app.settings.meta_access_token)
+                    .password(true)
+                    .font(theme::regular(13.0))
+                    .text_color(palette.text)
+                    .desired_width(220.0),
+            );
+            if response.changed() {
+                app.actions.push(Action::SettingsChanged);
+            }
+        },
+    );
+    meta_capi_section.row(
+        Text {
+            shown: "Dataset / Pixel ID do Meta".into(),
+            source: "Meta Dataset / Pixel ID".into(),
+        },
+        Text {
+            shown:
+                "Identificador numérico do Conjunto de Dados configurado no Gerenciador de Eventos."
+                    .into(),
+            source: "Numeric Dataset ID configured in Meta Events Manager.".into(),
+        },
+        move |ui, app| {
+            let response = ui.add(
+                egui::TextEdit::singleline(&mut app.settings.meta_dataset_id)
+                    .font(theme::regular(13.0))
+                    .text_color(palette.text)
+                    .hint_text("ex: 123456789012345")
+                    .desired_width(220.0),
+            );
+            if response.changed() {
+                app.actions.push(Action::SettingsChanged);
+            }
+        },
+    );
+    meta_capi_section.row(
+        Text {
+            shown: "Nome do Evento Padrão".into(),
+            source: "Default Event Name".into(),
+        },
+        Text {
+            shown: "Nome do evento no Meta (padrão: Purchase, ou Lead / Contact).".into(),
+            source: "Standard event name in Meta (default: Purchase, or Lead).".into(),
+        },
+        move |ui, app| {
+            let response = ui.add(
+                egui::TextEdit::singleline(&mut app.settings.meta_event_name)
+                    .font(theme::regular(13.0))
+                    .text_color(palette.text)
+                    .hint_text("Purchase")
+                    .desired_width(220.0),
+            );
+            if response.changed() {
+                app.actions.push(Action::SettingsChanged);
+            }
+        },
+    );
+    meta_capi_section.row(
+        Text {
+            shown: "Código de Teste do Gerenciador (Opcional)".into(),
+            source: "Test Event Code (Optional)".into(),
+        },
+        Text {
+            shown: "Código exibido na aba Testar Eventos do Meta para validação em tempo real."
+                .into(),
+            source: "Code displayed in the Test Events tab for live validation.".into(),
+        },
+        move |ui, app| {
+            let response = ui.add(
+                egui::TextEdit::singleline(&mut app.settings.meta_test_event_code)
+                    .font(theme::regular(13.0))
+                    .text_color(palette.text)
+                    .hint_text("ex: TEST12345")
+                    .desired_width(220.0),
+            );
+            if response.changed() {
+                app.actions.push(Action::SettingsChanged);
+            }
+        },
+    );
+    meta_capi_section.toggle(
+        Text {
+            shown: "Enviar conversões de leads sem clique (Plano B)".into(),
+            source: "Send conversions for leads without click code (Plan B)".into(),
+        },
+        Text {
+            shown: "Quando o lead não possui ctwa_clid capturado, envia com hash de telefone e sinalizado como experimental.".into(),
+            source: "When lead lacks ctwa_clid, sends hashed phone marked as plan_b_experimental.".into(),
+        },
+        |settings| &mut settings.meta_send_unidentified,
+    );
+    meta_capi_section.row(
+        Text {
+            shown: "Regras de Texto de Anúncios (Plano B)".into(),
+            source: "Ad Text Rules (Plan B)".into(),
+        },
+        Text {
+            shown: "Configure padrões de saudação para atribuir anúncios automaticamente quando os metadados do Meta estiverem ausentes.".into(),
+            source: "Configure greeting patterns to automatically attribute ads when Meta metadata is missing.".into(),
+        },
+        move |ui, app| {
+            if theme::soft_button(
+                ui,
+                &palette,
+                Some(Icon::Settings),
+                "Gerenciar Regras…",
+                false,
+            )
+            .clicked()
+            {
+                app.actions.push(Action::ShowDialog(Dialog::TextAttributionRules));
+            }
+        },
+    );
+
     let mut account_section = Section::new(translated(locale, "Account"));
     account_section.block(
         vec![
@@ -782,6 +923,7 @@ fn sections(app: &App) -> Vec<Section> {
         notifications,
         privacy,
         system,
+        meta_capi_section,
         account_section,
         files,
         about_section,

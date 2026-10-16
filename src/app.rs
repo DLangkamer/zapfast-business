@@ -2473,12 +2473,29 @@ impl App {
                 followups,
                 tasks,
                 projects,
+                contact_origins,
+                ad_mappings,
+                text_attribution_rules,
+                meta_conversions,
             } => {
                 self.crm_columns = columns;
                 self.crm_deals = deals.into_iter().map(|d| (d.chat_id.clone(), d)).collect();
                 self.crm_followups = followups;
                 self.crm_tasks = tasks;
                 self.crm_projects = projects;
+                self.contact_origins = contact_origins;
+                self.ad_mappings = ad_mappings;
+                self.text_attribution_rules = text_attribution_rules;
+                self.meta_conversions = meta_conversions
+                    .into_iter()
+                    .map(|c| (c.chat_id.clone(), c))
+                    .collect();
+            }
+            Event::MetaConversionUpdated(log) => {
+                self.meta_conversions.insert(log.chat_id.clone(), log);
+            }
+            Event::ContactOriginUpdate(origin) => {
+                self.contact_origins.insert(origin.chat_id.clone(), origin);
             }
             Event::ScheduledMessages(messages) => {
                 self.scheduled_messages = messages;
@@ -5527,8 +5544,40 @@ impl App {
                 self.backend.send(Command::DeleteCrmColumn(id));
             }
             Action::SaveCrmDeal(deal) => {
+                let prev_deal = self.crm_deals.get(&deal.chat_id).cloned();
+                let column = self.crm_columns.iter().find(|c| c.id == deal.column_id);
+                let is_won_column = column.is_some_and(|c| {
+                    let t = c.title.to_lowercase();
+                    t.contains("ganho")
+                        || t.contains("fechado")
+                        || t.contains("won")
+                        || t.contains("venda")
+                        || t.contains("pago")
+                        || c.id == "won"
+                });
+
+                let moved_to_won = is_won_column
+                    && prev_deal.as_ref().map(|p| p.column_id.as_str()) != Some(&deal.column_id);
+
                 self.crm_deals.insert(deal.chat_id.clone(), deal.clone());
-                self.backend.send(Command::SaveCrmDeal(deal));
+                self.backend.send(Command::SaveCrmDeal(deal.clone()));
+
+                if moved_to_won && self.settings.meta_capi_enabled {
+                    let already_sent = self
+                        .meta_conversions
+                        .get(&deal.chat_id)
+                        .is_some_and(|c| c.status == "sent");
+                    if !already_sent {
+                        let origin = self.contact_origins.get(&deal.chat_id);
+                        let has_clid = origin.and_then(|o| o.ctwa_clid.as_deref()).is_some();
+                        if has_clid || self.settings.meta_send_unidentified {
+                            self.actions.push(Action::SendMetaConversion {
+                                chat_id: deal.chat_id.clone(),
+                                force: false,
+                            });
+                        }
+                    }
+                }
             }
             Action::DeleteCrmDeal(chat_id) => {
                 self.crm_deals.remove(&chat_id);
@@ -6026,6 +6075,49 @@ impl App {
                 }
             }
             Action::RemoveAccount(id) => self.remove_account(id),
+            Action::SaveTextAttributionRule(rule) => {
+                self.backend.send(Command::SaveTextAttributionRule(rule));
+            }
+            Action::DeleteTextAttributionRule(id) => {
+                self.backend.send(Command::DeleteTextAttributionRule(id));
+            }
+            Action::SaveAdMapping(mapping) => {
+                self.backend.send(Command::SaveAdMapping(mapping));
+            }
+            Action::DeleteAdMapping(ad_id) => {
+                self.backend.send(Command::DeleteAdMapping(ad_id));
+            }
+            Action::SendMetaConversion { chat_id, force: _ } => {
+                let deal = self.crm_deals.get(&chat_id);
+                let value = deal.map(|d| d.value_cents as f64 / 100.0);
+                let token = self.settings.meta_access_token.trim().to_string();
+                let dataset = self.settings.meta_dataset_id.trim().to_string();
+                if token.is_empty() || dataset.is_empty() {
+                    self.toast(
+                        "Configure o Token de Acesso e Dataset ID do Meta CAPI nas Configurações",
+                    );
+                } else {
+                    let test_code = if self.settings.meta_test_event_code.trim().is_empty() {
+                        None
+                    } else {
+                        Some(self.settings.meta_test_event_code.trim().to_string())
+                    };
+                    let event_name = if self.settings.meta_event_name.trim().is_empty() {
+                        "Purchase".to_string()
+                    } else {
+                        self.settings.meta_event_name.trim().to_string()
+                    };
+                    self.backend.send(Command::SendMetaConversion {
+                        chat_id,
+                        event_name,
+                        value,
+                        currency: Some("BRL".to_string()),
+                        access_token: token,
+                        dataset_id: dataset,
+                        test_event_code: test_code,
+                    });
+                }
+            }
         }
     }
 
@@ -7429,6 +7521,10 @@ mod tests {
                     client_email: String::new(),
                     chat_ids: Vec::new(),
                 }],
+                contact_origins: std::collections::HashMap::new(),
+                ad_mappings: Vec::new(),
+                text_attribution_rules: Vec::new(),
+                meta_conversions: Vec::new(),
             })
             .unwrap();
         events

@@ -62,12 +62,16 @@ pub fn show(app: &mut App, ctx: &egui::Context) {
                     720.0_f32.min((ui.ctx().content_rect().width() - 48.0).max(320.0))
                 }
                 Dialog::Kanban => (ui.ctx().content_rect().width() - 32.0).clamp(320.0, 1400.0),
+                Dialog::TextAttributionRules => {
+                    640.0_f32.min((ui.ctx().content_rect().width() - 48.0).max(320.0))
+                }
             });
             ui.spacing_mut().item_spacing.y = 8.0;
             match dialog {
                 Dialog::Kanban => super::kanban::show(app, ui),
                 Dialog::CrmMetrics => super::crm_metrics::show(app, ui),
                 Dialog::CrmTasks => super::crm_tasks::show(app, ui),
+                Dialog::TextAttributionRules => super::text_attribution_rules::manager(app, ui),
                 Dialog::CreatePoll(chat) => super::polls::create(app, ui, &chat),
                 Dialog::ScheduleMessage(chat) => schedule_message(app, ui, &chat),
                 Dialog::ScheduleVoice(chat) => schedule_voice(app, ui, &chat),

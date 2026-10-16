@@ -16,6 +16,7 @@ mod favorites;
 pub use favorites::Favorite;
 mod labels;
 pub use labels::{DEFAULT_COLOR, LABEL_LIMIT, NAME_LIMIT};
+mod ad_attribution;
 mod broadcast_lists;
 mod crm;
 mod polls;
@@ -386,6 +387,7 @@ impl Archive {
         connection.execute_batch(scheduled::SCHEMA)?;
         connection.execute_batch(stickers::SCHEMA)?;
         connection.execute_batch(favorites::SCHEMA)?;
+        connection.execute_batch(ad_attribution::SCHEMA)?;
         for (table, column, definition) in MIGRATIONS {
             let exists = connection
                 .prepare(&format!("PRAGMA table_info({table})"))?
@@ -1543,6 +1545,15 @@ impl Archive {
                 })
             })
             .optional()
+    }
+
+    /// Returns whether any message has been stored for this chat.
+    pub fn chat_has_messages(&self, chat: &str) -> Result<bool> {
+        self.connection.query_row(
+            "SELECT EXISTS(SELECT 1 FROM messages WHERE chat = ?1)",
+            params![chat],
+            |row| row.get(0),
+        )
     }
 
     /// Returns the earliest message for phone-history requests.

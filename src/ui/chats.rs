@@ -1,6 +1,8 @@
 //! The left panel: the chat list.
 
-use egui::{Align, Frame, Key, Layout, Margin, Rect, Sense, Vec2, pos2, vec2};
+use egui::{
+    Align, CornerRadius, Frame, Key, Layout, Margin, Rect, Sense, Stroke, Vec2, pos2, vec2,
+};
 
 use crate::app::App;
 use crate::backend::LinkStatus;
@@ -1198,6 +1200,8 @@ fn row(app: &mut App, ui: &mut egui::Ui, chat: &Chat) -> egui::Response {
         let mut x = left;
         // Keep the Business labels visible on the chat that wears them.
         x = labels::paint_chat_labels(app, ui, chat, &palette, x, badge_right, line_y);
+        // Paint discrete origin badge
+        x = paint_chat_origin(app, ui, chat, &palette, x, badge_right, line_y);
         let typing = app.typing_in(&chat.id);
         let preview_color = if unread && !muted {
             palette.secondary
@@ -1357,6 +1361,109 @@ const FULL_PREVIEW_CHARS: usize = 2_000;
 /// Where a chat row's latest-message preview sits, for hover tests.
 pub fn preview_id(chat: &str) -> egui::Id {
     egui::Id::new(("chat-preview", chat))
+}
+
+fn paint_chat_origin(
+    app: &App,
+    ui: &egui::Ui,
+    chat: &Chat,
+    palette: &Palette,
+    x: f32,
+    right: f32,
+    y: f32,
+) -> f32 {
+    let origin = app.contact_origins.get(&chat.id);
+    let (label, is_identified): (&str, bool) = if let Some(orig) = origin {
+        if orig.is_identified() {
+            (orig.display_label(), true)
+        } else {
+            ("Não identificado", false)
+        }
+    } else if app.crm_deals.contains_key(&chat.id) {
+        // Chat is tracked in the commercial pipeline
+        ("Não identificado", false)
+    } else {
+        return x;
+    };
+
+    let available = (right - x).max(0.0);
+    if available < 35.0 {
+        return x;
+    }
+
+    let text = if is_identified {
+        format!("📣 {label}")
+    } else {
+        "Não identificado".to_string()
+    };
+
+    let text_color = if is_identified {
+        palette.accent
+    } else {
+        palette.dim
+    };
+
+    let galley = ui
+        .painter()
+        .layout_no_wrap(text, theme::medium(10.0), text_color);
+    let width = (galley.size().x + 12.0).min((available * 0.55).min(115.0));
+    if x + width > right {
+        return x;
+    }
+
+    let rect = Rect::from_min_size(pos2(x, y + 1.0), vec2(width, 16.0));
+    let resp = ui.interact(
+        rect,
+        ui.id().with(("origin_badge", &chat.id)),
+        Sense::hover(),
+    );
+    let fill = if resp.hovered() {
+        palette.surface_active
+    } else {
+        palette.surface_hover
+    };
+    ui.painter().rect_filled(rect, CornerRadius::same(5), fill);
+    ui.painter().rect_stroke(
+        rect,
+        CornerRadius::same(5),
+        Stroke::new(
+            1.0,
+            if is_identified {
+                palette.accent.gamma_multiply(0.4)
+            } else {
+                palette.outline
+            },
+        ),
+        egui::StrokeKind::Inside,
+    );
+
+    let text_pos = pos2(rect.left() + 5.0, rect.top() + 2.0);
+    ui.painter()
+        .with_clip_rect(rect.shrink2(vec2(2.0, 0.0)))
+        .galley(text_pos, galley, text_color);
+
+    let tooltip = if let Some(orig) = origin {
+        if orig.is_identified() {
+            format!(
+                "Origem do Lead:\n• Anúncio: {}\n• Campanha: {}\n• Conjunto: {}\n• 1º Contato: {}",
+                orig.display_label(),
+                orig.display_campaign(),
+                if orig.adset_name.is_empty() {
+                    "—"
+                } else {
+                    &orig.adset_name
+                },
+                super::crm_sidecar::format_timestamp(orig.first_contact_at),
+            )
+        } else {
+            "Origem: Não identificado (contato direto ou orgânico)".to_string()
+        }
+    } else {
+        "Origem: Não identificado (contato no funil sem anúncio rastreado)".to_string()
+    };
+    resp.on_hover_text(tooltip);
+
+    rect.right() + 4.0
 }
 
 /// Shows the whole last message while the pointer rests on a chat row's

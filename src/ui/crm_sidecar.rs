@@ -206,6 +206,9 @@ fn render_content(app: &mut App, ui: &mut egui::Ui, chat: &Chat) {
                 .show(ui, |ui| {
                     ui.spacing_mut().item_spacing.y = 12.0;
 
+                    // Origem do Lead (Click to WhatsApp / Anúncio Meta)
+                    render_lead_origin(app, ui, &palette, &chat.id);
+
                     // 1. Etapa do Funil (Pipeline Stage)
                     render_stage_selector(app, ui, &palette, &chat.id, existing_deal.as_ref());
 
@@ -226,6 +229,224 @@ fn render_content(app: &mut App, ui: &mut egui::Ui, chat: &Chat) {
 
                     ui.add_space(20.0);
                 });
+        });
+}
+
+fn render_lead_origin(app: &mut App, ui: &mut egui::Ui, palette: &Palette, chat_id: &str) {
+    let origin = app.contact_origins.get(chat_id).cloned();
+    let is_identified = origin.as_ref().is_some_and(|o| o.is_identified());
+
+    Frame::new()
+        .fill(palette.surface)
+        .stroke(Stroke::new(1.0, palette.outline))
+        .corner_radius(CornerRadius::same(8))
+        .inner_margin(Margin::same(10))
+        .show(ui, |ui| {
+            ui.vertical(|ui| {
+                // Header row
+                ui.horizontal(|ui| {
+                    theme::icon(ui, Icon::Tag, 14.0, palette.accent);
+                    theme::text(ui, "Origem do Lead", theme::bold(13.0), palette.text);
+
+                    ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
+                        if is_identified {
+                            Frame::new()
+                                .fill(palette.accent.gamma_multiply(0.15))
+                                .stroke(Stroke::new(1.0, palette.accent.gamma_multiply(0.4)))
+                                .corner_radius(CornerRadius::same(4))
+                                .inner_margin(Margin::symmetric(6, 2))
+                                .show(ui, |ui| {
+                                    theme::text(ui, "Meta Ads / CTWA", theme::medium(10.5), palette.accent);
+                                });
+                        } else {
+                            Frame::new()
+                                .fill(palette.surface_hover)
+                                .stroke(Stroke::new(1.0, palette.outline))
+                                .corner_radius(CornerRadius::same(4))
+                                .inner_margin(Margin::symmetric(6, 2))
+                                .show(ui, |ui| {
+                                    theme::text(ui, "Não identificado", theme::medium(10.5), palette.dim);
+                                });
+                        }
+                    });
+                });
+
+                ui.add_space(6.0);
+
+                if let Some(origin) = origin.filter(|o| o.is_identified()) {
+                    // Identified ad lead
+                    ui.horizontal(|ui| {
+                        // Thumbnail or Icon tile
+                        let thumb_bytes = origin.thumbnail.as_deref().unwrap_or(&[]);
+                        let (rect, _) = ui.allocate_exact_size(vec2(52.0, 52.0), egui::Sense::hover());
+                        let mut painted_thumb = false;
+
+                        if !thumb_bytes.is_empty() {
+                            if let Ok(dyn_img) = image::load_from_memory(thumb_bytes) {
+                                let rgba = dyn_img.to_rgba8();
+                                let size = [rgba.width() as usize, rgba.height() as usize];
+                                let color_img = egui::ColorImage::from_rgba_unmultiplied(size, rgba.as_raw());
+                                let tex_id = format!("lead_origin_thumb_{}", chat_id);
+                                let handle = ui.ctx().load_texture(tex_id, color_img, egui::TextureOptions::LINEAR);
+                                egui::Image::from_texture((handle.id(), vec2(52.0, 52.0)))
+                                    .corner_radius(6.0)
+                                    .paint_at(ui, rect);
+                                painted_thumb = true;
+                            }
+                        }
+
+                        if !painted_thumb {
+                            ui.painter().rect_filled(rect, CornerRadius::same(6), palette.surface_hover);
+                            ui.painter().rect_stroke(rect, CornerRadius::same(6), Stroke::new(1.0, palette.outline), egui::StrokeKind::Inside);
+                            let icon_rect = Rect::from_center_size(rect.center(), Vec2::splat(20.0));
+                            Icon::ExternalLink.image(palette.dim, 20.0).paint_at(ui, icon_rect);
+                        }
+
+                        ui.add_space(6.0);
+
+                        // Creative info
+                        ui.vertical(|ui| {
+                            let label = origin.display_label();
+                            theme::text(ui, label, theme::bold(12.5), palette.text)
+                                .on_hover_text(label);
+
+                            let camp = origin.display_campaign();
+                            if !camp.is_empty() && camp != label {
+                                ui.add_space(1.0);
+                                theme::text(ui, format!("Campanha: {}", camp), theme::medium(11.0), palette.secondary)
+                                    .on_hover_text(camp);
+                            }
+
+                            if !origin.adset_name.is_empty() {
+                                ui.add_space(1.0);
+                                theme::text(ui, format!("Conjunto: {}", origin.adset_name), theme::regular(10.5), palette.dim)
+                                    .on_hover_text(&origin.adset_name);
+                            }
+                        });
+                    });
+
+                    ui.add_space(6.0);
+                    ui.separator();
+                    ui.add_space(4.0);
+
+                    // Details metadata
+                    ui.horizontal(|ui| {
+                        theme::icon(ui, Icon::Clock, 12.0, palette.dim);
+                        let first_contact_str = format_timestamp(origin.first_contact_at);
+                        theme::text(ui, format!("1º contato: {}", first_contact_str), theme::regular(11.0), palette.secondary);
+                    });
+
+                    if let Some(clid) = &origin.ctwa_clid {
+                        ui.add_space(2.0);
+                        ui.horizontal(|ui| {
+                            theme::icon(ui, Icon::CheckCheck, 12.0, palette.accent);
+                            let clid_snippet = if clid.len() > 16 {
+                                format!("{}...", &clid[..16])
+                            } else {
+                                clid.clone()
+                            };
+                            theme::text(ui, format!("ID do clique: {}", clid_snippet), theme::regular(11.0), palette.dim)
+                                .on_hover_text(format!("Código de rastreamento do clique do Meta (ctwa_clid):\n{}", clid));
+                        });
+                    }
+
+                    if !origin.source_url.is_empty() {
+                        ui.add_space(4.0);
+                        if ui.link("🔗 Abrir anúncio no navegador").clicked() {
+                            ui.ctx().open_url(egui::OpenUrl::new_tab(&origin.source_url));
+                        }
+                    }
+
+                    if let Some(ad_id) = &origin.ad_id {
+                        ui.add_space(2.0);
+                        ui.horizontal(|ui| {
+                            theme::text(ui, format!("ID do anúncio: {}", ad_id), theme::regular(10.5), palette.dim);
+                        });
+                    }
+                } else {
+                    // Unidentified state
+                    ui.horizontal(|ui| {
+                        theme::icon(ui, Icon::Info, 14.0, palette.dim);
+                        theme::text(ui, "Não identificado", theme::semibold(12.5), palette.dim);
+                    });
+                    ui.add_space(2.0);
+                    theme::text(
+                        ui,
+                        "Este contato iniciou a conversa organicamente ou sem parâmetros de anúncio do WhatsApp.",
+                        theme::regular(11.0),
+                        palette.dim,
+                    );
+                }
+
+                // Meta Conversions API Status & Manual Dispatch
+                ui.add_space(8.0);
+                ui.separator();
+                ui.add_space(4.0);
+
+                let conversion = app.meta_conversions.get(chat_id).cloned();
+                if let Some(conv) = conversion {
+                    if conv.status == "sent" {
+                        Frame::new()
+                            .fill(palette.accent.gamma_multiply(0.12))
+                            .stroke(Stroke::new(1.0, palette.accent.gamma_multiply(0.35)))
+                            .corner_radius(CornerRadius::same(6))
+                            .inner_margin(Margin::same(6))
+                            .show(ui, |ui| {
+                                ui.horizontal(|ui| {
+                                    theme::icon(ui, Icon::Check, 13.0, palette.accent);
+                                    let val_reais = conv.value_cents as f64 / 100.0;
+                                    theme::text(
+                                        ui,
+                                        format!("Conversão Meta enviada • R$ {:.2}", val_reais),
+                                        theme::medium(11.0),
+                                        palette.accent,
+                                    );
+                                });
+                            });
+                    } else {
+                        Frame::new()
+                            .fill(palette.danger.gamma_multiply(0.12))
+                            .stroke(Stroke::new(1.0, palette.danger.gamma_multiply(0.35)))
+                            .corner_radius(CornerRadius::same(6))
+                            .inner_margin(Margin::same(6))
+                            .show(ui, |ui| {
+                                ui.horizontal(|ui| {
+                                    theme::icon(ui, Icon::CircleAlert, 13.0, palette.danger);
+                                    theme::text(
+                                        ui,
+                                        format!("Falha Meta CAPI: {}", conv.error_message),
+                                        theme::medium(10.5),
+                                        palette.danger,
+                                    );
+                                });
+                                if ui.button(egui::RichText::new("Tentar Novamente").size(10.5)).clicked() {
+                                    app.actions.push(Action::SendMetaConversion {
+                                        chat_id: chat_id.to_string(),
+                                        force: true,
+                                    });
+                                }
+                            });
+                    }
+                } else {
+                    let can_send = app.settings.meta_capi_enabled;
+                    let btn = ui.add_enabled(
+                        can_send,
+                        egui::Button::new(
+                            egui::RichText::new("🚀 Enviar Conversão ao Meta (CAPI)")
+                                .size(11.0)
+                                .color(if can_send { palette.text } else { palette.dim }),
+                        ),
+                    );
+                    if !can_send {
+                        btn.on_hover_text("Ative o Meta CAPI nas Configurações do ZapFast para enviar conversões.");
+                    } else if btn.clicked() {
+                        app.actions.push(Action::SendMetaConversion {
+                            chat_id: chat_id.to_string(),
+                            force: true,
+                        });
+                    }
+                }
+            });
         });
 }
 
@@ -544,6 +765,23 @@ fn render_operations(
                         "Anotação interna".into(),
                         deal.notes.clone(),
                     ));
+                }
+                if let Some(origin) = app.contact_origins.get(chat_id) {
+                    let desc = if origin.is_identified() {
+                        let camp = origin.display_campaign();
+                        if !camp.is_empty() {
+                            format!(
+                                "Chegou pelo anúncio: {} (Campanha: {})",
+                                origin.display_label(),
+                                camp
+                            )
+                        } else {
+                            format!("Chegou pelo anúncio: {}", origin.display_label())
+                        }
+                    } else {
+                        "Origem: Não identificado".to_string()
+                    };
+                    events.push((origin.first_contact_at, "Origem do Lead".into(), desc));
                 }
                 events.sort_by_key(|event| std::cmp::Reverse(event.0));
                 for (at, kind, detail) in events.into_iter().take(30) {
@@ -1551,7 +1789,7 @@ pub fn parse_hex_color(hex: &str) -> Option<Color32> {
     }
 }
 
-fn format_timestamp(timestamp: i64) -> String {
+pub(crate) fn format_timestamp(timestamp: i64) -> String {
     if let Some((d, h, m)) = crate::util::local_datetime(timestamp) {
         format!("{:02}/{:02} às {:02}:{:02}", d.day(), d.month(), h, m)
     } else {

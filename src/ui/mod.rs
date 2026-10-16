@@ -23,6 +23,7 @@ pub mod polls;
 pub mod quick_replies;
 pub mod server_login;
 pub mod settings;
+pub mod text_attribution_rules;
 pub mod update;
 pub mod video_preview;
 pub mod widgets;

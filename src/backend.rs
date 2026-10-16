@@ -12,6 +12,7 @@ use crate::model::{Chat, ChatId, Contact, Gif, GifError, Message, PollDraft, Sti
 use crate::paths::AccountDirs;
 
 // Re-exported so the picker can detect pasted Signal pack links.
+pub mod meta_capi;
 mod read_sync;
 pub(crate) mod sticker_import;
 mod sticker_maker;
@@ -794,6 +795,23 @@ pub enum Command {
         prepared: Box<crate::updates::Prepared>,
         arguments: Vec<String>,
     },
+    SaveTextAttributionRule(crate::model::TextAttributionRule),
+    DeleteTextAttributionRule(i64),
+    SaveAdMapping(crate::model::AdCampaignMapping),
+    DeleteAdMapping(String),
+    SendMetaConversion {
+        chat_id: String,
+        event_name: String,
+        value: Option<f64>,
+        currency: Option<String>,
+        access_token: String,
+        dataset_id: String,
+        test_event_code: Option<String>,
+    },
+    MetaConversionFinished {
+        log: crate::model::MetaConversionLog,
+        error: Option<String>,
+    },
 }
 
 #[derive(Debug)]
@@ -834,7 +852,13 @@ pub enum Event {
         followups: Vec<crate::model::CrmFollowup>,
         tasks: Vec<crate::model::CrmTask>,
         projects: Vec<crate::model::CrmProject>,
+        contact_origins: std::collections::HashMap<String, crate::model::ContactOrigin>,
+        ad_mappings: Vec<crate::model::AdCampaignMapping>,
+        text_attribution_rules: Vec<crate::model::TextAttributionRule>,
+        meta_conversions: Vec<crate::model::MetaConversionLog>,
     },
+    MetaConversionUpdated(crate::model::MetaConversionLog),
+    ContactOriginUpdate(crate::model::ContactOrigin),
     ScheduledMessages(Vec<crate::archive::ScheduledMessage>),
     /// Unsent text stored for each chat, sent once at startup.
     Drafts(Vec<(ChatId, String)>),

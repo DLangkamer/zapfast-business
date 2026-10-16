@@ -666,6 +666,7 @@ enum TimelineKind {
     Call,
     Task,
     Note,
+    AdArrival,
 }
 
 impl TimelineKind {
@@ -676,6 +677,7 @@ impl TimelineKind {
             Self::Call => "Call de Venda",
             Self::Task => "Tarefa",
             Self::Note => "Anotação",
+            Self::AdArrival => "Origem do Anúncio",
         }
     }
 
@@ -685,6 +687,7 @@ impl TimelineKind {
             Self::Call => "call",
             Self::Task => "task",
             Self::Note => "note",
+            Self::AdArrival => "ad",
         }
     }
 
@@ -695,6 +698,7 @@ impl TimelineKind {
             Self::Call => Icon::Phone,
             Self::Task => Icon::ListChecks,
             Self::Note => Icon::Tag,
+            Self::AdArrival => Icon::ExternalLink,
         }
     }
 
@@ -705,6 +709,7 @@ impl TimelineKind {
             Self::Call => Color32::from_rgb(129, 140, 248),
             Self::Task => cp.accent,
             Self::Note => Color32::from_rgb(245, 158, 11),
+            Self::AdArrival => Color32::from_rgb(236, 72, 153),
         }
     }
 }
@@ -787,6 +792,7 @@ fn timeline(app: &mut App, ui: &mut egui::Ui, cp: &CrmPalette) {
             ("call", "Calls"),
             ("task", "Tarefas"),
             ("note", "Anotações"),
+            ("ad", "Anúncios"),
         ];
 
         for (val, label) in types {
@@ -831,7 +837,10 @@ fn timeline(app: &mut App, ui: &mut egui::Ui, cp: &CrmPalette) {
         } else {
             cp.surface
         })
-        .stroke(Stroke::new(1.0, if masked { cp.accent } else { cp.outline }))
+        .stroke(Stroke::new(
+            1.0,
+            if masked { cp.accent } else { cp.outline },
+        ))
         .corner_radius(CornerRadius::same(6))
         .min_size(vec2(105.0, 28.0));
         if ui
@@ -1143,6 +1152,65 @@ fn timeline(app: &mut App, ui: &mut egui::Ui, cp: &CrmPalette) {
                 title: followup.title.clone(),
                 entity: client,
                 summary: "Lembrete de follow-up cadastrado".to_string(),
+                status_badge: badge,
+            });
+        }
+    }
+
+    // 2e. Ad arrivals / Origem do lead
+    for (chat_id, origin) in &app.contact_origins {
+        let ts = origin.first_contact_at;
+        if let Some((date, hour, minute)) = crate::util::local_datetime(ts) {
+            let client = app
+                .chat(chat_id)
+                .map(|chat| app.chat_title(chat))
+                .unwrap_or_else(|| chat_id.clone());
+            let is_id = origin.is_identified();
+            let label = origin.display_label();
+            let camp = origin.display_campaign();
+            let title = if is_id {
+                format!("Chegou pelo anúncio: {}", label)
+            } else {
+                "Origem: Não identificado".to_string()
+            };
+            let summary = if is_id {
+                if !camp.is_empty() && camp != label {
+                    format!(
+                        "Anúncio: {} • Campanha: {}{}",
+                        label,
+                        camp,
+                        if origin.adset_name.is_empty() {
+                            String::new()
+                        } else {
+                            format!(" • Conjunto: {}", origin.adset_name)
+                        }
+                    )
+                } else {
+                    format!("Anúncio: {}", label)
+                }
+            } else {
+                "Contato iniciado sem parâmetros de anúncio rastreados".to_string()
+            };
+            let badge = if is_id {
+                Some((
+                    if !camp.is_empty() {
+                        camp.to_string()
+                    } else {
+                        "Meta Ads".to_string()
+                    },
+                    cp.accent,
+                ))
+            } else {
+                Some(("Não identificado".to_string(), cp.dim))
+            };
+            events.push(TimelineEvent {
+                timestamp: ts,
+                date,
+                time_str: format!("{:02}:{:02}", hour, minute),
+                kind: TimelineKind::AdArrival,
+                title,
+                entity: client,
+                summary,
                 status_badge: badge,
             });
         }
@@ -1754,7 +1822,10 @@ fn render_deal_modal(
             if query.is_empty() {
                 "Selecionar contato...".to_owned()
             } else {
-                format!("Selecionar contato ({} encontrados)...", filtered_chats.len())
+                format!(
+                    "Selecionar contato ({} encontrados)...",
+                    filtered_chats.len()
+                )
             }
         } else {
             app.chat(&selected_chat)
@@ -1767,7 +1838,11 @@ fn render_deal_modal(
             .width(ui.available_width() - 8.0)
             .show_ui(ui, |ui| {
                 if filtered_chats.is_empty() {
-                    ui.label(RichText::new("Nenhum contato encontrado").color(cp.dim).italics());
+                    ui.label(
+                        RichText::new("Nenhum contato encontrado")
+                            .color(cp.dim)
+                            .italics(),
+                    );
                 } else {
                     for chat in filtered_chats {
                         let title = app.chat_title(chat);
@@ -2391,10 +2466,11 @@ fn render_late_actions(
     };
 
     let render_cancel = |ui: &mut egui::Ui, app: &mut App| {
-        let cancel_btn = egui::Button::new(RichText::new("✕ Cancelada").size(11.5).color(cp.danger))
-            .fill(cp.surface_hover)
-            .stroke(Stroke::new(1.0, cp.danger.gamma_multiply(0.4)))
-            .corner_radius(CornerRadius::same(5));
+        let cancel_btn =
+            egui::Button::new(RichText::new("✕ Cancelada").size(11.5).color(cp.danger))
+                .fill(cp.surface_hover)
+                .stroke(Stroke::new(1.0, cp.danger.gamma_multiply(0.4)))
+                .corner_radius(CornerRadius::same(5));
         if ui
             .add(cancel_btn)
             .on_hover_text("Marcar como cancelada")
@@ -2461,7 +2537,8 @@ fn render_late_actions(
                 if ui.button("Amanhã às 09:00").clicked() {
                     let mut updated = task.clone();
                     let tomorrow = today.tomorrow().unwrap_or(today);
-                    let target = crate::util::to_unix_seconds(tomorrow, 9, 0).unwrap_or(now + 86400);
+                    let target =
+                        crate::util::to_unix_seconds(tomorrow, 9, 0).unwrap_or(now + 86400);
                     updated.due_at = Some(target);
                     if is_call {
                         updated.status = "scheduled".into();
@@ -4089,10 +4166,17 @@ fn render_project_form_modal(
         ui.add_space(10.0);
 
         let proj_contact_search_id = ui.id().with("modal-proj-contact-search");
-        let mut proj_contact_search = ui.data_mut(|d| d.get_temp::<String>(proj_contact_search_id).unwrap_or_default());
+        let mut proj_contact_search = ui.data_mut(|d| {
+            d.get_temp::<String>(proj_contact_search_id)
+                .unwrap_or_default()
+        });
 
         ui.horizontal(|ui| {
-            ui.label(RichText::new("Vincular cliente do ZapFast:").size(11.5).color(cp.secondary));
+            ui.label(
+                RichText::new("Vincular cliente do ZapFast:")
+                    .size(11.5)
+                    .color(cp.secondary),
+            );
             let w = (ui.available_width() - 30.0).clamp(120.0, 220.0);
             ui.add(
                 egui::TextEdit::singleline(&mut proj_contact_search)
@@ -4118,7 +4202,11 @@ fn render_project_form_modal(
 
         let mut pick_c: Option<String> = None;
         let proj_cb_text = if draft.client_name.is_empty() {
-            if q_proj.is_empty() { "Preencher com contato do ZapFast...".to_owned() } else { format!("Contatos encontrados ({})", proj_chats.len()) }
+            if q_proj.is_empty() {
+                "Preencher com contato do ZapFast...".to_owned()
+            } else {
+                format!("Contatos encontrados ({})", proj_chats.len())
+            }
         } else {
             format!("Cliente selecionado: {}", draft.client_name)
         };
@@ -4128,14 +4216,23 @@ fn render_project_form_modal(
             .width(ui.available_width() - 8.0)
             .show_ui(ui, |ui| {
                 if proj_chats.is_empty() {
-                    ui.label(RichText::new("Nenhum contato encontrado").color(cp.dim).italics());
+                    ui.label(
+                        RichText::new("Nenhum contato encontrado")
+                            .color(cp.dim)
+                            .italics(),
+                    );
                 } else {
                     for chat in proj_chats {
                         let title = app.chat_title(chat);
-                        if ui.selectable_value(&mut pick_c, Some(chat.id.clone()), &title).clicked() {
+                        if ui
+                            .selectable_value(&mut pick_c, Some(chat.id.clone()), &title)
+                            .clicked()
+                        {
                             draft.client_name = title;
                             let phone_part = chat.id.split('@').next().unwrap_or("").to_string();
-                            if !phone_part.is_empty() && phone_part.chars().all(|c| c.is_ascii_digit()) {
+                            if !phone_part.is_empty()
+                                && phone_part.chars().all(|c| c.is_ascii_digit())
+                            {
                                 draft.client_phone = format!("+{}", phone_part);
                             }
                         }
@@ -5933,7 +6030,11 @@ fn render_project_tab_overview(
                         .width(200.0)
                         .show_ui(ui, |ui| {
                             if available_chats.is_empty() {
-                                ui.label(RichText::new("Nenhum contato encontrado").color(cp.dim).italics());
+                                ui.label(
+                                    RichText::new("Nenhum contato encontrado")
+                                        .color(cp.dim)
+                                        .italics(),
+                                );
                             } else {
                                 for chat in available_chats {
                                     let title = app.chat_title(chat);
