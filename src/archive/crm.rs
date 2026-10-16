@@ -226,6 +226,16 @@ impl Archive {
             }
         }
 
+        // Self-heal orphaned stage to default initial stage if column no longer exists
+        if let Ok(columns) = self.crm_columns() {
+            let first_col_id = columns.first().map(|c| c.id.as_str()).unwrap_or("lead");
+            for deal in &mut deals {
+                if !columns.iter().any(|c| c.id == deal.column_id) {
+                    deal.column_id = first_col_id.to_owned();
+                }
+            }
+        }
+
         Ok(deals)
     }
 
@@ -253,7 +263,18 @@ impl Archive {
             })
         })?;
         match rows.next() {
-            Some(row) => Ok(row.ok()),
+            Some(row) => {
+                let mut deal = row.ok();
+                if let Some(ref mut d) = deal {
+                    if let Ok(columns) = self.crm_columns() {
+                        let first_col_id = columns.first().map(|c| c.id.as_str()).unwrap_or("lead");
+                        if !columns.iter().any(|c| c.id == d.column_id) {
+                            d.column_id = first_col_id.to_owned();
+                        }
+                    }
+                }
+                Ok(deal)
+            }
             None => Ok(None),
         }
     }
