@@ -6,7 +6,7 @@ use egui::{
 
 use crate::app::App;
 use crate::backend::LinkStatus;
-use crate::model::{Action, Chat, ChatFilter, Contact, Dialog, Message, Page};
+use crate::model::{Action, Chat, ChatFilter, Contact, Dialog, Message};
 use crate::theme::{self, Icon, Palette};
 
 use super::focus::{Stop, TabStop};
@@ -117,14 +117,34 @@ fn header(app: &mut App, ui: &mut egui::Ui) {
                 vec2(ui.available_width(), super::conversation::HEADER_ROW),
                 Layout::left_to_right(Align::Center),
                 |ui| {
-                    if app.show_archived || app.locked_folder {
+                    if app.show_starred {
                         if theme::icon_button(
                             ui,
                             Icon::ArrowLeft,
                             18.0,
                             palette.secondary,
                             palette.text,
-                            "Back to chats",
+                            "Voltar às conversas",
+                        )
+                        .tab_stop(Stop::Back)
+                        .clicked()
+                        {
+                            app.show_starred = false;
+                        }
+                        theme::text(
+                            ui,
+                            "Mensagens favoritas",
+                            theme::bold(20.0),
+                            palette.text,
+                        );
+                    } else if app.show_archived || app.locked_folder {
+                        if theme::icon_button(
+                            ui,
+                            Icon::ArrowLeft,
+                            18.0,
+                            palette.secondary,
+                            palette.text,
+                            "Voltar às conversas",
                         )
                         .tab_stop(Stop::Back)
                         .clicked()
@@ -137,18 +157,14 @@ fn header(app: &mut App, ui: &mut egui::Ui) {
                         theme::text(
                             ui,
                             if app.locked_folder {
-                                "Locked chats"
+                                "Conversas bloqueadas"
                             } else {
-                                "Archived"
+                                "Arquivadas"
                             },
                             theme::bold(20.0),
                             palette.text,
                         );
                     } else {
-                        // Our avatar opens the account switcher, with the
-                        // profile and settings below the accounts.
-                        super::accounts::avatar_button(app, ui, 34.0).tab_stop(Stop::Profile);
-                        ui.add_space(2.0);
                         theme::text(
                             ui,
                             crate::i18n::gettext(app.locale, "Chats"),
@@ -157,84 +173,18 @@ fn header(app: &mut App, ui: &mut egui::Ui) {
                         );
                     }
                     ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-                        let pending_followups =
-                            app.crm_followups.iter().filter(|f| !f.done).count();
-                        let followup_hint = if pending_followups == 0 {
-                            "Central de tarefas e follow-ups".to_owned()
-                        } else {
-                            format!(
-                                "Central de tarefas e follow-ups ({pending_followups} pendentes)"
-                            )
-                        };
                         if theme::icon_button(
                             ui,
-                            Icon::Bell,
-                            18.0,
-                            if app
-                                .crm_followups
-                                .iter()
-                                .any(|f| !f.done && f.remind_at <= crate::util::now())
-                            {
-                                palette.accent
-                            } else {
-                                palette.secondary
-                            },
-                            palette.text,
-                            &followup_hint,
-                        )
-                        .clicked()
-                        {
-                            app.actions.push(Action::Open(Page::Crm));
-                            ui.ctx().request_repaint();
-                        }
-                        if theme::icon_button(
-                            ui,
-                            Icon::Settings,
-                            18.0,
-                            if app.page == Page::Settings {
-                                palette.accent
-                            } else {
-                                palette.secondary
-                            },
-                            palette.text,
-                            // Same as the avatar: the label says what the click
-                            // does now, not what it opened.
-                            if app.page == Page::Settings {
-                                "Close settings (Ctrl+,)"
-                            } else {
-                                "Settings (Ctrl+,)"
-                            },
-                        )
-                        .tab_stop(Stop::Settings)
-                        .clicked()
-                        {
-                            app.actions.push(Action::ToggleSettings);
-                        }
-                        if theme::icon_button(
-                            ui,
-                            Icon::SquarePen,
+                            Icon::PanelLeft,
                             18.0,
                             palette.secondary,
                             palette.text,
-                            "New chat",
+                            "Ocultar lista (Ctrl+B)",
                         )
-                        .tab_stop(Stop::NewChat)
+                        .tab_stop(Stop::Sidebar)
                         .clicked()
                         {
-                            app.actions
-                                .push(Action::ShowDialog(crate::model::Dialog::NewChat));
-                        }
-                        if theme::icon_button(
-                            ui,
-                            Icon::ListChecks,
-                            18.0,
-                            palette.secondary,
-                            palette.text,
-                            "Funil de Vendas (Kanban)",
-                        )
-                        .clicked()
-                        {
-                            app.actions.push(Action::OpenCrmView("funnel".into()));
+                            app.actions.push(Action::ToggleSidebar);
                         }
                         if theme::icon_button(
                             ui,
@@ -242,7 +192,7 @@ fn header(app: &mut App, ui: &mut egui::Ui) {
                             18.0,
                             palette.secondary,
                             palette.text,
-                            "Disparo em massa e listas de transmissao",
+                            "Disparo em massa e listas de transmissão",
                         )
                         .clicked()
                         {
@@ -251,16 +201,17 @@ fn header(app: &mut App, ui: &mut egui::Ui) {
                         }
                         if theme::icon_button(
                             ui,
-                            Icon::PanelLeft,
+                            Icon::SquarePen,
                             18.0,
                             palette.secondary,
                             palette.text,
-                            "Hide the chat list (Ctrl+B)",
+                            "Nova conversa",
                         )
-                        .tab_stop(Stop::Sidebar)
+                        .tab_stop(Stop::NewChat)
                         .clicked()
                         {
-                            app.actions.push(Action::ToggleSidebar);
+                            app.actions
+                                .push(Action::ShowDialog(crate::model::Dialog::NewChat));
                         }
                     });
                 },
@@ -1572,7 +1523,7 @@ pub fn compact_show(app: &mut App, ui: &mut egui::Ui) {
 
 /// The avatars: the chats the full list would show right now, under the same
 /// filter, search, archive, and locked-folder state.
-fn compact_list(app: &mut App, ui: &mut egui::Ui) {
+pub(crate) fn compact_list(app: &mut App, ui: &mut egui::Ui) {
     let to_top = std::mem::take(&mut app.scroll_chats_to_top);
     if !app.locked_folder_open() && app.secret_code_matched() {
         // As in the full list, the secret code reveals only the way in.
@@ -1923,6 +1874,7 @@ fn sound_menu(app: &mut App, ui: &mut egui::Ui, palette: &Palette, chat: &Chat) 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::model::Page;
     use crate::paths::AppDirs;
     use crate::settings::Settings;
 

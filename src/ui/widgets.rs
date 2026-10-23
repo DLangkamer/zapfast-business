@@ -1002,6 +1002,21 @@ fn soft_triangle(points: &[egui::Pos2], color: Color32, blur: f32) -> egui::Shap
     egui::Shape::mesh(mesh)
 }
 
+/// The card `row_highlight` paints, over `card` itself: the rail's lit and
+/// hovered plates look as the selected and hovered chat rows do.
+pub fn highlight_card(ui: &Ui, palette: &Palette, card: Rect, color: Color32) {
+    let radius = CornerRadius::same(theme::RADIUS + 2);
+    let mut shadow = palette.bubble_shadow();
+    shadow.color = shadow.color.gamma_multiply(0.6);
+    ui.painter().add(shadow.as_shape(card, radius));
+    ui.painter().rect_filled(
+        card.translate(vec2(0.0, -theme::RAISED_EDGE)),
+        radius,
+        palette.raised_edge(color),
+    );
+    ui.painter().rect_filled(card, radius, color);
+}
+
 /// Small pill label used for date separators and pinned markers.
 pub fn chip(ui: &mut Ui, palette: &Palette, label: &str) -> egui::Response {
     let galley =

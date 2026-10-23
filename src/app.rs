@@ -2217,6 +2217,30 @@ impl App {
             && !self.settings.chat_lock_hint_dismissed
     }
 
+    /// Whether a chat holds unsent text or attachments. Editing a sent
+    /// message is not a draft.
+    fn has_draft(&self, chat: &str) -> bool {
+        if self.open_chat.as_deref() == Some(chat) {
+            (self.editing.is_none() && !self.composer.trim().is_empty()) || !self.pending.is_empty()
+        } else {
+            self.drafts.contains_key(chat)
+        }
+    }
+
+    /// A person never written to, left out of the list as on the phone. One
+    /// the reader kept (pinned, a favorite, labeled, unread, locked, or with
+    /// an unsent draft) stays listed.
+    fn unlisted_stranger(&self, chat: &Chat) -> bool {
+        chat.kind == crate::model::ChatKind::Direct
+            && chat.never_messaged()
+            && !chat.pinned
+            && !chat.favorite
+            && !chat.looks_unread()
+            && chat.labels.is_empty()
+            && !chat.locked
+            && !self.has_draft(&chat.id)
+    }
+
     /// Visible chats filtered by search, archive state, and the chat filter,
     /// with pinned first.
     /// Locked chats only appear inside the locked folder.
@@ -2229,6 +2253,13 @@ impl App {
             .iter()
             .filter(|chat| chat.locked == locked)
             .filter(|chat| locked || chat.archived == self.show_archived || !needle.is_empty())
+            // Searching still finds people never written to, and one being
+            // opened stays.
+            .filter(|chat| {
+                !needle.is_empty()
+                    || self.open_chat.as_deref() == Some(chat.id.as_str())
+                    || !self.unlisted_stranger(chat)
+            })
             .filter(|chat| match &self.label_filter {
                 // A label lists every chat wearing it, channels included,
                 // because someone put each of them there.
@@ -2313,14 +2344,16 @@ impl App {
     pub fn archived_unread(&self) -> usize {
         self.chats
             .iter()
-            .filter(|chat| chat.archived && !chat.locked && chat.unread > 0)
+            .filter(|chat| {
+                chat.archived && !chat.locked && chat.unread > 0 && !self.unlisted_stranger(chat)
+            })
             .count()
     }
 
     pub fn archived_count(&self) -> usize {
         self.chats
             .iter()
-            .filter(|chat| chat.archived && !chat.locked)
+            .filter(|chat| chat.archived && !chat.locked && !self.unlisted_stranger(chat))
             .count()
     }
 
@@ -5351,7 +5384,11 @@ impl App {
                 self.chat_filter = filter;
                 self.label_filter = None;
                 self.show_archived = false;
+                self.show_starred = false;
                 self.unread_kept.clear();
+            }
+            Action::SetCallFilter(filter) => {
+                self.call_filter = filter;
             }
             Action::JoinGroup => {
                 use crate::model::InviteState;
@@ -5390,7 +5427,16 @@ impl App {
                     self.search_hits.clear();
                 }
                 self.show_archived = show;
+                if show {
+                    self.show_starred = false;
+                }
                 self.unread_kept.clear();
+            }
+            Action::ToggleStarred => {
+                self.show_starred = !self.show_starred;
+                if self.show_starred {
+                    self.show_archived = false;
+                }
             }
             Action::SelectLabel(label) => self.select_label(label),
             Action::SetChatLabels { chat, labels } => {

@@ -65,6 +65,9 @@ pub fn handle(app: &mut App, ctx: &egui::Context) {
         }
         key(Modifiers::COMMAND, Key::B, Action::ToggleSidebar);
         key(Modifiers::COMMAND, Key::Comma, Action::ToggleSettings);
+        key(Modifiers::COMMAND | Modifiers::SHIFT, Key::Num1, Action::Open(Page::Chats));
+        key(Modifiers::COMMAND | Modifiers::SHIFT, Key::Num2, Action::Open(Page::Calls));
+        key(Modifiers::COMMAND | Modifiers::SHIFT, Key::Num3, Action::Open(Page::Crm));
         key(Modifiers::COMMAND, Key::Q, Action::Quit);
         key(Modifiers::COMMAND, Key::W, Action::CloseWindow);
         key(

@@ -11,7 +11,7 @@ use std::time::Instant;
 use crate::app::{ComposerMention, Conversation};
 use crate::backend::{Backend, LinkStatus, Waker};
 use crate::model::{
-    AccountId, AdCampaignMapping, BroadcastList, Chat, ChatFilter, ChatId, Contact, ContactOrigin,
+    AccountId, AdCampaignMapping, BroadcastList, CallFilter, Chat, ChatFilter, ChatId, Contact, ContactOrigin,
     CrmColumn, CrmDeal, CrmFollowup, CrmProject, CrmTask, Label, Message, MetaConversionLog,
     PollDraft, QuickReply, StickerPack, TextAttributionRule,
 };
@@ -67,7 +67,9 @@ pub struct Account {
     pub new_contact_pending: bool,
     pub pair_phone: String,
     pub show_archived: bool,
+    pub show_starred: bool,
     pub chat_filter: ChatFilter,
+    pub call_filter: CallFilter,
     pub labels: Vec<Label>,
     pub scheduled_messages: Vec<crate::archive::ScheduledMessage>,
     /// Business data belongs to the linked WhatsApp account. Keeping it here
@@ -160,7 +162,9 @@ impl Account {
             new_contact_pending: false,
             pair_phone: String::new(),
             show_archived: false,
+            show_starred: false,
             chat_filter: ChatFilter::All,
+            call_filter: CallFilter::default(),
             labels: Vec::new(),
             scheduled_messages: Vec::new(),
             crm_columns: Vec::new(),

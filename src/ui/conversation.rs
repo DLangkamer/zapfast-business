@@ -5058,6 +5058,47 @@ fn content(
             );
             None
         }
+        Content::Call {
+            video,
+            status,
+            duration,
+            ..
+        } => {
+            let is_bad = status.is_bad();
+            let icon = if is_bad {
+                Icon::PhoneMissed
+            } else if own {
+                Icon::PhoneOutgoing
+            } else {
+                Icon::PhoneIncoming
+            };
+            let color = if is_bad {
+                palette.danger
+            } else {
+                palette.accent
+            };
+            mirrored_row(
+                ui,
+                own,
+                |ui| {
+                    theme::icon(ui, icon, 16.0, color);
+                },
+                |ui| {
+                    let text = if *video {
+                        if is_bad { "Chamada de vídeo perdida" } else { "Chamada de vídeo" }
+                    } else {
+                        if is_bad { "Chamada de voz perdida" } else { "Chamada de voz" }
+                    };
+                    let desc = if *duration > 0 {
+                        format!("{} ({}s)", text, duration)
+                    } else {
+                        text.to_string()
+                    };
+                    theme::text(ui, desc, theme::regular(13.5), palette.text);
+                },
+            );
+            None
+        }
         Content::Unsupported { what } => {
             mirrored_row(
                 ui,

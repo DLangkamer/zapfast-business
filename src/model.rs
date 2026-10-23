@@ -386,6 +386,12 @@ impl Chat {
         self.kind == ChatKind::Group
     }
 
+    /// Never held a message: history sync files such a conversation for
+    /// many contacts, and the phone lists none of them.
+    pub fn never_messaged(&self) -> bool {
+        self.last.is_none() && self.last_activity == 0
+    }
+
     /// Counted unread, or marked unread with nothing pending.
     pub fn looks_unread(&self) -> bool {
         self.unread > 0 || self.marked_unread
@@ -665,6 +671,58 @@ pub enum Content {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         once: Option<OnceMedia>,
     },
+    /// A completed or attempted phone call. Local record only,
+    /// never sent anywhere.
+    Call {
+        video: bool,
+        status: CallStatus,
+        /// Seconds the call was up; zero when it never was.
+        #[serde(default)]
+        duration: u64,
+        /// A group call.
+        #[serde(default)]
+        group: bool,
+    },
+}
+
+/// The id prefix of the call entries ZapFast files from call records.
+pub const CALL_ENTRY_PREFIX: &str = "zapfast-call-";
+
+/// The chat id the entries of calls joined through a call link are filed under.
+pub const CALL_LINK_CHAT: &str = "zapfast-call-link";
+
+/// How far apart, in seconds, two entries for one call may be.
+pub const CALL_ENTRY_WINDOW: i64 = 120;
+
+/// What became of a call.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum CallStatus {
+    /// The two sides talked, so the call's length is real.
+    Answered,
+    /// Another of this account's devices took it.
+    AnsweredElsewhere,
+    /// An incoming call nobody picked up.
+    Missed,
+    /// Refused, by either side.
+    Declined,
+    /// Another of this account's devices refused it.
+    DeclinedElsewhere,
+    /// The other phone was on another call.
+    Busy,
+    /// It never came up, for no reason above.
+    Failed,
+    /// Outgoing, and nobody answered.
+    NoAnswer,
+    /// The line went while the call was up.
+    ConnectionLost,
+}
+
+impl CallStatus {
+    /// Whether the call is one to notice: missed, refused, or never up.
+    pub fn is_bad(self) -> bool {
+        !matches!(self, Self::Answered | Self::AnsweredElsewhere)
+    }
 }
 
 /// The kind of media a view-once message holds.
@@ -949,6 +1007,24 @@ impl Content {
                 view_once: true, ..
             } => "View once message".to_owned(),
             Self::PhoneOnly { .. } => "Message on your phone".to_owned(),
+            Self::Call {
+                video,
+                status,
+                duration,
+                ..
+            } => {
+                let label = match (status, video) {
+                    (CallStatus::Missed, false) => "Missed voice call",
+                    (CallStatus::Missed, true) => "Missed video call",
+                    (_, false) => "Voice call",
+                    (_, true) => "Video call",
+                };
+                if *status == CallStatus::Answered && *duration > 0 {
+                    format!("{label} ({duration}s)")
+                } else {
+                    label.to_owned()
+                }
+            }
         }
     }
 
@@ -1269,9 +1345,46 @@ pub struct MetaConversionLog {
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Page {
     Chats,
+    /// Every call of the account, newest first.
+    Calls,
     Crm,
     Settings,
     Wallpaper,
+}
+
+/// Call-history filter chosen from the chips under the Calls page's search field.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum CallFilter {
+    #[default]
+    All,
+    /// Calls to us that nobody took, group calls included.
+    Missed,
+}
+
+impl CallFilter {
+    pub const EVERY: [Self; 2] = [Self::All, Self::Missed];
+
+    pub fn label(self, locale: crate::i18n::Locale) -> std::borrow::Cow<'static, str> {
+        use crate::i18n::gettext;
+        match self {
+            Self::All => gettext(locale, "All"),
+            Self::Missed => gettext(locale, "Missed"),
+        }
+    }
+
+    pub fn key(self) -> Option<&'static str> {
+        match self {
+            Self::All => None,
+            Self::Missed => Some("missed"),
+        }
+    }
+
+    pub fn parse(key: Option<&str>) -> Self {
+        match key {
+            Some("missed") => Self::Missed,
+            _ => Self::All,
+        }
+    }
 }
 
 /// The tabs of the picker above the composer.
@@ -1937,6 +2050,8 @@ pub enum Action {
     CloseDialog,
     ToggleSidebar,
     SetChatFilter(ChatFilter),
+    /// Picks the chip the Calls page's history shows.
+    SetCallFilter(CallFilter),
     /// Picks the label the chat list shows; `None` shows every chat.
     SelectLabel(Option<String>),
     /// Replaces the labels worn by one chat.
@@ -2013,6 +2128,8 @@ pub enum Action {
     OpenCrmView(String),
     /// Shows or leaves the archived chats.
     ShowArchived(bool),
+    /// Shows or hides the starred messages in the left panel.
+    ToggleStarred,
     /// Mutes (`true`) or unmutes every followed channel.
     MuteAllChannels(bool),
     /// Joins the group of the invite being previewed.

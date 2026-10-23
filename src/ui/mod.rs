@@ -2,6 +2,7 @@
 
 pub mod accounts;
 pub mod bulk_dispatch;
+pub mod calls;
 pub mod chats;
 pub mod conversation;
 pub mod crm_metrics;
@@ -22,6 +23,7 @@ pub mod pane;
 pub mod picker;
 pub mod polls;
 pub mod quick_replies;
+pub mod rail;
 pub mod server_login;
 pub mod settings;
 pub mod text_attribution_rules;
@@ -33,7 +35,7 @@ use egui::{Align2, CornerRadius, Frame, Margin, Stroke, vec2};
 
 use crate::app::App;
 use crate::backend::LinkStatus;
-use crate::model::{Action, Page, SidebarDisplayMode, ToastKind};
+use crate::model::{Action, Page, ToastKind};
 use crate::theme::{self, Icon};
 
 pub fn show(app: &mut App, ui: &mut egui::Ui) {
@@ -50,7 +52,7 @@ pub fn show(app: &mut App, ui: &mut egui::Ui) {
     }
     keys::handle(app, ctx);
     let main_navigation = app.is_linked()
-        && app.page == Page::Chats
+        && (app.page == Page::Chats || app.page == Page::Calls)
         && app.dialog.is_none()
         && !app.show_update
         && app.picker.is_none()
@@ -80,13 +82,18 @@ pub fn show(app: &mut App, ui: &mut egui::Ui) {
     if !macos {
         banner(app, ui);
     }
-    if app.page != Page::Crm {
-        match app.sidebar_mode() {
-            SidebarDisplayMode::Expanded => chats::show(app, ui),
-            SidebarDisplayMode::CollapsedIconsOnly => chats::compact_show(app, ui),
+    let full_list = app.sidebar_visible && app.page != Page::Crm;
+    let rail_hidden = !app.sidebar_visible && app.page != Page::Crm;
+    rail::show(app, ui, rail_hidden);
+
+    if app.page == Page::Calls {
+        if app.sidebar_visible {
+            calls::list(app, ui);
         }
+    } else if full_list {
+        chats::show(app, ui);
     }
-    let search_overlay = if app.page == Page::Crm {
+    let search_overlay = if app.page == Page::Crm || app.page == Page::Calls {
         None
     } else {
         pane::show(app, ui)
@@ -102,6 +109,13 @@ pub fn show(app: &mut App, ui: &mut egui::Ui) {
         .show(ui, |ui| match app.page {
             Page::Settings => settings::show(app, ui),
             Page::Chats => conversation::show(app, ui),
+            Page::Calls => {
+                if app.current_chat().is_some() {
+                    conversation::show(app, ui);
+                } else {
+                    calls::show(app, ui);
+                }
+            }
             Page::Crm => crm_workspace::show(app, ui),
             Page::Wallpaper => settings::wallpaper_show(app, ui),
         });
@@ -125,7 +139,7 @@ pub fn show(app: &mut App, ui: &mut egui::Ui) {
 }
 
 fn central_background(app: &App) -> egui::Color32 {
-    if app.page == Page::Chats {
+    if app.page == Page::Chats || (app.page == Page::Calls && app.current_chat().is_some()) {
         app.settings.wallpaper_background(&app.palette)
     } else {
         app.palette.panel

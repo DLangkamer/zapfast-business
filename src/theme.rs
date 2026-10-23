@@ -239,6 +239,25 @@ impl Palette {
         };
         hsl(hue, saturation, lightness)
     }
+
+    /// The navigation rail's background: the chat list's, one shade darker,
+    /// so the two read as separate columns without a line between them.
+    pub fn rail(&self) -> Color32 {
+        let sidebar = self.panel;
+        let shade = if self.dark {
+            DARK_RAIL_SHADE
+        } else {
+            RAIL_SHADE
+        };
+        let keep = 1.0 - shade;
+        let channel = |value: u8| (f32::from(value) * keep).round() as u8;
+        Color32::from_rgba_premultiplied(
+            channel(sidebar.r()),
+            channel(sidebar.g()),
+            channel(sidebar.b()),
+            (f32::from(sidebar.a()) + (255.0 - f32::from(sidebar.a())) * shade).round() as u8,
+        )
+    }
 }
 
 impl fastframe_theme::Palette for Palette {
@@ -305,6 +324,11 @@ impl fastframe_theme::Palette for Palette {
         }
     }
 }
+
+/// How much black the rail lays over the chat list's colour in a light palette.
+pub const RAIL_SHADE: f32 = 0.05;
+/// The same in a dark palette, whose panel is already near black.
+pub const DARK_RAIL_SHADE: f32 = 0.22;
 
 /// How much denser than the palette's shadow colour a bubble's shadow is.
 const SHADOW_DENSITY: f32 = 1.04;
@@ -661,15 +685,22 @@ fastframe_icons::icons! {
         Maximize => lucide "maximize-2",
         MessageCircle => "message-circle",
         Mic => lucide "mic",
+        MicOff => "mic-off",
         Minimize => lucide "minimize-2",
         Minus => lucide "minus",
         Monitor => lucide "monitor",
         Moon => lucide "moon",
+        Music => "music",
         PanelLeft => lucide "panel-left",
         Paperclip => "paperclip",
         Pause => lucide "pause",
         Pencil => lucide "pencil",
         Phone => "phone",
+        PhoneIncoming => "phone-incoming",
+        PhoneMissed => "phone-missed",
+        PhoneOff => "phone-off",
+        PhoneOutgoing => "phone-outgoing",
+        PhonePlus => "phone-plus",
         Pin => lucide "pin",
         PinOff => lucide "pin-off",
         Play => lucide "play",
@@ -680,18 +711,24 @@ fastframe_icons::icons! {
         Search => lucide "search",
         Send => "send",
         Settings => lucide "settings",
+        Shield => "shield",
+        ShieldOff => "shield-off",
         Smartphone => lucide "smartphone",
         Smile => "smile",
         SquarePen => lucide "square-pen",
         Star => "star",
+        StarFill => "star-fill",
         StarOff => "star-off",
         Sticker => "sticker",
         Sun => lucide "sun",
         Tag => "tag",
         Trash => lucide "trash-2",
         User => lucide "user",
+        UserMinus => "user-minus",
+        UserPlus => "user-plus",
         Users => lucide "users",
         Video => "video",
+        VideoOff => "video-off",
         Volume2 => lucide "volume-2",
         VolumeX => lucide "volume-x",
         WifiOff => "wifi-off",
