@@ -381,3 +381,99 @@ fn destination_button(
         app.actions.extend(actions);
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn app() -> (tempfile::TempDir, App) {
+        let root = tempfile::tempdir().unwrap();
+        let app = App::headless(
+            crate::paths::AppDirs::under(root.path()),
+            crate::settings::Settings::default(),
+        )
+        .0;
+        (root, app)
+    }
+
+    #[test]
+    fn one_destination_is_lit_at_a_time() {
+        let (_root, mut app) = app();
+        let lit = |app: &App| {
+            [
+                Destination::Chats,
+                Destination::Calls,
+                Destination::Crm,
+                Destination::Starred,
+                Destination::Archived,
+                Destination::Locked,
+                Destination::Settings,
+            ]
+            .into_iter()
+            .filter(|destination| destination.lit(app))
+            .collect::<Vec<_>>()
+        };
+        assert_eq!(lit(&app), [Destination::Chats]);
+        app.show_archived = true;
+        assert_eq!(lit(&app), [Destination::Archived]);
+        app.show_archived = false;
+        app.show_starred = true;
+        assert_eq!(lit(&app), [Destination::Starred]);
+        app.show_starred = false;
+        app.page = Page::Calls;
+        assert_eq!(lit(&app), [Destination::Calls]);
+        app.page = Page::Crm;
+        assert_eq!(lit(&app), [Destination::Crm]);
+        app.page = Page::Wallpaper;
+        assert_eq!(lit(&app), [Destination::Settings]);
+    }
+
+    #[test]
+    fn calls_and_starred_are_left_through_chats_not_toggled() {
+        let (_root, mut app) = app();
+        app.page = Page::Calls;
+        assert!(
+            Destination::Calls.actions(&app).is_empty(),
+            "Calls is not a toggle"
+        );
+        assert!(matches!(
+            Destination::Chats.actions(&app).as_slice(),
+            [Action::Open(Page::Chats)]
+        ));
+        assert!(matches!(
+            Destination::Starred.actions(&app).as_slice(),
+            [Action::Open(Page::Chats), Action::ToggleStarred]
+        ));
+        app.page = Page::Chats;
+        app.show_starred = true;
+        assert!(Destination::Starred.actions(&app).is_empty());
+        assert!(matches!(
+            Destination::Chats.actions(&app).as_slice(),
+            [Action::ToggleStarred]
+        ));
+    }
+
+    #[test]
+    fn archived_opens_in_the_list_and_chats_leaves_it() {
+        let (_root, mut app) = app();
+        assert!(!Destination::Archived.offered(&app));
+        assert!(!Destination::Locked.offered(&app));
+        let mut chat = crate::model::Chat::new("1@s.whatsapp.net".into(), "Ada".into());
+        chat.archived = true;
+        chat.last_activity = 1;
+        app.chats.push(chat);
+        assert!(Destination::Archived.offered(&app));
+        app.sidebar_visible = false;
+        assert!(matches!(
+            Destination::Archived.actions(&app).as_slice(),
+            [Action::ToggleSidebar, Action::ShowArchived(true)]
+        ));
+        app.sidebar_visible = true;
+        app.show_archived = true;
+        assert!(Destination::Archived.actions(&app).is_empty());
+        assert!(matches!(
+            Destination::Chats.actions(&app).as_slice(),
+            [Action::ShowArchived(false)]
+        ));
+    }
+}

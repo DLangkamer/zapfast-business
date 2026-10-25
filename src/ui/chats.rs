@@ -259,8 +259,28 @@ fn macos_header(app: &mut App, ui: &mut egui::Ui) {
         .show(ui, |ui| {
             let row = ui.horizontal(|ui| {
                 ui.set_min_height(super::conversation::HEADER_ROW);
-                ui.add_space((inset - 14.0).max(0.0));
-                if app.show_archived || app.locked_folder {
+                ui.add_space(super::rail::lights_overhang(ui.ctx()));
+                if app.show_starred {
+                    if theme::icon_button(
+                        ui,
+                        Icon::ArrowLeft,
+                        18.0,
+                        palette.secondary,
+                        palette.text,
+                        "Back to chats",
+                    )
+                    .tab_stop(Stop::Back)
+                    .clicked()
+                    {
+                        app.show_starred = false;
+                    }
+                    theme::text(
+                        ui,
+                        "Starred",
+                        theme::bold(16.0),
+                        palette.text,
+                    );
+                } else if app.show_archived || app.locked_folder {
                     if theme::icon_button(
                         ui,
                         Icon::ArrowLeft,
@@ -288,10 +308,6 @@ fn macos_header(app: &mut App, ui: &mut egui::Ui) {
                         palette.text,
                     );
                 } else {
-                    // Our avatar opens the account switcher here as on the
-                    // other platforms, after the traffic lights' inset.
-                    super::accounts::avatar_button(app, ui, 30.0).tab_stop(Stop::Profile);
-                    ui.add_space(2.0);
                     theme::text(
                         ui,
                         crate::i18n::gettext(app.locale, "Chats"),
