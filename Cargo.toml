@@ -1,6 +1,6 @@
 [package]
 name = "zapfast"
-version = "0.26.13"
+version = "0.26.14"
 edition = "2024"
 rust-version = "1.98"
 license = "MIT"
@@ -109,7 +109,11 @@ resvg = { version = "0.45", default-features = false }
 # Desktop notifications through D-Bus on Linux and system frameworks elsewhere.
 notify-rust = { version = "4", default-features = false, features = ["z"] }
 openh264 = "0.9"
-mp4 = "0.14"
+# crmne/mp4-rust is upstream's master, which reads a sample entry whose
+# avcC follows another box (pasp first, as some encoders write it); 0.14.0,
+# the last release, refuses such a video. Back to crates.io once a release
+# has it.
+mp4 = { git = "https://github.com/crmne/mp4-rust", rev = "35560e94f5e871a2b2d88bfe964013b39af131e8" }
 # The 0.22 release ends the sound of an interleaved MP4 at the first packet of
 # another track, so a video that has a picture and a sound track plays a tenth
 # of a second of audio and the listener hears silence. This revision is the

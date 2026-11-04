@@ -625,6 +625,14 @@ pub struct App {
     pub app_lock: crate::app_lock::AppLock,
     /// Result of Meta CAPI connection test for user feedback.
     pub meta_capi_test_result: Option<Result<String, String>>,
+    /// The last click on the Windows tray icon that did something.
+    tray_clicked: Option<Instant>,
+    /// Whether the window has the desktop's focus, as of the last frame.
+    has_focus: bool,
+    /// When the window last lost the focus.
+    focus_left: Option<Instant>,
+    /// When the wheel last switched account.
+    account_wheeled: Option<Instant>,
 }
 
 /// A message that flashes after a jump to it, as WhatsApp does.
@@ -764,6 +772,16 @@ const TRAY_QUIT: &str = "quit";
 /// What a tray click asks for: a left click on Linux and macOS, or the menu's
 /// first entry, toggles the window; a left click on Windows and a Dock click
 /// on macOS show it.
+const TRAY_CLICK_TOGGLES: bool = cfg!(windows);
+const TRAY_FOCUS_GRACE: Duration = Duration::from_millis(600);
+const TRAY_DOUBLE_CLICK: Duration = Duration::from_millis(500);
+
+const ACCOUNT_WHEEL_REST: Duration = Duration::from_millis(250);
+
+fn cycled(active: usize, len: usize, step: i8) -> Option<usize> {
+    (len > 1).then(|| (active + len).wrapping_add_signed(step.signum() as isize) % len)
+}
+
 fn tray_action(event: fastframe_tray::Event, window_hidden: bool) -> Option<Action> {
     use fastframe_tray::Event;
     Some(match event {
@@ -1138,6 +1156,10 @@ impl App {
             badge: None,
             app_lock,
             meta_capi_test_result: None,
+            tray_clicked: None,
+            has_focus: false,
+            focus_left: None,
+            account_wheeled: None,
         };
         // A hand-edited speed snaps to a supported one, so a speed control
         // always shows the speed that plays.
@@ -1454,11 +1476,58 @@ impl App {
             return;
         };
         let hidden = self.window_hidden;
-        self.actions.extend(
-            events
-                .into_iter()
-                .filter_map(|event| tray_action(event, hidden)),
-        );
+        for event in events {
+            let action = if TRAY_CLICK_TOGGLES && event == fastframe_tray::Event::Show {
+                self.tray_click(Instant::now())
+            } else {
+                tray_action(event, hidden)
+            };
+            self.actions.extend(action);
+        }
+    }
+
+    fn tray_click(&mut self, now: Instant) -> Option<Action> {
+        if self
+            .tray_clicked
+            .is_some_and(|clicked| now.duration_since(clicked) < TRAY_DOUBLE_CLICK)
+        {
+            return None;
+        }
+        self.tray_clicked = Some(now);
+        let lost_focus_just_now = self
+            .focus_left
+            .is_some_and(|left| now.duration_since(left) < TRAY_FOCUS_GRACE);
+        Some(
+            if !self.window_hidden && (self.has_focus || lost_focus_just_now) {
+                Action::HideWindow
+            } else {
+                Action::ShowWindow
+            },
+        )
+    }
+
+    fn track_focus(&mut self, ctx: &egui::Context, now: Instant) {
+        let focused =
+            !self.window_hidden && ctx.input(|input| input.viewport().focused) == Some(true);
+        if self.has_focus && !focused {
+            self.focus_left = Some(now);
+        }
+        self.has_focus = focused;
+    }
+
+    fn cycle_account(&mut self, step: i8, now: Instant) {
+        if self
+            .account_wheeled
+            .is_some_and(|at| now.duration_since(at) < ACCOUNT_WHEEL_REST)
+        {
+            return;
+        }
+        let Some(next) = cycled(self.active, self.accounts.len(), step) else {
+            return;
+        };
+        self.account_wheeled = Some(now);
+        let id = self.accounts[next].id.clone();
+        self.switch_account(&id);
     }
 
     /// Offers "Lock ZapFast" in the tray exactly while an app lock password
@@ -6131,6 +6200,7 @@ impl App {
             // Route through the configured window-close behavior.
             Action::CloseWindow => ctx.send_viewport_cmd(egui::ViewportCommand::Close),
             Action::SwitchAccount(id) => self.switch_account(&id),
+            Action::CycleAccount(step) => self.cycle_account(step, Instant::now()),
             Action::AddAccount => self.add_account(),
             Action::CancelAddAccount => {
                 // Back to the account the window showed before; leaving an
@@ -6350,6 +6420,7 @@ impl App {
             self.window_focused = false;
         }
         self.report_presence();
+        self.track_focus(ctx, Instant::now());
         self.handle_tray();
         #[cfg(target_os = "macos")]
         self.actions.extend(crate::macos::drain(self.window_hidden));
