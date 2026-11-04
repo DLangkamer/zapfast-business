@@ -328,6 +328,24 @@ pub struct Chat {
     pub description: Option<String>,
 }
 
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub enum SidecarView {
+    #[default]
+    ContactInfo,
+    Crm,
+}
+
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+pub struct BusinessProfile {
+    pub description: String,
+    pub email: Option<String>,
+    pub websites: Vec<String>,
+    pub categories: Vec<String>,
+    pub address: Option<String>,
+    pub hours_description: Option<String>,
+    pub has_catalog: bool,
+}
+
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct LastMessage {
     pub from_me: bool,
@@ -884,6 +902,31 @@ impl Content {
             Self::LiveLocation { ended, .. } => *ended || now - sent > LIVE_LOCATION_LIMIT,
             _ => false,
         }
+    }
+
+    /// The web addresses in a text message: the preview's, with its title,
+    /// then the others written in the text, each once.
+    pub fn web_links(&self) -> Vec<(String, Option<String>)> {
+        let Self::Text { text, preview } = self else {
+            return Vec::new();
+        };
+        let normalise =
+            |url: &str| crate::safety::preview_url(url).unwrap_or_else(|| url.to_owned());
+        let mut links: Vec<(String, Option<String>)> = Vec::new();
+        if let Some(preview) = preview {
+            let title = preview
+                .title
+                .clone()
+                .filter(|title| !title.trim().is_empty());
+            links.push((normalise(&preview.url), title));
+        }
+        for url in crate::markup::links(text) {
+            let url = normalise(&url);
+            if !links.iter().any(|(known, _)| *known == url) {
+                links.push((url, None));
+            }
+        }
+        links
     }
 
     pub fn text(text: impl Into<String>) -> Self {
@@ -2094,6 +2137,8 @@ pub enum Action {
         send_at: Option<i64>,
     },
     ToggleCrmSidecar,
+    OpenContactSidecar(ChatId),
+    FetchBusinessProfile(ChatId),
     SaveCrmColumn(CrmColumn),
     DeleteCrmColumn(String),
     SaveCrmDeal(CrmDeal),

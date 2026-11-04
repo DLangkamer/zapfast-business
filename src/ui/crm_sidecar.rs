@@ -1,11 +1,11 @@
 //! Client sidecar panel (Mini-CRM): encrypted internal notes, pipeline stage selector,
 //! deal value (R$), tags, and follow-up reminders attached to the active chat.
 
-use egui::{Align, Color32, CornerRadius, Frame, Layout, Margin, Rect, Stroke, Vec2, pos2, vec2};
+use egui::{Align, Color32, CornerRadius, Frame, Layout, Margin, Rect, Sense, Stroke, Vec2, pos2, vec2};
 use jiff::civil::Date;
 
 use crate::app::App;
-use crate::model::{Action, Chat, CrmDeal, CrmFollowup, CrmProject, CrmTask};
+use crate::model::{Action, Chat, Content, CrmDeal, CrmFollowup, CrmProject, CrmTask, Dialog, SidecarView};
 use crate::theme::{self, Icon, Palette};
 
 pub const MIN_WIDTH: f32 = 240.0;
@@ -186,6 +186,20 @@ pub fn show_overlay(app: &mut App, ctx: &egui::Context, chat: &Chat) {
         });
 }
 
+fn url_encode(input: &str) -> String {
+    let mut encoded = String::new();
+    for byte in input.bytes() {
+        if byte.is_ascii_alphanumeric() || byte == b'-' || byte == b'_' || byte == b'.' || byte == b'~' {
+            encoded.push(byte as char);
+        } else if byte == b' ' {
+            encoded.push('+');
+        } else {
+            encoded.push_str(&format!("%{:02X}", byte));
+        }
+    }
+    encoded
+}
+
 fn render_content(app: &mut App, ui: &mut egui::Ui, chat: &Chat) {
     let palette = crm_palette(&app.palette);
     let existing_deal = app.crm_deals.get(&chat.id).cloned();
@@ -193,42 +207,751 @@ fn render_content(app: &mut App, ui: &mut egui::Ui, chat: &Chat) {
     Frame::new()
         .inner_margin(Margin::symmetric(10, 8))
         .show(ui, |ui| {
-            // Header with Contact info, Kanban shortcut and close button
-            render_header(app, ui, &palette, chat);
+            render_top_bar(app, ui, &palette, chat);
 
             ui.add_space(8.0);
             ui.separator();
             ui.add_space(8.0);
 
-            // Scrollable CRM body
-            egui::ScrollArea::vertical()
-                .auto_shrink([false, false])
-                .show(ui, |ui| {
-                    ui.spacing_mut().item_spacing.y = 12.0;
+            match app.sidecar_view {
+                SidecarView::ContactInfo => {
+                    render_contact_info_view(app, ui, &palette, chat);
+                }
+                SidecarView::Crm => {
+                    render_crm_view(app, ui, &palette, chat, existing_deal.as_ref());
+                }
+            }
+        });
+}
 
-                    // Origem do Lead (Click to WhatsApp / Anúncio Meta)
-                    render_lead_origin(app, ui, &palette, &chat.id);
+fn render_top_bar(app: &mut App, ui: &mut egui::Ui, palette: &Palette, _chat: &Chat) {
+    ui.horizontal(|ui| {
+        let is_info = app.sidecar_view == SidecarView::ContactInfo;
+        let is_crm = app.sidecar_view == SidecarView::Crm;
 
-                    // 1. Etapa do Funil (Pipeline Stage)
-                    render_stage_selector(app, ui, &palette, &chat.id, existing_deal.as_ref());
+        let info_btn = ui.selectable_label(
+            is_info,
+            egui::RichText::new("👤 Detalhes").font(theme::semibold(13.0)),
+        );
+        if info_btn.clicked() {
+            app.sidecar_view = SidecarView::ContactInfo;
+        }
 
-                    // 2. Valor do Negócio (R$)
-                    render_deal_value(app, ui, &palette, &chat.id, existing_deal.as_ref());
+        let crm_btn = ui.selectable_label(
+            is_crm,
+            egui::RichText::new("💼 CRM").font(theme::semibold(13.0)),
+        );
+        if crm_btn.clicked() {
+            app.sidecar_view = SidecarView::Crm;
+        }
 
-                    // 3. Etiquetas / Tags
-                    render_tags(app, ui, &palette, &chat.id, existing_deal.as_ref());
+        ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
+            if theme::icon_button(
+                ui,
+                Icon::X,
+                15.0,
+                palette.dim,
+                palette.text,
+                "Fechar lateral",
+            )
+            .clicked()
+            {
+                app.actions.push(Action::ToggleCrmSidecar);
+            }
 
-                    // 4. Notas Internas (Criptografadas)
-                    render_internal_notes(app, ui, &palette, &chat.id, existing_deal.as_ref());
+            if is_crm {
+                if theme::icon_button(
+                    ui,
+                    Icon::ListChecks,
+                    16.0,
+                    palette.secondary,
+                    palette.accent,
+                    "Abrir no Funil Kanban",
+                )
+                .clicked()
+                {
+                    app.actions.push(Action::OpenCrmView("funnel".into()));
+                }
+            }
+        });
+    });
+}
 
-                    // 5. Operational project, tasks, calls and timeline.
-                    render_operations(app, ui, &palette, &chat.id, existing_deal.as_ref());
+fn render_contact_info_view(app: &mut App, ui: &mut egui::Ui, palette: &Palette, chat: &Chat) {
+    let title = app.chat_title(chat);
+    let is_group = chat.is_group();
 
-                    // 6. Lembretes de Follow-up (100% independentes de CrmDeal)
-                    render_followups(app, ui, &palette, &chat.id);
+    if !is_group && !app.business_profiles.contains_key(&chat.id) && app.is_connected() {
+        app.actions.push(Action::FetchBusinessProfile(chat.id.clone()));
+    }
 
-                    ui.add_space(20.0);
+    egui::ScrollArea::vertical()
+        .auto_shrink([false, false])
+        .show(ui, |ui| {
+            ui.spacing_mut().item_spacing.y = 12.0;
+
+            // 1. Identity Header
+            render_identity_card(app, ui, palette, chat, &title);
+
+            // 2. Quick Actions
+            render_quick_actions(app, ui, palette, chat);
+
+            // 3. WhatsApp Business Profile (for contacts)
+            if !is_group {
+                render_business_profile_card(app, ui, palette, chat);
+            }
+
+            // 4. Group Details (for groups)
+            if is_group {
+                render_group_details_card(app, ui, palette, chat);
+            }
+
+            // 5. Shared Media, Documents & Links
+            render_shared_media_card(app, ui, palette, chat);
+
+            ui.add_space(24.0);
+        });
+}
+
+fn render_identity_card(app: &mut App, ui: &mut egui::Ui, palette: &Palette, chat: &Chat, title: &str) {
+    Frame::new()
+        .fill(palette.surface)
+        .stroke(Stroke::new(1.0, palette.outline))
+        .corner_radius(CornerRadius::same(8))
+        .inner_margin(Margin::same(12))
+        .show(ui, |ui| {
+            ui.vertical_centered(|ui| {
+                let photo_size = 72.0;
+                let picture = app.avatar_full(&chat.id).or_else(|| app.avatar(&chat.id));
+                let (rect, resp) = ui.allocate_exact_size(Vec2::splat(photo_size), Sense::click());
+                super::widgets::paint_avatar(ui, palette, rect, title, &chat.id, picture.as_deref());
+                if resp.clicked() {
+                    if let Some(path) = picture {
+                        app.actions.push(Action::PreviewImage(path));
+                    }
+                }
+                if resp.hovered() {
+                    resp.on_hover_text("Clique para visualizar foto");
+                }
+
+                ui.add_space(8.0);
+                ui.label(
+                    egui::RichText::new(title)
+                        .font(theme::bold(15.5))
+                        .color(palette.text),
+                );
+
+                if let Some(phone) = chat.phone() {
+                    ui.add_space(2.0);
+                    ui.horizontal(|ui| {
+                        ui.label(
+                            egui::RichText::new(format!("+{}", phone))
+                                .font(theme::regular(13.0))
+                                .color(palette.secondary),
+                        );
+                        let copy_btn = theme::icon_button(
+                            ui,
+                            Icon::Copy,
+                            13.0,
+                            palette.dim,
+                            palette.accent,
+                            "Copiar número",
+                        );
+                        if copy_btn.clicked() {
+                            app.actions.push(Action::CopyText(format!("+{phone}")));
+                            app.toast("Número copiado!");
+                        }
+                    });
+                }
+
+                if chat.is_group() {
+                    ui.add_space(2.0);
+                    let count = chat.participants.len();
+                    ui.label(
+                        egui::RichText::new(format!("Grupo • {} participantes", count))
+                            .font(theme::medium(12.0))
+                            .color(palette.dim),
+                    );
+                } else if let Some(presence) = app.presence.get(&chat.id) {
+                    ui.add_space(2.0);
+                    let status_str = if presence.online {
+                        "● online".to_string()
+                    } else if let Some(seen) = presence.last_seen {
+                        crate::util::last_seen(app.locale, seen)
+                    } else {
+                        String::new()
+                    };
+                    if !status_str.is_empty() {
+                        let color = if presence.online { palette.accent } else { palette.dim };
+                        ui.label(
+                            egui::RichText::new(status_str)
+                                .font(theme::regular(12.0))
+                                .color(color),
+                        );
+                    }
+                }
+            });
+        });
+}
+
+fn render_quick_actions(app: &mut App, ui: &mut egui::Ui, palette: &Palette, chat: &Chat) {
+    ui.horizontal(|ui| {
+        ui.spacing_mut().item_spacing.x = 6.0;
+        let btn_w = (ui.available_width() - 18.0) / 4.0;
+
+        // 1. Search in conversation
+        if ui.add_sized([btn_w, 28.0], egui::Button::new(
+            egui::RichText::new("🔍 Buscar").font(theme::medium(11.0)).color(palette.text)
+        ).fill(palette.surface)).clicked() {
+            app.actions.push(Action::OpenChatSearch);
+        }
+
+        // 2. Mute
+        let is_muted = chat.muted(crate::util::now());
+        let mute_txt = if is_muted { "🔔 Ativar" } else { "🔕 Silenciar" };
+        if ui.add_sized([btn_w, 28.0], egui::Button::new(
+            egui::RichText::new(mute_txt).font(theme::medium(11.0)).color(palette.text)
+        ).fill(palette.surface)).clicked() {
+            if is_muted {
+                app.actions.push(Action::SetMuted(chat.id.clone(), None));
+            } else {
+                app.actions.push(Action::SetMuted(chat.id.clone(), Some(0)));
+            }
+        }
+
+        // 3. Clear chat
+        if ui.add_sized([btn_w, 28.0], egui::Button::new(
+            egui::RichText::new("🧹 Limpar").font(theme::medium(11.0)).color(palette.text)
+        ).fill(palette.surface)).clicked() {
+            app.actions.push(Action::ShowDialog(Dialog::ConfirmClearChat(chat.id.clone())));
+        }
+
+        // 4. CRM switch
+        if ui.add_sized([btn_w, 28.0], egui::Button::new(
+            egui::RichText::new("💼 CRM").font(theme::medium(11.0)).color(palette.accent)
+        ).fill(palette.surface)).clicked() {
+            app.sidecar_view = SidecarView::Crm;
+        }
+    });
+}
+
+fn render_business_profile_card(app: &mut App, ui: &mut egui::Ui, palette: &Palette, chat: &Chat) {
+    let biz_opt = app.business_profiles.get(&chat.id).and_then(|o| o.as_ref()).cloned();
+    let Some(biz) = biz_opt else {
+        return;
+    };
+
+    Frame::new()
+        .fill(palette.surface)
+        .stroke(Stroke::new(1.0, palette.accent.gamma_multiply(0.35)))
+        .corner_radius(CornerRadius::same(8))
+        .inner_margin(Margin::same(12))
+        .show(ui, |ui| {
+            ui.vertical(|ui| {
+                // Badge
+                ui.horizontal(|ui| {
+                    theme::icon(ui, Icon::Contact, 15.0, palette.accent);
+                    ui.label(
+                        egui::RichText::new("CONTA COMERCIAL")
+                            .font(theme::bold(12.0))
+                            .color(palette.accent),
+                    );
                 });
+
+                // Categories
+                if !biz.categories.is_empty() {
+                    ui.add_space(4.0);
+                    ui.label(
+                        egui::RichText::new(biz.categories.join(" • "))
+                            .font(theme::medium(12.0))
+                            .color(palette.secondary),
+                    );
+                }
+
+                // Description
+                if !biz.description.trim().is_empty() {
+                    ui.add_space(6.0);
+                    ui.label(
+                        egui::RichText::new(&biz.description)
+                            .font(theme::regular(12.0))
+                            .color(palette.text),
+                    );
+                }
+
+                // Catalog Button
+                if let Some(phone) = chat.phone() {
+                    ui.add_space(8.0);
+                    let cat_url = format!("https://wa.me/c/{phone}");
+                    if ui.add_sized(
+                        [ui.available_width(), 30.0],
+                        egui::Button::new(
+                            egui::RichText::new("🛍️ Abrir Catálogo no WhatsApp")
+                                .font(theme::semibold(12.0))
+                                .color(palette.panel)
+                        ).fill(palette.accent)
+                    ).clicked() {
+                        app.actions.push(Action::OpenUrl(cat_url));
+                    }
+                }
+
+                // Websites
+                if !biz.websites.is_empty() {
+                    ui.add_space(6.0);
+                    for url in &biz.websites {
+                        ui.horizontal(|ui| {
+                            theme::icon(ui, Icon::ExternalLink, 13.0, palette.secondary);
+                            if ui.link(
+                                egui::RichText::new(url)
+                                    .font(theme::medium(11.5))
+                                    .color(palette.accent)
+                            ).clicked() {
+                                app.actions.push(Action::OpenUrl(url.clone()));
+                            }
+                        });
+                    }
+                }
+
+                // Location / Address
+                if let Some(ref addr) = biz.address {
+                    if !addr.trim().is_empty() {
+                        ui.add_space(8.0);
+                        ui.separator();
+                        ui.add_space(4.0);
+                        ui.horizontal(|ui| {
+                            theme::icon(ui, Icon::MapPin, 14.0, palette.secondary);
+                            ui.label(
+                                egui::RichText::new(addr)
+                                    .font(theme::regular(11.5))
+                                    .color(palette.text),
+                            );
+                        });
+                        let encoded = url_encode(addr);
+                        let map_url = format!("https://www.google.com/maps/search/?api=1&query={encoded}");
+                        if ui.button(
+                            egui::RichText::new("🗺️ Abrir no Google Maps")
+                                .font(theme::medium(11.0))
+                                .color(palette.accent)
+                        ).clicked() {
+                            app.actions.push(Action::OpenUrl(map_url));
+                        }
+                    }
+                }
+
+                // Email
+                if let Some(ref email) = biz.email {
+                    if !email.trim().is_empty() {
+                        ui.add_space(4.0);
+                        ui.horizontal(|ui| {
+                            ui.label(
+                                egui::RichText::new(format!("✉ {}", email))
+                                    .font(theme::medium(11.5))
+                                    .color(palette.text)
+                            );
+                            let copy_email = theme::icon_button(ui, Icon::Copy, 12.0, palette.dim, palette.accent, "Copiar e-mail");
+                            if copy_email.clicked() {
+                                app.actions.push(Action::CopyText(email.clone()));
+                                app.toast("E-mail copiado!");
+                            }
+                        });
+                    }
+                }
+
+                // Business Hours
+                if let Some(ref hours) = biz.hours_description {
+                    if !hours.trim().is_empty() {
+                        ui.add_space(8.0);
+                        ui.separator();
+                        ui.add_space(4.0);
+                        ui.horizontal(|ui| {
+                            theme::icon(ui, Icon::Clock, 13.0, palette.secondary);
+                            ui.label(
+                                egui::RichText::new("Horário de Funcionamento:")
+                                    .font(theme::semibold(11.5))
+                                    .color(palette.text),
+                            );
+                        });
+                        ui.label(
+                            egui::RichText::new(hours)
+                                .font(theme::regular(11.0))
+                                .color(palette.secondary),
+                        );
+                    }
+                }
+            });
+        });
+}
+
+fn render_group_details_card(app: &mut App, ui: &mut egui::Ui, palette: &Palette, chat: &Chat) {
+    Frame::new()
+        .fill(palette.surface)
+        .stroke(Stroke::new(1.0, palette.outline))
+        .corner_radius(CornerRadius::same(8))
+        .inner_margin(Margin::same(12))
+        .show(ui, |ui| {
+            ui.vertical(|ui| {
+                // Section: Description
+                ui.horizontal(|ui| {
+                    theme::icon(ui, Icon::FileText, 14.0, palette.accent);
+                    ui.label(
+                        egui::RichText::new("Descrição do Grupo")
+                            .font(theme::bold(12.5))
+                            .color(palette.text),
+                    );
+                    if chat.can_edit_info() {
+                        ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
+                            let pencil = theme::icon_button(
+                                ui,
+                                Icon::Pencil,
+                                13.0,
+                                palette.dim,
+                                palette.accent,
+                                "Editar descrição",
+                            );
+                            if pencil.clicked() {
+                                app.actions.push(Action::ShowDialog(Dialog::ChatInfo(chat.id.clone())));
+                            }
+                        });
+                    }
+                });
+
+                ui.add_space(4.0);
+                let desc = chat.description.as_deref().unwrap_or("Nenhuma descrição definida.");
+                ui.label(
+                    egui::RichText::new(desc)
+                        .font(theme::regular(12.0))
+                        .color(if chat.description.is_some() { palette.text } else { palette.dim }),
+                );
+
+                ui.add_space(8.0);
+                ui.separator();
+                ui.add_space(6.0);
+
+                // Section: Invite Link
+                ui.horizontal(|ui| {
+                    theme::icon(ui, Icon::Contact, 14.0, palette.accent);
+                    ui.label(
+                        egui::RichText::new("Link de Convite")
+                            .font(theme::bold(12.5))
+                            .color(palette.text),
+                    );
+                });
+                ui.add_space(4.0);
+                ui.horizontal(|ui| {
+                    let copy_link = ui.button(
+                        egui::RichText::new("📋 Ver Link do Grupo")
+                            .font(theme::medium(11.5))
+                            .color(palette.text),
+                    );
+                    if copy_link.clicked() {
+                        app.actions.push(Action::ShowDialog(Dialog::ChatInfo(chat.id.clone())));
+                    }
+                });
+
+                ui.add_space(8.0);
+                ui.separator();
+                ui.add_space(6.0);
+
+                // Section: Members List
+                let members = app.participant_list(chat);
+                ui.horizontal(|ui| {
+                    theme::icon(ui, Icon::Users, 14.0, palette.accent);
+                    ui.label(
+                        egui::RichText::new(format!("Participantes ({})", members.len()))
+                            .font(theme::bold(12.5))
+                            .color(palette.text),
+                    );
+                });
+
+                ui.add_space(6.0);
+                let row_h = 32.0;
+                let visible_rows = members.len().min(8);
+                egui::ScrollArea::vertical()
+                    .id_salt("group_sidecar_members")
+                    .max_height(row_h * (visible_rows as f32).max(3.0))
+                    .auto_shrink([false, true])
+                    .show(ui, |ui| {
+                        for (member_id, name) in &members {
+                            let is_admin = chat.admin && member_id == app.me.as_deref().unwrap_or_default();
+                            ui.horizontal(|ui| {
+                                let (rect, resp) = ui.allocate_exact_size(Vec2::splat(24.0), Sense::click());
+                                let picture = app.avatar(member_id);
+                                super::widgets::paint_avatar(ui, palette, rect, name, member_id, picture.as_deref());
+                                if resp.clicked() {
+                                    app.actions.push(Action::OpenChat(member_id.clone()));
+                                }
+                                let member_btn = ui.link(
+                                    egui::RichText::new(name)
+                                        .font(theme::medium(12.0))
+                                        .color(palette.text),
+                                );
+                                if member_btn.clicked() {
+                                    app.actions.push(Action::OpenChat(member_id.clone()));
+                                }
+                                if is_admin {
+                                    ui.label(
+                                        egui::RichText::new("Admin")
+                                            .font(theme::bold(10.5))
+                                            .color(palette.accent),
+                                    );
+                                }
+                            });
+                        }
+                    });
+
+                // Leave group button
+                if chat.can_leave(&app.our_ids()) {
+                    ui.add_space(10.0);
+                    ui.separator();
+                    ui.add_space(6.0);
+                    if ui.add_sized(
+                        [ui.available_width(), 28.0],
+                        egui::Button::new(
+                            egui::RichText::new("🚪 Sair do grupo")
+                                .font(theme::medium(12.0))
+                                .color(palette.danger)
+                        ).fill(palette.surface)
+                    ).clicked() {
+                        app.actions.push(Action::ShowDialog(Dialog::ConfirmLeaveGroup(chat.id.clone())));
+                    }
+                }
+            });
+        });
+}
+
+fn render_shared_media_card(app: &mut App, ui: &mut egui::Ui, palette: &Palette, chat: &Chat) {
+    let mut media_list: Vec<(String, bool, Option<std::path::PathBuf>)> = Vec::new();
+    let mut docs_list: Vec<(String, String, u64, Option<std::path::PathBuf>)> = Vec::new();
+    let mut links_list: Vec<(String, String, Option<String>)> = Vec::new();
+
+    if let Some(conv) = app.conversations.get(&chat.id) {
+        for msg in &conv.messages {
+            match &msg.content {
+                Content::Image { media, .. } => {
+                    media_list.push((msg.id.clone(), false, media.path.clone()));
+                }
+                Content::Video { media, .. } => {
+                    media_list.push((msg.id.clone(), true, media.path.clone()));
+                }
+                Content::Document { media, file_name, .. } => {
+                    docs_list.push((msg.id.clone(), file_name.clone(), media.size, media.path.clone()));
+                }
+                Content::Text { .. } => {
+                    for (url, title) in msg.content.web_links() {
+                        links_list.push((msg.id.clone(), url, title));
+                    }
+                }
+                _ => {}
+            }
+        }
+    }
+
+    Frame::new()
+        .fill(palette.surface)
+        .stroke(Stroke::new(1.0, palette.outline))
+        .corner_radius(CornerRadius::same(8))
+        .inner_margin(Margin::same(12))
+        .show(ui, |ui| {
+            ui.vertical(|ui| {
+                ui.horizontal(|ui| {
+                    theme::icon(ui, Icon::Download, 14.0, palette.accent);
+                    ui.label(
+                        egui::RichText::new("Mídias, Documentos e Links")
+                            .font(theme::bold(12.5))
+                            .color(palette.text),
+                    );
+                });
+
+                ui.add_space(6.0);
+
+                let media_tab_id = ui.id().with("shared_media_tab");
+                let current_tab: usize = ui.ctx().data(|d| d.get_temp(media_tab_id)).unwrap_or(0);
+
+                let mut next_tab = current_tab;
+                ui.horizontal(|ui| {
+                    if ui.selectable_label(current_tab == 0, format!("🖼️ Mídias ({})", media_list.len())).clicked() {
+                        next_tab = 0;
+                    }
+                    if ui.selectable_label(current_tab == 1, format!("📄 Docs ({})", docs_list.len())).clicked() {
+                        next_tab = 1;
+                    }
+                    if ui.selectable_label(current_tab == 2, format!("🔗 Links ({})", links_list.len())).clicked() {
+                        next_tab = 2;
+                    }
+                });
+                if next_tab != current_tab {
+                    ui.ctx().data_mut(|d| d.insert_temp(media_tab_id, next_tab));
+                }
+
+                ui.add_space(8.0);
+
+                match next_tab {
+                    0 => {
+                        if media_list.is_empty() {
+                            ui.label(
+                                egui::RichText::new("Nenhuma mídia compartilhada nesta conversa.")
+                                    .font(theme::regular(11.5))
+                                    .color(palette.dim),
+                            );
+                        } else {
+                            let cell_w = 64.0;
+                            let spacing = 6.0;
+                            let avail = ui.available_width();
+                            let cols = ((avail + spacing) / (cell_w + spacing)).floor().max(1.0) as usize;
+
+                            egui::Grid::new("shared_media_grid")
+                                .spacing([spacing, spacing])
+                                .show(ui, |ui| {
+                                    for (i, (msg_id, is_video, path_opt)) in media_list.iter().enumerate() {
+                                        let (rect, resp) = ui.allocate_exact_size(Vec2::splat(cell_w), Sense::click());
+                                        let is_video = *is_video;
+
+                                        if let Some(path) = path_opt {
+                                            let uri = format!("file://{}", path.to_string_lossy());
+                                            egui::Image::new(&uri)
+                                                .fit_to_exact_size(Vec2::splat(cell_w))
+                                                .corner_radius(CornerRadius::same(4))
+                                                .paint_at(ui, rect);
+                                        } else {
+                                            ui.painter().rect_filled(rect, CornerRadius::same(4), palette.panel);
+                                            theme::paint_icon(ui, if is_video { Icon::Video } else { Icon::Image }, rect, 20.0, palette.dim);
+                                        }
+
+                                        if is_video {
+                                            theme::paint_icon(ui, Icon::Video, rect, 18.0, Color32::WHITE);
+                                        }
+
+                                        if resp.clicked() {
+                                            if let Some(path) = path_opt {
+                                                app.actions.push(Action::PreviewImage(path.clone()));
+                                            } else {
+                                                app.actions.push(Action::OpenMessage {
+                                                    chat: chat.id.clone(),
+                                                    message: msg_id.clone(),
+                                                });
+                                            }
+                                        }
+
+                                        if (i + 1) % cols == 0 {
+                                            ui.end_row();
+                                        }
+                                    }
+                                });
+                        }
+                    }
+                    1 => {
+                        if docs_list.is_empty() {
+                            ui.label(
+                                egui::RichText::new("Nenhum documento compartilhado nesta conversa.")
+                                    .font(theme::regular(11.5))
+                                    .color(palette.dim),
+                            );
+                        } else {
+                            for (msg_id, file_name, file_size, path_opt) in &docs_list {
+                                ui.horizontal(|ui| {
+                                    theme::icon(ui, Icon::FileText, 16.0, palette.accent);
+                                    ui.vertical(|ui| {
+                                        let name_btn = ui.link(
+                                            egui::RichText::new(file_name)
+                                                .font(theme::medium(12.0))
+                                                .color(palette.text)
+                                        );
+                                        if name_btn.clicked() {
+                                            if let Some(path) = path_opt {
+                                                app.actions.push(Action::OpenFile(path.clone()));
+                                            } else {
+                                                app.actions.push(Action::OpenMessage {
+                                                    chat: chat.id.clone(),
+                                                    message: msg_id.clone(),
+                                                });
+                                            }
+                                        }
+                                        let size_str = crate::util::bytes(*file_size);
+                                        ui.label(
+                                            egui::RichText::new(size_str)
+                                                .font(theme::regular(11.0))
+                                                .color(palette.dim),
+                                        );
+                                    });
+                                });
+                                ui.add_space(4.0);
+                            }
+                        }
+                    }
+                    _ => {
+                        if links_list.is_empty() {
+                            ui.label(
+                                egui::RichText::new("Nenhum link compartilhado nesta conversa.")
+                                    .font(theme::regular(11.5))
+                                    .color(palette.dim),
+                            );
+                        } else {
+                            for (_msg_id, url, title_opt) in &links_list {
+                                ui.horizontal(|ui| {
+                                    theme::icon(ui, Icon::ExternalLink, 14.0, palette.accent);
+                                    ui.vertical(|ui| {
+                                        let label = title_opt.as_deref().unwrap_or(url.as_str());
+                                        if ui.link(
+                                            egui::RichText::new(label)
+                                                .font(theme::medium(11.5))
+                                                .color(palette.accent)
+                                        ).clicked() {
+                                            app.actions.push(Action::OpenUrl(url.clone()));
+                                        }
+                                        if title_opt.is_some() {
+                                            ui.label(
+                                                egui::RichText::new(url)
+                                                    .font(theme::regular(10.5))
+                                                    .color(palette.dim)
+                                            );
+                                        }
+                                    });
+                                });
+                                ui.add_space(4.0);
+                            }
+                        }
+                    }
+                }
+            });
+        });
+}
+
+fn render_crm_view(
+    app: &mut App,
+    ui: &mut egui::Ui,
+    palette: &Palette,
+    chat: &Chat,
+    existing_deal: Option<&CrmDeal>,
+) {
+    egui::ScrollArea::vertical()
+        .auto_shrink([false, false])
+        .show(ui, |ui| {
+            ui.spacing_mut().item_spacing.y = 12.0;
+
+            // Summary Header
+            render_header(app, ui, palette, chat);
+
+            // Origem do Lead (Click to WhatsApp / Anúncio Meta)
+            render_lead_origin(app, ui, palette, &chat.id);
+
+            // 1. Etapa do Funil (Pipeline Stage)
+            render_stage_selector(app, ui, palette, &chat.id, existing_deal);
+
+            // 2. Valor do Negócio (R$)
+            render_deal_value(app, ui, palette, &chat.id, existing_deal);
+
+            // 3. Etiquetas / Tags
+            render_tags(app, ui, palette, &chat.id, existing_deal);
+
+            // 4. Notas Internas (Criptografadas)
+            render_internal_notes(app, ui, palette, &chat.id, existing_deal);
+
+            // 5. Operational project, tasks, calls and timeline.
+            render_operations(app, ui, palette, &chat.id, existing_deal);
+
+            // 6. Lembretes de Follow-up (100% independentes de CrmDeal)
+            render_followups(app, ui, palette, &chat.id);
+
+            ui.add_space(20.0);
         });
 }
 

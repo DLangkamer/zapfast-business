@@ -672,6 +672,20 @@ const KNOWN_TLDS: &[&str] = &[
     "yoga",
 ];
 
+/// Extracts web links found in `text`, without duplicate URLs or mailto: links.
+pub fn links(text: &str) -> Vec<String> {
+    let mut found: Vec<String> = Vec::new();
+    for span in parse(text, &[]) {
+        if let Some(link) = span.link
+            && !link.starts_with("mailto:")
+            && !found.contains(&link)
+        {
+            found.push(link);
+        }
+    }
+    found
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

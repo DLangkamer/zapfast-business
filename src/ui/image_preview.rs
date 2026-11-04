@@ -280,7 +280,7 @@ pub fn show(app: &mut App, ctx: &egui::Context) {
                         Layout::centered_and_justified(egui::Direction::TopDown),
                         |ui| {
                             ui.label("This image could not be displayed in ZapFast.");
-                            if ui.button("Open externally").clicked() {
+                            if ui.button(crate::i18n::gettext(app.locale, "Open externally")).clicked() {
                                 app.actions
                                     .push(Action::OpenFile(preview.path().to_owned()));
                             }

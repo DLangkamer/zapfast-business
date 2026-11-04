@@ -1726,20 +1726,25 @@ fn context_menu(app: &mut App, ui: &mut egui::Ui, chat: &Chat, palette: &Palette
             ))));
     }
     if chat.looks_unread()
-        && widgets::menu_item(ui, palette, Some(Icon::CheckCheck), "Mark as read")
+        && widgets::menu_item(ui, palette, Some(Icon::CheckCheck), &crate::i18n::gettext(app.locale, "Mark as read"))
     {
         app.actions.push(Action::MarkRead(chat.id.clone()));
     }
     if !chat.looks_unread()
-        && widgets::menu_item(ui, palette, Some(Icon::MessageCircle), "Mark as unread")
+        && widgets::menu_item(ui, palette, Some(Icon::MessageCircle), &crate::i18n::gettext(app.locale, "Mark as unread"))
     {
         app.actions.push(Action::MarkUnread(chat.id.clone()));
     }
+    let pin_label = if chat.pinned {
+        crate::i18n::gettext(app.locale, "Unpin")
+    } else {
+        crate::i18n::gettext(app.locale, "Pin to top")
+    };
     if widgets::menu_item(
         ui,
         palette,
         Some(if chat.pinned { Icon::PinOff } else { Icon::Pin }),
-        if chat.pinned { "Unpin" } else { "Pin to top" },
+        pin_label.as_ref(),
     ) {
         app.actions
             .push(Action::SetPinned(chat.id.clone(), !chat.pinned));
@@ -1786,14 +1791,14 @@ fn context_menu(app: &mut App, ui: &mut egui::Ui, chat: &Chat, palette: &Palette
     }
     let now = crate::util::now();
     if chat.muted(now) {
-        if widgets::menu_item(ui, palette, Some(Icon::Bell), "Unmute") {
+        if widgets::menu_item(ui, palette, Some(Icon::Bell), &crate::i18n::gettext(app.locale, "Unmute")) {
             app.actions.push(Action::SetMuted(chat.id.clone(), None));
         }
     } else {
         for (label, until) in [
-            ("Mute for 8 hours", Some(now + 8 * 3600)),
-            ("Mute for a week", Some(now + 7 * 86_400)),
-            ("Mute indefinitely", Some(0)),
+            (&crate::i18n::gettext(app.locale, "Mute for 8 hours"), Some(now + 8 * 3600)),
+            (&crate::i18n::gettext(app.locale, "Mute for a week"), Some(now + 7 * 86_400)),
+            (&crate::i18n::gettext(app.locale, "Mute indefinitely"), Some(0)),
         ] {
             if widgets::menu_item(ui, palette, Some(Icon::BellOff), label) {
                 app.actions.push(Action::SetMuted(chat.id.clone(), until));
@@ -1824,17 +1829,16 @@ fn context_menu(app: &mut App, ui: &mut egui::Ui, chat: &Chat, palette: &Palette
     }
     widgets::menu_separator(ui, palette);
     if let Some(phone) = chat.phone()
-        && widgets::menu_item(ui, palette, Some(Icon::Copy), "Copy number")
+        && widgets::menu_item(ui, palette, Some(Icon::Copy), &crate::i18n::gettext(app.locale, "Copy number"))
     {
         app.actions.push(Action::CopyText(format!("+{phone}")));
     }
-    if widgets::menu_item(ui, palette, Some(Icon::Info), "Info") {
-        app.actions
-            .push(Action::ShowDialog(Dialog::ChatInfo(chat.id.clone())));
+    if widgets::menu_item(ui, palette, Some(Icon::Info), &crate::i18n::gettext(app.locale, "Info")) {
+        app.actions.push(Action::OpenContactSidecar(chat.id.clone()));
     }
     // Deleting reaches the phone, so it waits for a connection.
     let connected = matches!(app.link, LinkStatus::Connected);
-    if widgets::menu_item_enabled(ui, palette, Some(Icon::Trash), "Delete chat", connected) {
+    if widgets::menu_item_enabled(ui, palette, Some(Icon::Trash), &crate::i18n::gettext(app.locale, "Delete chat"), connected) {
         app.actions
             .push(Action::ShowDialog(Dialog::ConfirmDeleteChat(
                 chat.id.clone(),

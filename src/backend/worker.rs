@@ -5069,23 +5069,66 @@ impl Worker {
                 let events = self.events.clone();
                 let waker = self.waker.clone();
                 tokio::task::spawn_blocking(move || {
+                    let ext = std::path::Path::new(&name)
+                        .extension()
+                        .and_then(|e| e.to_str())
+                        .or_else(|| source.extension().and_then(|e| e.to_str()))
+                        .map(|e| e.to_ascii_lowercase());
+
+                    let suggested_name = match &ext {
+                        Some(e) if !name.to_ascii_lowercase().ends_with(&format!(".{e}")) => {
+                            format!("{name}.{e}")
+                        }
+                        _ => name.clone(),
+                    };
+
                     let mut dialog = rfd::FileDialog::new()
-                        .set_title("Save attachment")
-                        .set_file_name(&name);
+                        .set_title("Salvar anexo")
+                        .set_file_name(&suggested_name);
                     if let Some(downloads) = directories::UserDirs::new()
-                        .and_then(|dirs| dirs.download_dir().map(Path::to_path_buf))
+                        .and_then(|dirs| dirs.download_dir().map(std::path::Path::to_path_buf))
                     {
                         dialog = dialog.set_directory(downloads);
                     }
+                    if let Some(ref e) = ext {
+                        let filter_name = match e.as_str() {
+                            "png" => "Imagem PNG (*.png)",
+                            "jpg" | "jpeg" => "Imagem JPEG (*.jpg, *.jpeg)",
+                            "webp" => "Imagem WebP (*.webp)",
+                            "gif" => "Imagem GIF (*.gif)",
+                            "mp4" => "Vídeo MP4 (*.mp4)",
+                            "mkv" => "Vídeo MKV (*.mkv)",
+                            "webm" => "Vídeo WebM (*.webm)",
+                            "pdf" => "Documento PDF (*.pdf)",
+                            "doc" | "docx" => "Documento Word (*.doc, *.docx)",
+                            "xls" | "xlsx" => "Planilha Excel (*.xls, *.xlsx)",
+                            "ppt" | "pptx" => "Apresentação PowerPoint (*.ppt, *.pptx)",
+                            "txt" => "Arquivo de Texto (*.txt)",
+                            "zip" | "rar" | "7z" => "Arquivo Compactado (*.zip, *.rar, *.7z)",
+                            "ogg" | "opus" | "mp3" | "wav" | "m4a" | "aac" => "Áudio (*.ogg, *.mp3, *.wav, ...)",
+                            _ => "Arquivo (*)",
+                        };
+                        if e == "jpg" || e == "jpeg" {
+                            dialog = dialog.add_filter(filter_name, &["jpg", "jpeg"]);
+                        } else {
+                            dialog = dialog.add_filter(filter_name, &[e.as_str()]);
+                        }
+                        dialog = dialog.add_filter("Todos os arquivos (*.*)", &["*"]);
+                    }
                     // Cancelling the dialog saves nothing and says nothing.
-                    let Some(target) = dialog.save_file() else {
+                    let Some(mut target) = dialog.save_file() else {
                         return;
                     };
+                    if target.extension().is_none() {
+                        if let Some(ref e) = ext {
+                            target.set_extension(e);
+                        }
+                    }
                     let event = match std::fs::copy(&source, &target) {
                         Ok(_) => Event::Info(format!(
-                            "Saved {}",
+                            "Salvo {}",
                             target.file_name().map_or_else(
-                                || name.clone(),
+                                || suggested_name.clone(),
                                 |name| name.to_string_lossy().into_owned()
                             )
                         )),
@@ -5096,6 +5139,54 @@ impl Worker {
                     let _ = events.send(event);
                     waker.wake();
                 });
+            }
+            Command::FetchBusinessProfile(chat) => {
+                let events = self.events.clone();
+                let waker = self.waker.clone();
+                let chat_clone = chat.clone();
+                if let (Some(client), Some(jid)) = (self.client.clone(), Self::jid_of(&chat)) {
+                    tokio::spawn(async move {
+                        match client.get_business_profile(&jid).await {
+                            Ok(Some(profile)) => {
+                                let mut cats = Vec::new();
+                                for c in profile.categories {
+                                    if !c.name.trim().is_empty() {
+                                        cats.push(c.name);
+                                    }
+                                }
+                                let hours_desc = format_business_hours(&profile.business_hours);
+                                let biz = crate::model::BusinessProfile {
+                                    description: profile.description,
+                                    email: profile.email.filter(|e| !e.trim().is_empty()),
+                                    websites: profile.website,
+                                    categories: cats,
+                                    address: profile.address.filter(|a| !a.trim().is_empty()),
+                                    hours_description: hours_desc,
+                                    has_catalog: true,
+                                };
+                                let _ = events.send(Event::BusinessProfileLoaded {
+                                    chat: chat_clone,
+                                    profile: Box::new(biz),
+                                });
+                                waker.wake();
+                            }
+                            Ok(None) => {
+                                let biz = crate::model::BusinessProfile {
+                                    has_catalog: false,
+                                    ..Default::default()
+                                };
+                                let _ = events.send(Event::BusinessProfileLoaded {
+                                    chat: chat_clone,
+                                    profile: Box::new(biz),
+                                });
+                                waker.wake();
+                            }
+                            Err(e) => {
+                                log::debug!("Business profile fetch error for {chat_clone}: {e:?}");
+                            }
+                        }
+                    });
+                }
             }
             Command::OpenLog(path) => {
                 let events = self.events.clone();
@@ -14983,4 +15074,39 @@ mod older_history_tests {
         worker.apply_history(chat_removal_tests::history(CHAT, &[90]), true);
         assert!(!worker.archive.history_start(CHAT).unwrap());
     }
+}
+
+fn format_business_hours(hours: &whatsapp_rust::wacore::iq::business::BusinessHours) -> Option<String> {
+    let configs = hours.business_config.as_ref()?;
+    if configs.is_empty() {
+        return None;
+    }
+    let mut parts = Vec::new();
+    for cfg in configs {
+        let day = match &cfg.day_of_week {
+            whatsapp_rust::wacore::iq::business::DayOfWeek::Monday => "Segunda",
+            whatsapp_rust::wacore::iq::business::DayOfWeek::Tuesday => "Terça",
+            whatsapp_rust::wacore::iq::business::DayOfWeek::Wednesday => "Quarta",
+            whatsapp_rust::wacore::iq::business::DayOfWeek::Thursday => "Quinta",
+            whatsapp_rust::wacore::iq::business::DayOfWeek::Friday => "Sexta",
+            whatsapp_rust::wacore::iq::business::DayOfWeek::Saturday => "Sábado",
+            whatsapp_rust::wacore::iq::business::DayOfWeek::Sunday => "Domingo",
+            whatsapp_rust::wacore::iq::business::DayOfWeek::Other(o) => o.as_str(),
+        };
+        let hours_str = match &cfg.mode {
+            whatsapp_rust::wacore::iq::business::BusinessHourMode::Open24H => "Aberto 24 horas".to_string(),
+            whatsapp_rust::wacore::iq::business::BusinessHourMode::AppointmentOnly => "Com agendamento".to_string(),
+            whatsapp_rust::wacore::iq::business::BusinessHourMode::SpecificHours => {
+                if let (Some(open), Some(close)) = (cfg.open_time, cfg.close_time) {
+                    format!("{:02}:{:02} às {:02}:{:02}", open / 60, open % 60, close / 60, close % 60)
+                } else {
+                    "Horário comercial".to_string()
+                }
+            }
+            whatsapp_rust::wacore::iq::business::BusinessHourMode::Other(_) => "Horário comercial".to_string(),
+        };
+        parts.push(format!("{day}: {hours_str}"));
+    }
+    Some(parts.join("
+"))
 }

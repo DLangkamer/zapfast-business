@@ -541,6 +541,8 @@ pub struct App {
     pub label_filter: Option<String>,
     pub bulk_state: crate::ui::bulk_dispatch::BulkDispatchState,
     pub show_crm_sidecar: bool,
+    pub sidecar_view: crate::model::SidecarView,
+    pub business_profiles: HashMap<ChatId, Option<crate::model::BusinessProfile>>,
     pub crm_requested_view: Option<String>,
     /// Recording waiting for the schedule time to be chosen.
     pub scheduled_voice: Option<(ChatId, Vec<f32>, Option<String>)>,
@@ -1113,6 +1115,8 @@ impl App {
             label_filter: None,
             bulk_state: Default::default(),
             show_crm_sidecar: false,
+            sidecar_view: crate::model::SidecarView::default(),
+            business_profiles: HashMap::new(),
             crm_requested_view: None,
             scheduled_voice: None,
             unread_kept: HashSet::new(),
@@ -2571,6 +2575,20 @@ impl App {
             }
             Event::BroadcastLists(lists) => {
                 self.broadcast_lists = lists;
+            }
+            Event::BusinessProfileLoaded { chat, profile } => {
+                let opt = if profile.description.is_empty()
+                    && profile.email.is_none()
+                    && profile.websites.is_empty()
+                    && profile.categories.is_empty()
+                    && profile.address.is_none()
+                    && !profile.has_catalog
+                {
+                    None
+                } else {
+                    Some(*profile)
+                };
+                self.business_profiles.insert(chat, opt);
             }
             Event::CrmData {
                 columns,
@@ -5646,6 +5664,14 @@ impl App {
             }
             Action::ToggleCrmSidecar => {
                 self.show_crm_sidecar = !self.show_crm_sidecar;
+            }
+            Action::OpenContactSidecar(chat) => {
+                self.open_chat(chat);
+                self.show_crm_sidecar = true;
+                self.sidecar_view = crate::model::SidecarView::ContactInfo;
+            }
+            Action::FetchBusinessProfile(chat) => {
+                self.backend.send(Command::FetchBusinessProfile(chat));
             }
             Action::SaveCrmColumn(col) => {
                 if let Some(pos) = self.crm_columns.iter().position(|c| c.id == col.id) {

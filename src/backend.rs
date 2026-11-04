@@ -502,6 +502,7 @@ pub enum Command {
         source: std::path::PathBuf,
         name: String,
     },
+    FetchBusinessProfile(ChatId),
     /// Opens the log, or shows it in its folder, off the interface thread;
     /// only a failure reports back.
     OpenLog(PathBuf),
@@ -862,6 +863,10 @@ pub enum Event {
     /// WhatsApp Business canned responses cached for slash completion.
     QuickReplies(Vec<crate::model::QuickReply>),
     BroadcastLists(Vec<crate::model::BroadcastList>),
+    BusinessProfileLoaded {
+        chat: ChatId,
+        profile: Box<crate::model::BusinessProfile>,
+    },
     CrmData {
         columns: Vec<crate::model::CrmColumn>,
         deals: Vec<crate::model::CrmDeal>,
