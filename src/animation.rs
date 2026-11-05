@@ -413,6 +413,18 @@ fn to_color_image(image: &image::RgbaImage) -> ColorImage {
     )
 }
 
+/// Whether the WebP file header indicates multiple animation frames.
+pub fn webp_moves(head: &[u8]) -> bool {
+    if head.len() < 12 || &head[0..4] != b"RIFF" || &head[8..12] != b"WEBP" {
+        return false;
+    }
+    let flagged = head.len() >= 21 && &head[12..16] == b"VP8X" && head[20] & 0x02 != 0;
+    flagged
+        || head[..head.len().min(64)]
+            .windows(4)
+            .any(|window| window == b"ANIM")
+}
+
 /// Decodes MP4 to scaled RGBA frames with `ffmpeg`.
 fn decode_video(path: &Path, limit: usize) -> Option<Decoded> {
     // Decode WhatsApp's H.264 MP4s in-process and use ffmpeg for other codecs.

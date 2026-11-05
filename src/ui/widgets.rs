@@ -78,6 +78,19 @@ pub fn line(
     }
 }
 
+/// Shows text fitting within available width, using ellipsis if too long.
+pub fn scrolling_text(
+    ui: &mut Ui,
+    text: &str,
+    font: egui::FontId,
+    color: Color32,
+    _fade: Color32,
+) {
+    let laid = line(ui, text, font, color, ui.available_width().max(40.0), 1);
+    let (rect, _) = ui.allocate_exact_size(laid.size(), Sense::hover());
+    laid.paint(ui, rect.min, color);
+}
+
 /// One line of text holding right-to-left script, cut to `width` by its
 /// logical end. egui cuts a line in the order it lays glyphs out, which for
 /// Arabic and Hebrew is already the visual one, so its ellipsis replaced a

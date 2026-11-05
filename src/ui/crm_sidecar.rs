@@ -327,7 +327,12 @@ fn render_identity_card(app: &mut App, ui: &mut egui::Ui, palette: &Palette, cha
                 super::widgets::paint_avatar(ui, palette, rect, title, &chat.id, picture.as_deref());
                 if resp.clicked() {
                     if let Some(path) = picture {
-                        app.actions.push(Action::PreviewImage(path));
+                        app.actions.push(Action::PreviewImage {
+                            path,
+                            chat: chat.id.clone(),
+                            message: String::new(),
+                            card: None,
+                        });
                     }
                 }
                 if resp.hovered() {
@@ -822,7 +827,19 @@ fn render_shared_media_card(app: &mut App, ui: &mut egui::Ui, palette: &Palette,
 
                                         if resp.clicked() {
                                             if let Some(path) = path_opt {
-                                                app.actions.push(Action::PreviewImage(path.clone()));
+                                                if is_video {
+                                                    app.actions.push(Action::ExpandVideo {
+                                                        message: msg_id.clone(),
+                                                        path: path.clone(),
+                                                    });
+                                                } else {
+                                                    app.actions.push(Action::PreviewImage {
+                                                        path: path.clone(),
+                                                        chat: chat.id.clone(),
+                                                        message: msg_id.clone(),
+                                                        card: None,
+                                                    });
+                                                }
                                             } else {
                                                 app.actions.push(Action::OpenMessage {
                                                     chat: chat.id.clone(),

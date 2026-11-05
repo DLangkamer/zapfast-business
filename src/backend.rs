@@ -8,7 +8,7 @@ use std::time::Duration;
 
 use tokio::sync::mpsc;
 
-use crate::model::{Chat, ChatId, Contact, Gif, GifError, Message, PollDraft, StickerPack};
+use crate::model::{Chat, ChatId, Contact, Gif, GifError, MediaItem, Message, PollDraft, StickerPack};
 use crate::paths::AccountDirs;
 
 // Re-exported so the picker can detect pasted Signal pack links.
@@ -503,6 +503,11 @@ pub enum Command {
         name: String,
     },
     FetchBusinessProfile(ChatId),
+    /// Loads a page of album items for the in-app viewer.
+    LoadChatMedia {
+        chat: ChatId,
+        around: Option<String>,
+    },
     /// Opens the log, or shows it in its folder, off the interface thread;
     /// only a failure reports back.
     OpenLog(PathBuf),
@@ -866,6 +871,12 @@ pub enum Event {
     BusinessProfileLoaded {
         chat: ChatId,
         profile: Box<crate::model::BusinessProfile>,
+    },
+    /// A page of album items for the in-app viewer.
+    ChatMedia {
+        chat: ChatId,
+        around: Option<String>,
+        items: Vec<MediaItem>,
     },
     CrmData {
         columns: Vec<crate::model::CrmColumn>,

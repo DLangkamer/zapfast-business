@@ -3,7 +3,7 @@
 //! The backend translates protocol types into these models, keeping protobufs
 //! out of views and giving the archive a stable shape.
 
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::time::Instant;
 
 use serde::{Deserialize, Serialize};
@@ -1138,6 +1138,128 @@ impl Content {
             _ => None,
         }
     }
+
+    /// A photo or a playable video, as the in-app viewer album counts them.
+    /// A GIF is not a video here: it plays inline as an animation, so it is
+    /// left out.
+    pub fn gallery_kind(&self) -> Option<GalleryKind> {
+        match self {
+            Self::Image { .. } => Some(GalleryKind::Photo),
+            Self::Video { gif: false, .. } => Some(GalleryKind::Video),
+            _ => None,
+        }
+    }
+}
+
+/// What the in-app media viewer album holds: an item loaded by
+/// `Command::LoadChatMedia`. Any view that lists a chat's photos and clips reads these.
+#[derive(Clone, Debug, PartialEq)]
+pub struct MediaItem {
+    pub id: String,
+    /// For an interactive message's picture, which one: `None` for the
+    /// message's own attachment or a card's header image, and the carousel
+    /// card's index otherwise, as `Action::Download` counts them.
+    pub card: Option<usize>,
+    pub timestamp: i64,
+    pub video: bool,
+    /// `None` until the attachment is downloaded.
+    pub path: Option<std::path::PathBuf>,
+    /// The stored thumbnail, drawn instead of decoding the file.
+    pub thumbnail: Option<Vec<u8>>,
+}
+
+impl MediaItem {
+    /// The album items one message holds, in the order it shows them: a photo
+    /// or a playable clip, or an interactive message's card images.
+    pub fn of_content(
+        id: &str,
+        timestamp: i64,
+        content: &Content,
+        thumbnail: Option<&[u8]>,
+        exists: impl Fn(&Path) -> bool,
+    ) -> Vec<MediaItem> {
+        let item = |card, video, path, thumbnail: Option<&[u8]>| MediaItem {
+            id: id.to_owned(),
+            card,
+            timestamp,
+            video,
+            path,
+            thumbnail: thumbnail.map(<[u8]>::to_vec),
+        };
+        if let Some(kind) = content.gallery_kind() {
+            let path = content
+                .media()
+                .and_then(|media| media.path.clone())
+                .filter(|path| exists(path));
+            if path
+                .as_ref()
+                .is_some_and(|path| gallery_kind_for_path(path).is_none())
+            {
+                return Vec::new();
+            }
+            return vec![item(None, kind == GalleryKind::Video, path, thumbnail)];
+        }
+        let Content::Interactive {
+            card: Some(card), ..
+        } = content
+        else {
+            return Vec::new();
+        };
+        std::iter::once((None, &**card))
+            .chain(
+                card.carousel
+                    .iter()
+                    .enumerate()
+                    .map(|(index, entry)| (Some(index), entry)),
+            )
+            .filter_map(|(index, entry)| {
+                let path = entry.image.as_ref()?.path.clone().filter(|path| {
+                    gallery_kind_for_path(path) == Some(GalleryKind::Photo) && exists(path)
+                })?;
+                let preview = entry
+                    .thumbnail
+                    .as_deref()
+                    .or(thumbnail.filter(|_| index.is_none()));
+                Some(item(index, false, Some(path), preview))
+            })
+            .collect()
+    }
+
+    /// The album items of a message already in memory, checking its files.
+    pub fn of_message(message: &Message) -> Vec<MediaItem> {
+        Self::of_content(
+            &message.id,
+            message.timestamp,
+            &message.content,
+            message.thumbnail.as_deref(),
+            Path::is_file,
+        )
+    }
+}
+
+/// A photo or a playable video, as the in-app viewer album counts them.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum GalleryKind {
+    Photo,
+    Video,
+}
+
+/// The viewer kind of a file on disk, from its name alone.
+pub(crate) fn gallery_kind_for_path(path: &Path) -> Option<GalleryKind> {
+    gallery_file(&path.file_name()?.to_string_lossy())
+}
+
+/// The viewer kind of a file, from its name.
+fn gallery_file(file_name: &str) -> Option<GalleryKind> {
+    let ext = Path::new(file_name)
+        .extension()
+        .and_then(|ext| ext.to_str())
+        .map(|ext| ext.to_ascii_lowercase())?;
+    match ext.as_str() {
+        "jpg" | "jpeg" | "png" | "webp" => Some(GalleryKind::Photo),
+        "mp4" | "m4v" | "mov" | "webm" | "mkv" | "3gp" | "3gpp" => Some(GalleryKind::Video),
+        _ => None,
+    }
 }
 
 /// What a video is called in previews.
@@ -1908,7 +2030,24 @@ pub enum Action {
     /// extension and existence are checked here, and anything else opens
     /// externally; an image that then fails to decode shows a message with an
     /// Open externally button inside the preview.
-    PreviewImage(PathBuf),
+    PreviewImage {
+        path: PathBuf,
+        /// The chat whose album the viewer browses from here.
+        chat: ChatId,
+        /// The message this picture came from, so the album can be positioned.
+        message: String,
+        /// Which of an interactive message's pictures, as `MediaItem::card`.
+        card: Option<usize>,
+    },
+    /// Moves the viewer to the next (`1`) or previous (`-1`) item of the album:
+    /// the Right and Left arrow keys, and the arrows over the picture.
+    ViewerStep(i8),
+    /// Shows one item of the album the viewer already has, by message id.
+    ViewImage {
+        message: String,
+        /// Which of an interactive message's pictures, as `MediaItem::card`.
+        card: Option<usize>,
+    },
     ZoomImageIn,
     /// Scales the previewed image by a factor, as the wheel or a pinch asks.
     ZoomImageBy(f32),
@@ -1917,6 +2056,11 @@ pub enum Action {
     ZoomImageOut,
     FitImage,
     CloseImagePreview,
+    /// Shows a downloaded sticker large, with a favorite toggle.
+    PreviewSticker(PathBuf),
+    CloseStickerPreview,
+    /// Plays videos at the next of 1x, 1.5x and 2x.
+    CycleVideoSpeed,
     OpenFile(PathBuf),
     /// Opens ZapFast's log, or shows it in its folder when no application
     /// takes it, and says so when neither works.

@@ -28,7 +28,6 @@ pub mod server_login;
 pub mod settings;
 pub mod text_attribution_rules;
 pub mod update;
-pub mod video_preview;
 pub mod widgets;
 
 use egui::{Align2, CornerRadius, Frame, Margin, Stroke, vec2};
@@ -132,7 +131,7 @@ pub fn show(app: &mut App, ui: &mut egui::Ui) {
     picker::show(app, ctx);
     dialogs::show(app, ctx);
     image_preview::show(app, ctx);
-    video_preview::show(app, ctx);
+    image_preview::show_sticker(app, ctx);
     drop_target(app, ctx);
     toasts(app, ctx);
     focus_ring(app, ctx);

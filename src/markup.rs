@@ -394,6 +394,35 @@ fn link_and_mention(span: Span, mentions: &[Mention]) -> Vec<Span> {
                 .next_back()
                 .is_some_and(|c| c.is_alphanumeric());
         if at_boundary {
+            if (bytes[i].is_ascii_digit() || matches!(bytes[i], b'+' | b'('))
+                && let Some((end, digits, valid)) = phone_at(text, i)
+            {
+                if valid {
+                    push_plain(&mut out, &span, &text[plain_start..i]);
+                    out.push(Span {
+                        text: text[i..end].to_owned(),
+                        link: Some(format!("tel:{digits}")),
+                        bold: span.bold,
+                        italic: span.italic,
+                        strike: span.strike,
+                        quote: span.quote,
+                        ..Default::default()
+                    });
+                    plain_start = end;
+                    i = end;
+                    continue;
+                }
+                if digits.is_empty() && end > i {
+                    i = end;
+                    continue;
+                }
+                // Don't retry a suffix of an oversized number as a new link.
+                // Let the email parser inspect the whole token when it ends in @.
+                if digits.len() > 15 && !text[end..].starts_with('@') {
+                    i = end;
+                    continue;
+                }
+            }
             if bytes[i] == b'@'
                 && let Some((end, mention)) = mention_at(text, i, mentions)
             {
@@ -431,6 +460,59 @@ fn link_and_mention(span: Span, mentions: &[Mention]) -> Vec<Span> {
     }
     push_plain(&mut out, &span, &text[plain_start..]);
     out
+}
+
+/// Finds a phone candidate with optional spaces, hyphens, and parentheses.
+/// Dots are excluded so formatted tax IDs such as XXX.XXX.XXX-XX stay plain.
+/// The validity flag lets the caller skip an oversized number as one token.
+fn phone_at(text: &str, at: usize) -> Option<(usize, String, bool)> {
+    // Reject an ISO date before scanning through the space after it; the next
+    // token may be a time or a separate phone number.
+    let date_at = at + usize::from(text[at..].starts_with('('));
+    let iso_date = text
+        .as_bytes()
+        .get(date_at..date_at + 10)
+        .is_some_and(|date| {
+            date[4] == b'-'
+                && date[7] == b'-'
+                && date[..4].iter().all(u8::is_ascii_digit)
+                && date[5..7].iter().all(u8::is_ascii_digit)
+                && date[8..].iter().all(u8::is_ascii_digit)
+        });
+    if iso_date {
+        return Some((date_at + 10, String::new(), false));
+    }
+
+    let mut end = at;
+    let mut digits = String::new();
+    for (offset, c) in text[at..].char_indices() {
+        if c.is_ascii_digit() {
+            digits.push(c);
+        } else if matches!(c, '+' | ' ' | '-' | '(' | ')') {
+            if c == '+' && offset != 0 {
+                break;
+            }
+        } else {
+            break;
+        }
+        end = at + offset + c.len_utf8();
+    }
+    while end > at && text[..end].ends_with([' ', '-', '(']) {
+        end -= text[..end].chars().next_back()?.len_utf8();
+    }
+    let following = text[end..].chars().next();
+    let valid = digits.len() >= 7
+        && digits.len() <= 15
+        && following.is_none_or(|c| !c.is_ascii_alphanumeric() && c != '@');
+    (!digits.is_empty()).then_some((
+        end,
+        if text[at..].starts_with('+') {
+            format!("+{digits}")
+        } else {
+            digits
+        },
+        valid,
+    ))
 }
 
 fn push_plain(out: &mut Vec<Span>, template: &Span, text: &str) {
@@ -672,12 +754,13 @@ const KNOWN_TLDS: &[&str] = &[
     "yoga",
 ];
 
-/// Extracts web links found in `text`, without duplicate URLs or mailto: links.
+/// Extracts web links found in `text`, without duplicate URLs or mailto: or tel: links.
 pub fn links(text: &str) -> Vec<String> {
     let mut found: Vec<String> = Vec::new();
     for span in parse(text, &[]) {
         if let Some(link) = span.link
             && !link.starts_with("mailto:")
+            && !link.starts_with("tel:")
             && !found.contains(&link)
         {
             found.push(link);

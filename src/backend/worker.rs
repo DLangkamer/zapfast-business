@@ -1377,6 +1377,26 @@ impl Worker {
         chat.labels = self.archive.chat_labels(&chat.id).unwrap_or_default();
     }
 
+    fn emit_chat_media(&mut self, chat: ChatId, around: Option<String>) {
+        let page = match around.as_deref() {
+            Some(message) => {
+                self.archive
+                    .gallery_around(&chat, message, crate::archive::GALLERY_PAGE)
+            }
+            None => self
+                .archive
+                .gallery_media(&chat, crate::archive::GALLERY_PAGE),
+        };
+        match page {
+            Ok(items) => self.emit(Event::ChatMedia {
+                chat,
+                around,
+                items,
+            }),
+            Err(error) => self.emit(Event::Error(error.to_string())),
+        }
+    }
+
     fn emit_message(&self, chat: &str, id: &str) {
         if let Ok(Some(mut message)) = self.archive.message(chat, id) {
             self.polish(&mut message);
@@ -5188,6 +5208,7 @@ impl Worker {
                     });
                 }
             }
+            Command::LoadChatMedia { chat, around } => self.emit_chat_media(chat, around),
             Command::OpenLog(path) => {
                 let events = self.events.clone();
                 let waker = self.waker.clone();

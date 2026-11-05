@@ -19,7 +19,7 @@ use crate::model::{
 use crate::theme::{self, Icon, Palette};
 use crate::wallpaper;
 
-use super::focus::{Stop, TabStop};
+use super::focus::{self, Stop, TabStop};
 use super::widgets;
 
 /// Group-message avatar size.
@@ -4349,6 +4349,24 @@ fn context_menu(ui: &mut egui::Ui, view: &View<'_>, message: &Message, actions: 
                 } else {
                     "Open file".into()
                 };
+                if crate::image_preview::can_view(path) {
+                    let viewer_label = crate::i18n::gettext(view.locale, "Open in the viewer");
+                    if widgets::menu_item(ui, &palette, Some(Icon::Maximize), &viewer_label) {
+                        if crate::image_preview::is_video(path) {
+                            actions.push(Action::ExpandVideo {
+                                message: message.id.clone(),
+                                path: path.clone(),
+                            });
+                        } else {
+                            actions.push(Action::PreviewImage {
+                                path: path.clone(),
+                                chat: view.chat.id.clone(),
+                                message: message.id.clone(),
+                                card: None,
+                            });
+                        }
+                    }
+                }
                 if widgets::menu_item(ui, &palette, Some(Icon::ExternalLink), &open) {
                     actions.push(Action::OpenFile(path.clone()));
                 }
@@ -4528,8 +4546,29 @@ fn vcard_tel_account(property: &str, value: &str) -> Option<String> {
         name.eq_ignore_ascii_case("WAID")
             .then(|| digits(value.trim_matches('"')))
     });
-    waid.or_else(|| value.trim().starts_with('+').then(|| digits(value)))
-        .filter(|account| account.len() >= 7)
+    let phone_digits = digits(value);
+    waid.or_else(|| {
+        if value.trim().starts_with('+') && phone_digits.len() >= 7 {
+            Some(phone_digits)
+        } else if phone_digits.len() >= 10 {
+            // Strip leading 0 if present (e.g. 011 99999-8888 -> 11999998888)
+            let clean = phone_digits.strip_prefix('0').unwrap_or(&phone_digits);
+            // If already has country code (12 or 13 digits for Brazil starting with 55)
+            if clean.starts_with("55") && clean.len() >= 12 {
+                Some(clean.to_owned())
+            } else if clean.len() == 10 || clean.len() == 11 {
+                // Brazilian local number with DDD: prepend 55
+                Some(format!("55{clean}"))
+            } else {
+                Some(clean.to_owned())
+            }
+        } else if phone_digits.len() >= 7 {
+            Some(phone_digits)
+        } else {
+            None
+        }
+    })
+    .filter(|account| account.len() >= 7)
 }
 
 fn shared_contact_details(vcard: &str, fallback_name: &str) -> Option<SharedContact> {
@@ -4867,6 +4906,12 @@ fn content(
                         .as_ref()
                         .map_or(display_name.as_str(), |contact| contact.name.as_str());
                     widgets::rich_text(ui, name, theme::medium(14.0), palette.text);
+                    if let Some(contact) = details.as_ref() {
+                        if !contact.number.is_empty() {
+                            let formatted_phone = crate::util::phone(&contact.number);
+                            theme::text(ui, &formatted_phone, theme::regular(12.5), palette.secondary);
+                        }
+                    }
                     match details.as_ref() {
                         Some(SharedContact {
                             account: Some(account),
@@ -4910,15 +4955,28 @@ fn content(
                                 }
                             });
                         }
-                        // Without an account there is nothing to open, so
-                        // the number stays readable, as it was.
+                        // Without a verified account, offer Chat if there are enough digits.
                         Some(contact) => {
-                            theme::text(
-                                ui,
-                                &contact.number,
-                                theme::regular(12.5),
-                                palette.secondary,
-                            );
+                            let raw_digits: String = contact.number.chars().filter(char::is_ascii_digit).collect();
+                            if raw_digits.len() >= 7 {
+                                ui.horizontal(|ui| {
+                                    if theme::pill_button(
+                                        ui,
+                                        &palette,
+                                        crate::i18n::gettext(view.locale, "Chat").as_ref(),
+                                        true,
+                                    )
+                                    .clicked()
+                                    {
+                                        actions.push(Action::NewContact {
+                                            phone: raw_digits.clone(),
+                                            first: name.to_owned(),
+                                            last: String::new(),
+                                            to_phone: None,
+                                        });
+                                    }
+                                });
+                            }
                         }
                         None => {}
                     }
@@ -5472,7 +5530,15 @@ fn carousel_picture(
     }
     if let Some(path) = &media.path {
         if clicked {
-            actions.push(Action::OpenFile(path.clone()));
+            actions.push(match crate::image_preview::open_target(path, true) {
+                crate::image_preview::OpenTarget::Preview => Action::PreviewImage {
+                    path: path.clone(),
+                    chat: message.chat.clone(),
+                    message: message.id.clone(),
+                    card: Some(index),
+                },
+                crate::image_preview::OpenTarget::External => Action::OpenFile(path.clone()),
+            });
         }
     } else if !matches!(media.state, MediaState::Downloading)
         && (clicked
@@ -5704,6 +5770,31 @@ fn interactive_buttons(
     ui.spacing_mut().item_spacing.y = spacing;
 }
 
+fn extract_whatsapp_link_phone(url: &str) -> Option<String> {
+    let lower = url.to_ascii_lowercase();
+    if lower.contains("wa.me/") {
+        let after = lower.split("wa.me/").nth(1)?;
+        let token = after.split(['?', '/', '&', '#']).next()?;
+        let digits: String = token.chars().filter(char::is_ascii_digit).collect();
+        if digits.len() >= 7 {
+            return Some(digits);
+        }
+    } else if lower.contains("whatsapp.com/send") || lower.starts_with("whatsapp://send") {
+        let query = lower.split_once('?')?;
+        for param in query.1.split('&') {
+            if let Some((k, v)) = param.split_once('=') {
+                if k == "phone" {
+                    let digits: String = v.chars().filter(char::is_ascii_digit).collect();
+                    if digits.len() >= 7 {
+                        return Some(digits);
+                    }
+                }
+            }
+        }
+    }
+    None
+}
+
 /// Draws formatted message text. `reserve` leaves footer space on the last
 /// line. `span` sets a minimum left-aligned row width for text below cards.
 #[allow(clippy::too_many_arguments)]
@@ -5790,14 +5881,81 @@ fn rich_body(
     if response.hovered() {
         ui.ctx().set_cursor_icon(egui::CursorIcon::Text);
     }
+    let message_number = crate::i18n::gettext(view.locale, "Message");
+    let copy_number = crate::i18n::gettext(view.locale, "Copy number");
+    let menu_labels = [message_number.as_ref(), copy_number.as_ref()];
+    for (range, url) in &laid.links {
+        let Some(phone) = url.strip_prefix("tel:") else {
+            continue;
+        };
+        let number = phone.strip_prefix('+').unwrap_or(phone);
+        let copy_text: String = laid
+            .galley
+            .text()
+            .chars()
+            .skip(range.start)
+            .take(range.len())
+            .collect();
+        for (row, bounds) in crate::bidi::char_bounds_by_row(&laid.galley, range.start, range.end) {
+            let link = ui
+                .interact(
+                    bounds.translate(origin.to_vec2()).expand(2.0),
+                    bubble_id(&view.chat.id, &message.id).with((
+                        "phone-link",
+                        range.start,
+                        range.end,
+                        row,
+                    )),
+                    Sense::click(),
+                )
+                .on_hover_cursor(egui::CursorIcon::PointingHand);
+            link.widget_info(|| {
+                egui::WidgetInfo::labeled(egui::WidgetType::Button, ui.is_enabled(), number)
+            });
+            theme::reveal_focus(&link);
+            let link = focus::phone_link(link);
+            egui::Popup::menu(&link)
+                .id(link.id.with("popup"))
+                .width(widgets::menu_width(ui, &menu_labels, true))
+                .frame(widgets::menu_frame(&view.palette))
+                .close_behavior(egui::PopupCloseBehavior::CloseOnClick)
+                .show(|ui| {
+                    if widgets::menu_item(ui, &view.palette, None, message_number.as_ref()) {
+                        actions.push(Action::NewContact {
+                            phone: number.to_owned(),
+                            first: String::new(),
+                            last: String::new(),
+                            to_phone: None,
+                        });
+                    }
+                    if widgets::menu_item(
+                        ui,
+                        &view.palette,
+                        Some(Icon::Copy),
+                        copy_number.as_ref(),
+                    ) {
+                        actions.push(Action::CopyText(copy_text.clone()));
+                    }
+                });
+        }
+    }
     if !laid.links.is_empty()
         && let Some(pos) = response.hover_pos()
     {
         let cursor = laid.galley.cursor_from_pos(pos - origin);
         if let Some(url) = laid.link_at(cursor.index.0) {
             ui.ctx().set_cursor_icon(egui::CursorIcon::PointingHand);
-            if response.clicked() {
-                actions.push(Action::OpenUrl(url.to_owned()));
+            if !url.starts_with("tel:") && response.clicked() {
+                if let Some(phone) = extract_whatsapp_link_phone(url) {
+                    actions.push(Action::NewContact {
+                        phone,
+                        first: String::new(),
+                        last: String::new(),
+                        to_phone: None,
+                    });
+                } else {
+                    actions.push(Action::OpenUrl(url.to_owned()));
+                }
             }
         }
     }
@@ -5956,7 +6114,7 @@ fn location_card(
     });
 }
 
-fn thumbnail_uri(ctx: &egui::Context, chat: &str, id: &str, bytes: &[u8]) -> String {
+pub(crate) fn thumbnail_uri(ctx: &egui::Context, chat: &str, id: &str, bytes: &[u8]) -> String {
     let uri = format!(
         "bytes://thumb-{}-{}",
         chat.chars()
@@ -6112,13 +6270,19 @@ fn picture(
                     .on_hover_cursor(egui::CursorIcon::PointingHand)
                     .clicked()
                 {
-                    let action = match crate::image_preview::open_target(path, sticker.is_none()) {
-                        crate::image_preview::OpenTarget::Preview => {
-                            Action::PreviewImage(path.clone())
-                        }
-                        crate::image_preview::OpenTarget::External => {
-                            Action::OpenFile(path.clone())
-                        }
+                    let action = match sticker {
+                        Some(_) => Action::PreviewSticker(path.clone()),
+                        None => match crate::image_preview::open_target(path, true) {
+                            crate::image_preview::OpenTarget::Preview => Action::PreviewImage {
+                                path: path.clone(),
+                                chat: view.chat.id.clone(),
+                                message: message.id.clone(),
+                                card: None,
+                            },
+                            crate::image_preview::OpenTarget::External => {
+                                Action::OpenFile(path.clone())
+                            }
+                        },
                     };
                     actions.push(action);
                 }

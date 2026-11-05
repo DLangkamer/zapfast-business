@@ -365,6 +365,12 @@ impl Player {
         }
     }
 
+    pub fn cycle_speed(&mut self) {}
+
+    pub fn speed(&self) -> f32 {
+        1.0
+    }
+
     /// Plays videos without opening the sound device.
     #[cfg(any(test, feature = "demo"))]
     pub fn silence(&mut self) {

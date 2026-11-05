@@ -7,7 +7,7 @@ use std::path::{Path, PathBuf};
 
 use rusqlite::{Connection, OptionalExtension, params};
 
-use crate::model::{Chat, ChatKind, Contact, Content, Delivery, LastMessage, Message};
+use crate::model::{Chat, ChatKind, Contact, Content, Delivery, LastMessage, MediaItem, Message};
 
 mod drafts;
 mod encryption;
@@ -27,6 +27,8 @@ pub use scheduled::{ScheduledKind, ScheduledMessage};
 mod stickers;
 pub use polls::PollVote;
 pub use stickers::FavoriteSticker;
+
+pub const GALLERY_PAGE: usize = 64;
 
 /// Outcome of deleting or clearing a chat.
 #[derive(Clone, Debug, Default)]
@@ -1459,8 +1461,109 @@ impl Archive {
         Ok(())
     }
 
+    pub const GALLERY_PAGE: usize = 64;
+
+    /// The newest items of the chat's album, oldest first.
+    pub fn gallery_media(&self, chat: &str, limit: usize) -> rusqlite::Result<Vec<MediaItem>> {
+        let mut list = self.gallery_query(
+            "SELECT id, timestamp, content, thumbnail FROM messages
+             WHERE chat = ?1 AND json_valid(content)
+             AND json_extract(content, '$.kind') IN ('image', 'video', 'interactive')
+             ORDER BY timestamp DESC, rowid DESC",
+            params![chat],
+            limit,
+            true,
+        )?;
+        list.reverse();
+        Ok(list)
+    }
+
+    /// The album around one message, oldest first.
+    pub fn gallery_around(
+        &self,
+        chat: &str,
+        message: &str,
+        limit: usize,
+    ) -> rusqlite::Result<Vec<MediaItem>> {
+        let anchor = self
+            .connection
+            .query_row(
+                "SELECT timestamp, rowid FROM messages WHERE chat = ?1 AND id = ?2",
+                params![chat, message],
+                |row| Ok((row.get::<_, i64>(0)?, row.get::<_, i64>(1)?)),
+            )
+            .optional()?;
+        let Some((timestamp, rowid)) = anchor else {
+            return self.gallery_media(chat, limit);
+        };
+        let ahead = limit / 2;
+        let behind = limit - ahead;
+        let mut list = self.gallery_query(
+            "SELECT id, timestamp, content, thumbnail FROM messages
+             WHERE chat = ?1 AND json_valid(content)
+             AND json_extract(content, '$.kind') IN ('image', 'video', 'interactive')
+             AND (timestamp < ?2 OR (timestamp = ?2 AND rowid <= ?3))
+             ORDER BY timestamp DESC, rowid DESC",
+            params![chat, timestamp, rowid],
+            behind,
+            true,
+        )?;
+        list.reverse();
+        let mut newer = self.gallery_query(
+            "SELECT id, timestamp, content, thumbnail FROM messages
+             WHERE chat = ?1 AND json_valid(content)
+             AND json_extract(content, '$.kind') IN ('image', 'video', 'interactive')
+             AND (timestamp > ?2 OR (timestamp = ?2 AND rowid > ?3))
+             ORDER BY timestamp ASC, rowid ASC",
+            params![chat, timestamp, rowid],
+            ahead,
+            false,
+        )?;
+        list.append(&mut newer);
+        Ok(list)
+    }
+
+    fn gallery_query(
+        &self,
+        sql: &str,
+        parameters: impl rusqlite::Params,
+        limit: usize,
+        newest_first: bool,
+    ) -> rusqlite::Result<Vec<MediaItem>> {
+        let mut statement = self.connection.prepare(sql)?;
+        let rows = statement.query_map(parameters, |row| {
+            let id: String = row.get(0)?;
+            let timestamp: i64 = row.get(1)?;
+            let raw: String = row.get(2)?;
+            let thumbnail: Option<Vec<u8>> = row.get(3)?;
+            Ok((id, timestamp, raw, thumbnail))
+        })?;
+        let mut list = Vec::new();
+        for row in rows {
+            if list.len() >= limit {
+                break;
+            }
+            let (id, timestamp, raw, thumbnail) = row?;
+            let content: Content = serde_json::from_str(&raw).unwrap_or(Content::Unsupported {
+                what: "unreadable".into(),
+            });
+            let mut items = MediaItem::of_content(
+                &id,
+                timestamp,
+                &content,
+                thumbnail.as_deref(),
+                Path::is_file,
+            );
+            if newest_first {
+                items.reverse();
+            }
+            list.extend(items);
+        }
+        Ok(list)
+    }
+
     /// Attachment paths recorded for one chat.
-    fn chat_media(&self, chat: &str) -> Result<Vec<PathBuf>> {
+    fn chat_media(&self, chat: &str) -> rusqlite::Result<Vec<PathBuf>> {
         self.cached_media("m.chat = ?1", params![chat])
     }
 

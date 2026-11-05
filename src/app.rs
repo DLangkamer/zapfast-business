@@ -484,6 +484,16 @@ pub struct App {
     pauses_media: bool,
     /// Image currently shown in the native preview.
     pub image_preview: Option<PreviewState>,
+    /// Shows a sticker large, with a favorite toggle.
+    pub sticker_view: Option<crate::image_preview::StickerPreview>,
+    /// The open chat's album, for the full-window viewer: photos and clips.
+    pub viewer_media: Vec<crate::model::MediaItem>,
+    /// Chat whose album `viewer_media` belongs to, so a late answer for another
+    /// chat is not shown.
+    pub viewer_media_chat: Option<ChatId>,
+    /// Download state of the media items the viewer album shows, keyed by
+    /// message id, so an item being fetched or failing shows its progress.
+    pub viewer_media_state: HashMap<String, MediaState>,
     /// Whether the loaded video covers the window instead of its bubble.
     pub video_expanded: bool,
     /// Message bodies registered for transcript copy formatting.
@@ -1081,6 +1091,10 @@ impl App {
             media_hold: None,
             pauses_media: false,
             image_preview: None,
+            sticker_view: None,
+            viewer_media: Vec::new(),
+            viewer_media_chat: None,
+            viewer_media_state: HashMap::new(),
             video_expanded: false,
             copy_rows: Default::default(),
             selection_view: Default::default(),
@@ -1317,6 +1331,10 @@ impl App {
         self.voice_wanted = None;
         self.recording = None;
         self.image_preview = None;
+        self.sticker_view = None;
+        self.viewer_media.clear();
+        self.viewer_media_chat = None;
+        self.viewer_media_state.clear();
         self.video_expanded = false;
     }
 
@@ -2590,6 +2608,11 @@ impl App {
                 };
                 self.business_profiles.insert(chat, opt);
             }
+            Event::ChatMedia { chat, around: _, items } => {
+                if !self.events_hidden && self.viewer_media_chat.as_deref() == Some(chat.as_str()) {
+                    self.viewer_media = items;
+                }
+            }
             Event::CrmData {
                 columns,
                 deals,
@@ -3820,6 +3843,45 @@ impl App {
         }
     }
 
+    fn open_viewer(&mut self, preview: PreviewState, ctx: &egui::Context) {
+        if self.video.message() != Some(preview.message()) {
+            self.video.stop();
+        }
+        self.viewer_media.clear();
+        self.viewer_media_state.clear();
+        self.viewer_media_chat = Some(preview.chat().to_owned());
+        self.backend.send(Command::LoadChatMedia {
+            chat: preview.chat().to_owned(),
+            around: Some(preview.message().to_owned()),
+        });
+        self.image_preview = Some(preview);
+        self.dialog = None;
+        self.picker = None;
+        ctx.memory_mut(|memory| {
+            if let Some(focused) = memory.focused() {
+                memory.surrender_focus(focused);
+            }
+        });
+        self.refocus_composer(ctx);
+    }
+
+    fn expand_video(&mut self, message: String, path: PathBuf, ctx: &egui::Context) {
+        let Some(chat) = self.open_chat.clone() else {
+            return;
+        };
+        let showing = self
+            .image_preview
+            .as_ref()
+            .is_some_and(|preview| preview.chat() == chat && preview.message() == message);
+        if !showing {
+            let preview = PreviewState::new_clip(path.clone(), chat, message.clone());
+            self.open_viewer(preview, ctx);
+        }
+        if self.video.message() != Some(&message) {
+            self.play_video(message, path);
+        }
+    }
+
     /// Returns keyboard focus to the open conversation when no search or
     /// overlay is active.
     fn refocus_composer(&mut self, ctx: &egui::Context) {
@@ -4583,21 +4645,53 @@ impl App {
                     message,
                 });
             }
-            Action::PreviewImage(path) => {
-                if crate::safety::can_preview_image(&path) && path.is_file() {
-                    self.image_preview = Some(PreviewState::new(path));
-                    self.dialog = None;
-                    self.picker = None;
-                    // egui drops the focus of widgets behind a modal only from
-                    // the frame after it first shows; until then a focused
-                    // composer would still take Enter and send the draft.
-                    ctx.memory_mut(|memory| {
-                        if let Some(focused) = memory.focused() {
-                            memory.surrender_focus(focused);
-                        }
-                    });
+            Action::PreviewImage {
+                path,
+                chat,
+                message,
+                card,
+            } => {
+                if crate::image_preview::can_view(&path) && path.is_file() {
+                    let preview = PreviewState::new(Some(path), chat, message).with_card(card);
+                    self.open_viewer(preview, ctx);
                 } else {
                     self.actions.push(Action::OpenFile(path));
+                }
+            }
+            Action::ExpandVideo { message, path } => self.expand_video(message, path, ctx),
+            Action::ViewerStep(direction) => {
+                if let Some(preview) = &mut self.image_preview {
+                    if let Some(pos) = preview.position(&self.viewer_media) {
+                        let next_index = if direction > 0 {
+                            if pos + 1 < self.viewer_media.len() {
+                                Some(pos + 1)
+                            } else {
+                                None
+                            }
+                        } else if pos > 0 {
+                            Some(pos - 1)
+                        } else {
+                            None
+                        };
+                        if let Some(idx) = next_index {
+                            if let Some(item) = self.viewer_media.get(idx) {
+                                let path = item.path.clone();
+                                let id = item.id.clone();
+                                let card = item.card;
+                                preview.show_album_item(path, id, card);
+                            }
+                        }
+                    }
+                }
+            }
+            Action::ViewImage { message, card } => {
+                if let Some(preview) = &mut self.image_preview {
+                    if let Some(item) = self.viewer_media.iter().find(|i| i.id == message && i.card == card) {
+                        let path = item.path.clone();
+                        let id = item.id.clone();
+                        let card = item.card;
+                        preview.show_album_item(path, id, card);
+                    }
                 }
             }
             Action::ZoomImageBy(factor) => {
@@ -4627,7 +4721,19 @@ impl App {
             }
             Action::CloseImagePreview => {
                 self.image_preview = None;
+                self.viewer_media.clear();
+                self.viewer_media_chat = None;
+                self.viewer_media_state.clear();
                 self.refocus_composer(ctx);
+            }
+            Action::PreviewSticker(path) => {
+                self.sticker_view = Some(crate::image_preview::StickerPreview::new(path));
+            }
+            Action::CloseStickerPreview => {
+                self.sticker_view = None;
+            }
+            Action::CycleVideoSpeed => {
+                self.video.cycle_speed();
             }
             Action::OpenFile(path) => {
                 if crate::safety::can_open_attachment(&path) && path.is_file() {
@@ -4885,17 +4991,6 @@ impl App {
             }
             Action::SeekVideo { message, fraction } => self.video.seek(&message, fraction),
             Action::ToggleVideoSound => self.video.toggle_mute(),
-            Action::ExpandVideo { message, path } => {
-                if self.video.message() != Some(message.as_str()) {
-                    self.video.set_expanded(true);
-                    self.play_video(message, path);
-                }
-                if self.video.message().is_some() {
-                    self.video.set_expanded(true);
-                    self.video.resume();
-                    self.video_expanded = true;
-                }
-            }
             Action::CollapseVideo => {
                 self.video_expanded = false;
                 self.video.set_expanded(false);

@@ -330,8 +330,12 @@ fn preview_keys(app: &mut App, ctx: &egui::Context) {
         }
         let copy_shortcut = input.consume_key(Modifiers::COMMAND, Key::C)
             || input.consume_key(Modifiers::CTRL, Key::C);
-        if copy_shortcut && let Some(preview) = &app.image_preview {
-            actions.push(Action::CopyImage(preview.path().to_owned()));
+        if copy_shortcut
+            && let Some(preview) = &app.image_preview
+            && let Some(path) = preview.path()
+            && !preview.shows_video(&app.viewer_media)
+        {
+            actions.push(Action::CopyImage(path.to_owned()));
         }
         let mut event_actions = Vec::new();
         for event in &input.events {
